@@ -32,7 +32,7 @@ function fatal(err) {
 
 try {
   const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC,
-    soilFile, elevFile, villagesFC] = await Promise.all([
+    soilFile, elevFile, villagesFC, scenarioFile] = await Promise.all([
     loadJson('data/parcels.geojson'),
     loadJson('data/roads.geojson'),
     loadJson('data/poi.geojson'),
@@ -46,6 +46,7 @@ try {
     loadJson('data/soil.json'),
     loadJson('data/elevation.json'),
     loadJson('data/villages.geojson'),
+    loadJson('data/scenario.json'),
   ]);
 
   // 地图要素与模型输出按**下标对齐**（模型不关心几何，界面靠 i 索引二者）
@@ -380,6 +381,30 @@ try {
     onSelect: (row) => ui.select(row),
   });
 
+  // 地图点选：只在「情景推演」页签激活时接管点击（否则点地块应该是"选中地块"）
+  map.map.on('click', (e) => {
+    if (ui.activeTable === 'scenario') pickScenario(e.latlng);
+  });
+
+  /**
+   * **情景推演**：在地图上点一下 ⇒ 取最近的候选点 ⇒ 给出"新建前/后"的可达性对比。
+   *
+   * 重活（每个候选点一次单源 Dijkstra）已经在 `tools/scenario.mjs` 离线算完，
+   * 这里只是**查表 + 高亮受影响地块** —— 所以点下去是瞬时的，页面也不背 Dijkstra 的实现。
+   */
+  function pickScenario(latlng) {
+    let best = null;
+    let bd = Infinity;
+    for (const c of scenarioFile.candidates) {
+      const d = (c.lat - latlng.lat) ** 2 + (c.lon - latlng.lng) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) return;
+    ui.setScenario({ base: scenarioFile.metadata.baseline, cand: best, meta: scenarioFile.metadata });
+    const n = map.highlight(best.improved.map(([i]) => i));
+    ui.toast(`拟建点：平均可省 ${best.avg_gain_min} 分钟/块，高亮 ${n} 个受影响地块`, 'ok');
+  }
+
   function setDay(day) {
     state.day = Math.min(model.days.length - 1, Math.max(0, Math.round(day)));
     region.temp = model.region.T2M[state.day];
@@ -455,7 +480,8 @@ try {
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
   globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson,
-    admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key };
+    admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key,
+    scenario: scenarioFile, pickScenario };
 } catch (err) {
   fatal(err);
 }

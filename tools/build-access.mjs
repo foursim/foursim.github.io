@@ -25,13 +25,8 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i
 const OUT = path.resolve(opt('out', 'data'));
 const R = 6371008.8;
 
-/** 通行速度 km/h。田间道给得很低：这是"农机下道"的真实处境 */
-const SPEED = {
-  motorway: 80, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
-  unclassified: 25, residential: 25, track: 12,
-};
-const OFFROAD = 10; // km/h，地块质心到路网的接驳速度
-const SOURCE_KINDS = new Set(['silo', 'barn', 'agrarian', 'marketplace']);
+// 通行参数来自共享模块（`scenario.mjs` 也用同一份，避免两套算法漂移）
+import { SPEED, OFFROAD, SOURCE_KINDS, SNAP_M, CELL } from './road-speeds.mjs';
 const LEVELS_ARG = opt('levels', null); // 不给就按数据分位数定（见 ④）
 
 const hav = (a, b) => {
@@ -55,8 +50,8 @@ const poi = JSON.parse(fs.readFileSync(path.join(OUT, 'poi.geojson'), 'utf8')).f
  * 路网会碎成很多互不连通的碎片（实测 5130 个节点里只有 3568 个能从收储点到达，
  * 120 块地因此被判成"不可达"）。所以要把 6 m 以内的节点合并成同一个节点。
  */
-const SNAP_M = Number(opt('snap-m', '15'));
-const CELL = 0.0002; // 哈希格边长（约 15~22 m）
+// SNAP_M / CELL 也来自共享模块（可用 --snap-m 覆盖，但默认值不再各写一份）
+const SNAP = Number(opt('snap-m', String(SNAP_M)));
 const buckets = new Map();
 const nodes = [];
 const nodeOf = (lon, lat) => {
@@ -67,7 +62,7 @@ const nodeOf = (lon, lat) => {
       const b = buckets.get(`${ci + di},${cj + dj}`);
       if (!b) continue;
       for (const k of b) {
-        if (hav(nodes[k], [lon, lat]) <= SNAP_M) return k;
+        if (hav(nodes[k], [lon, lat]) <= SNAP) return k;
       }
     }
   }
@@ -94,7 +89,7 @@ for (const f of roads) {
     addEdge(a, b, hav(cs[i - 1], cs[i]) / mps);
   }
 }
-console.log(`[可达性] 路网图：${nodes.length} 节点 / ${adj.reduce((a, e) => a + (e ? e.length : 0), 0) / 2} 边（节点吸附容差 ${SNAP_M} m）`);
+console.log(`[可达性] 路网图：${nodes.length} 节点 / ${adj.reduce((a, e) => a + (e ? e.length : 0), 0) / 2} 边（节点吸附容差 ${SNAP} m）`);
 // 连通分量体检：碎片太多说明吸附不够或数据本身断链，必须报出来（否则"不可达"会被误读成真实盲区）
 {
   const seen = new Uint8Array(nodes.length);

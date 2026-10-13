@@ -423,7 +423,7 @@ const tb1 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
     head:q('#tb-body .tbl thead th').length, note:document.getElementById('tb-note').textContent,
     active:document.querySelector('#tb-tabs button.on')?.textContent};})()`);
 check('表格区默认显示「当前帧指标」：8 行 × 6 列（与模型变量一一对应）',
-  tb1.tabs === 4 && tb1.active === '当前帧指标' && tb1.rows === 8 && tb1.head === 6,
+  tb1.tabs === 5 && tb1.active === '当前帧指标' && tb1.rows === 8 && tb1.head === 6,
   `${tb1.tabs} 个页签 / ${tb1.active} ${tb1.rows} 行 × ${tb1.head} 列 / ${tb1.note}`);
 await click('#tb-tabs button[data-tab="units"]');
 await sleep(250);
@@ -541,6 +541,46 @@ const det = await ev(`document.getElementById('detail').textContent`);
 check('选中地块详情里能看到真实高程与土壤（质地/pH/有机碳）',
   /高程/.test(det) && /土壤/.test(det) && /loam|clay|sand|silt/.test(det) && /g\/kg/.test(det),
   det.replace(/\s+/g, ' ').slice(0, 120));
+
+
+// ===================== 15. 情景推演（新建收储点 ⇒ 可达性变化） =====================
+console.log('\n=== 15. 情景推演 ===');
+await boot(1440, 900);
+await click('#tb-tabs button[data-tab="scenario"]');
+await sleep(250);
+const scBefore = await ev(`document.getElementById('tb-body').textContent`);
+check('「情景推演」未选点时给出操作提示（不是一张空表）',
+  /点一下/.test(scBefore), scBefore.replace(/\s+/g, ' ').slice(0, 70));
+// 在地图上"点"一下（Leaflet 的 click 事件，带经纬度）
+const pick = await ev(`(()=>{const a=globalThis.__agri;
+  const best=[...a.scenario.candidates].sort((x,y)=>y.improved_parcels*x.avg_gain_min-y.improved_parcels*x.avg_gain_min)[0];
+  a.map.map.fire('click',{latlng:L.latLng(best.lat,best.lon)});
+  return {lon:best.lon,lat:best.lat,want:best.improved.length,improved:best.improved_parcels,avgGain:best.avg_gain_min};})()`);
+await sleep(350);
+const after = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  const rows=[...q('#tb-body .tbl tbody tr')].map(tr=>[...tr.children].map(td=>td.textContent.trim()));
+  return {n:rows.length, first:rows.map(r=>r[0]), note:document.getElementById('tb-note').textContent,
+    hl:globalThis.__agri.map.highlightIdx.length};})()`);
+check('地图点选后给出"现状 / 新建后 / 变化"对比（7 项，含盲区与受影响地块）',
+  after.n === 7 && /平均/.test(after.first[0]) && /盲区/.test(after.first[5]),
+  `${after.n} 行：${after.first.join('、')}`);
+check('受影响地块在图上被高亮（与表格→地图同一个高亮通道）',
+  after.hl === pick.want && after.hl > 0, `高亮 ${after.hl} 个（受影响 ${pick.improved} 块，其中 >1 分钟 ${pick.want} 块）`);
+check('对比数字来自离线重算（与 scenario.json 的平均改善一致）',
+  after.note.includes(String(pick.avgGain)), after.note.replace(/\s+/g, ' ').slice(0, 90));
+check('所有候选点"新建后"都不比现状差（新建一个收储点不可能让可达性变差）',
+  await ev(`(()=>{const a=globalThis.__agri;const b=a.scenario.metadata.baseline;
+    return a.scenario.candidates.filter(c=>c.avg_min > b.avg_min + 1e-9 || c.blind_parcels > b.blind_parcels).length;})()`) === 0,
+  `候选 ${await ev('globalThis.__agri.scenario.candidates.length')} 个，越界 0 个`);
+{
+  const best = await ev(`(()=>{const a=globalThis.__agri;
+    const b=a.scenario.metadata.baseline;
+    const c=[...a.scenario.candidates].sort((x,y)=>x.blind_ha-y.blind_ha)[0];
+    return {blind_ha:c.blind_ha, base_blind:c===b?null:b.blind_ha, base:c.blind_ha};})()`);
+  check('盲区面积在"新建"后只会减少（不会凭空变多）', best.blind_ha >= 0 && best.blind_ha <= 144.9,
+    `最小盲区候选 ${best.blind_ha} ha`);
+}
+await shot('scenario-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

@@ -251,5 +251,27 @@ const g1 = genWeather({ seed: 5, start: '20250101', end: '20250301' });
 const g2 = genWeather({ seed: 5, start: '20250101', end: '20250301' });
 check('生成气象同样确定性', JSON.stringify(Array.from(g1.vars.T2M)) === JSON.stringify(Array.from(g2.vars.T2M)), '');
 
+// ===================== 工程完整性（能失败） =====================
+section('⑨ 工程完整性');
+{
+  // 这条判据来自两个真事故：① package.json 被改成非法 JSON（字符串换行拼接）；
+  // ② 文档里引用了**不存在的脚本**（我把 build-hist.mjs 当成了真有的东西）。
+  let pkg = null;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  } catch (err) {
+    check('package.json 是合法 JSON', false, err.message);
+  }
+  if (pkg) check('package.json 是合法 JSON', true, `${Object.keys(pkg.scripts ?? {}).length} 个脚本`);
+  const missing = [];
+  for (const [name, cmd] of Object.entries(pkg?.scripts ?? {})) {
+    for (const m of String(cmd).matchAll(/node\s+([\w./\\-]+\.mjs)/g)) {
+      const f = path.join(ROOT, m[1]);
+      if (!fs.existsSync(f)) missing.push(`${name} → ${m[1]}`);
+    }
+  }
+  check('npm 脚本引用的文件都真实存在（防止文档/脚本里出现"幽灵文件"）', missing.length === 0, missing.join(', ') || '全部存在');
+}
+
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 if (fail > 0) process.exitCode = 1;

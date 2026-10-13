@@ -31,6 +31,7 @@ const TABLE_TABS = [
   ['units', '经营单元'],
   ['crops', '作物与收成'],
   ['alarms', '告警明细'],
+  ['scenario', '情景推演'],
 ];
 
 /**
@@ -405,6 +406,17 @@ export class UI {
    * 表格数据由 `main.js` 算好传进来 —— **UI 不做聚合**。
    * 这样"表里的数"和"屏上的数"必然同源；两边各算一遍是这类界面最常见的对不上账。
    */
+  /**
+   * 情景推演结果（`main.js` 在地图上点选后传进来）。
+   * 数据来自离线预计算的 `data/scenario.json`：每个候选点都已用**真实路网**重算过全网时间，
+   * 浏览器只做"最近候选点的查表"，不在前端跑 Dijkstra（见 `tools/scenario.mjs` 的说明）。
+   */
+  setScenario(sc) {
+    this.scenario = sc;
+    this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
+    this.renderTables();
+  }
+
   setTables(tables) {
     const sig = `${this.day}|${tables?.sig ?? ''}`;
     if (this.lastTablesSig === sig) return;
@@ -489,6 +501,33 @@ export class UI {
           { text: c.ref ? nm(c.ref, 1) : '—', num: true, cls: 'dim' }],
       }));
       note = `按作物聚合（收成粒度到季）· 点一行可在图上高亮 · ${list.length} 类`;
+    } else if (this.activeTable === 'scenario') {
+      const sc = this.scenario;
+      if (!sc) {
+        cols = [{ label: '情景推演' }];
+        rows = [{ cells: [{ text: '在地图上点一下，选一个拟建收储点的位置 → 这里给出"新建前/后"的可达性对比（真实路网重算）', cls: 'dim' }] }];
+        note = '未选点（在地图上单击即可）';
+      } else {
+        const { base, cand, meta } = sc;
+        const delta = (a, b, digits = 2) => {
+          const v = b - a;
+          if (Math.abs(v) < 1e-9) return '<span class="dim">持平</span>';
+          // 这几项都是**越小越好**（时间、盲区块数、盲区面积）
+          return `<span class="${v < 0 ? 'ok' : 'bad'}">${v > 0 ? '+' : ''}${v.toFixed(digits)}</span>`;
+        };
+        cols = [{ label: '指标' }, { label: '现状', num: true }, { label: '新建后', num: true }, { label: '变化', num: true }, { label: '说明' }];
+        rows = [
+          ['平均到收储点', base.avg_min, cand.avg_min, delta(base.avg_min, cand.avg_min), '分钟（全体地块平均）'],
+          ['中位 p50', base.p50_min, cand.p50_min, delta(base.p50_min, cand.p50_min), '分钟'],
+          ['p90', base.p90_min, cand.p90_min, delta(base.p90_min, cand.p90_min), '分钟（尾部典型水平）'],
+          ['最远', base.max_min, cand.max_min, delta(base.max_min, cand.max_min), '分钟（最不利地块）'],
+          ['盲区地块', base.blind_parcels, cand.blind_parcels, delta(base.blind_parcels, cand.blind_parcels, 0), `块（> ${meta.blind_threshold_min} 分钟，阈值为现状 p90）`],
+          ['盲区面积', base.blind_ha, cand.blind_ha, delta(base.blind_ha, cand.blind_ha, 1), 'ha'],
+          ['受影响地块', '—', cand.improved_parcels, '', `块 / ${cand.improved_ha} ha（节省 > 0.05 分钟）`],
+        ].map((r) => ({ cells: [r[0], { text: String(r[1]), num: true }, { text: String(r[2]), num: true },
+          { text: String(r[3]), num: true }, { text: r[4], cls: 'dim small' }] }));
+        note = `候选点 ${cand.lon.toFixed(5)}, ${cand.lat.toFixed(5)} · 平均可省 ${cand.avg_gain_min} 分钟/块 · 真实路网重算（离线预计算，${meta.step_m} m 网格）`;
+      }
     } else {
       const list = this.alarmsFor(d);
       cols = [{ label: '等级' }, { label: '事项' }, { label: '说明' }, { label: '涉及地块（点击定位）' }];
