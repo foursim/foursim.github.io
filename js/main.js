@@ -392,6 +392,28 @@ try {
    * 重活（每个候选点一次单源 Dijkstra）已经在 `tools/scenario.mjs` 离线算完，
    * 这里只是**查表 + 高亮受影响地块** —— 所以点下去是瞬时的，页面也不背 Dijkstra 的实现。
    */
+  /**
+   * 表格 → 图 的高亮入口（**切换式**）：
+   * - 点同一组第二次 ⇒ **取消高亮**（"无法取消"这件事不能存在）；
+   * - 点另一组 ⇒ 先取消上一组（`map.highlight` 内部已先 clear），只保留新的一组；
+   * - 状态写在表格右上角（`ui.setHighlightInfo`），并有「取消高亮」按钮兜底。
+   */
+  let hlKey = null;
+  function highlightGroup(key, indices, label) {
+    if (hlKey === key) {
+      map.clearHighlight();
+      hlKey = null;
+      ui.setHighlightInfo(null);
+      ui.toast('已取消高亮');
+      return 0;
+    }
+    const n = map.highlight(indices);
+    hlKey = n ? key : null;
+    ui.setHighlightInfo(n ? `${label}（${n} 块）` : null);
+    if (!n) ui.toast('这一组没有地块可高亮', 'warn');
+    return n;
+  }
+
   function pickScenario(latlng) {
     let best = null;
     let bd = Infinity;
@@ -402,6 +424,8 @@ try {
     if (!best) return;
     ui.setScenario({ base: scenarioFile.metadata.baseline, cand: best, meta: scenarioFile.metadata });
     const n = map.highlight(best.improved.map(([i]) => i));
+    hlKey = n ? `scenario:${best.lon},${best.lat}` : null;
+    ui.setHighlightInfo(n ? `拟建点受影响地块（${n} 块）` : null);
     ui.toast(`拟建点：平均可省 ${best.avg_gain_min} 分钟/块，高亮 ${n} 个受影响地块`, 'ok');
   }
 
@@ -446,13 +470,20 @@ try {
        */
       onHighlightUnit: (unitId) => {
         const idx = rows.filter((r) => r.unit_id === unitId).map((r) => r.i);
-        const n = map.highlight(idx);
-        ui.toast(`${unitId}：${n} 个地块已高亮（图上蓝框）${n ? '' : ' —— 该单元没有地块？'}`, n ? 'ok' : 'warn');
+        const n = highlightGroup(`unit:${unitId}`, idx, `经营单元 ${unitId}`);
+        if (hlKey) ui.toast(`${unitId}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
       },
       onHighlightCrop: (cropCode) => {
         const idx = rows.filter((r) => (r.fallow ? 'FALLOW' : (r.crop ?? 'UNKNOWN')) === cropCode).map((r) => r.i);
-        const n = map.highlight(idx);
-        ui.toast(`${cropCode}：${n} 个地块已高亮`, n ? 'ok' : 'warn');
+        const n = highlightGroup(`crop:${cropCode}`, idx, `作物 ${cropCode}`);
+        if (hlKey) ui.toast(`${cropCode}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
+      },
+      /** 取消高亮（表格右上角按钮 / 切页签时静默调用） */
+      onClearHighlight: ({ silent = false } = {}) => {
+        const n = map.clearHighlight();
+        hlKey = null;
+        ui.setHighlightInfo(null);
+        if (!silent) ui.toast(n ? `已取消 ${n} 块的高亮` : '当前没有高亮');
       },
     },
   });

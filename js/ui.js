@@ -103,7 +103,7 @@ export class UI {
     const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-label', 'btn-play', 'speed-group',
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
-      'tb-tabs', 'tb-body', 'tb-note', 'btn-export-csv', 'btn-export-png'];
+      'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-export-csv', 'btn-export-png'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -154,6 +154,8 @@ export class UI {
     refs['tb-tabs'].addEventListener('click', (ev) => {
       const b = pick(ev, 'button[data-tab]');
       if (!b) return;
+      // 换页签先清掉上一次的高亮：上一页选的组与这一页无关，留着就是"无关联的高亮"
+      if (this.activeTable !== b.dataset.tab) actions.onClearHighlight?.({ silent: true });
       this.activeTable = b.dataset.tab;
       this.renderTables();
     });
@@ -172,6 +174,8 @@ export class UI {
       const crop = pick(ev, '[data-crop]');
       if (crop) actions.onHighlightCrop?.(crop.dataset.crop);
     });
+    // 高亮的状态与取消：状态写在按钮旁边（"图上这一片蓝框是什么"必须一眼能看出、且能一键清掉）
+    refs['btn-clear-hl'].addEventListener('click', () => actions.onClearHighlight?.());
     refs['btn-export-csv'].addEventListener('click', () => actions.onExportCsv?.());
     refs['btn-export-png'].addEventListener('click', () => actions.onExportPng?.());
     refs['btn-help'].addEventListener('click', () => this.openHelp());
@@ -411,6 +415,18 @@ export class UI {
    * 数据来自离线预计算的 `data/scenario.json`：每个候选点都已用**真实路网**重算过全网时间，
    * 浏览器只做"最近候选点的查表"，不在前端跑 Dijkstra（见 `tools/scenario.mjs` 的说明）。
    */
+  /** 高亮状态文案（`null` = 当前没有高亮） */
+  setHighlightInfo(text) {
+    if (this.refs['hl-note']) this.refs['hl-note'].textContent = text ?? '';
+    if (this.refs['btn-clear-hl']) {
+      const on = !!text;
+      this.refs['btn-clear-hl'].classList.toggle('dim', !on);
+      this.refs['btn-clear-hl'].title = on
+        ? `取消高亮（当前：${text}）；也可以再点一次同一行`
+        : '当前没有高亮';
+    }
+  }
+
   setScenario(sc) {
     this.scenario = sc;
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）

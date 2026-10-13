@@ -44,8 +44,10 @@ export class AgriMap {
     this.day = 0;
     this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true,
       units: true, grids: false, zones: false, admin: true, villages: true };
-    /** 表格联动高亮：当前被高亮的地块 layer（下次高亮前要复原） */
+    /** 表格联动高亮：当前被高亮的地块 `{layer, feature}`（下次高亮前先复原） */
     this.highlighted = [];
+    /** 当前高亮的地块下标（外部/判据读它） */
+    this.highlightIdx = [];
 
     this.map = L.map(el, {
       zoomControl: true,
@@ -65,7 +67,7 @@ export class AgriMap {
         layer.on('tooltipopen', () => layer.setTooltipContent(this.tipFor(row)));
         layer.on('click', () => this.onSelect?.(row));
         layer.on('mouseover', () => layer.setStyle({ weight: 1.6, color: this.token.parcelHover }));
-        layer.on('mouseout', () => this.parcelLayer.resetStyle(layer));
+        layer.on('mouseout', () => this.restoreStyle(layer));
       },
     }).addTo(this.map);
 
@@ -263,6 +265,8 @@ export class AgriMap {
 
   refresh() {
     this.parcelLayer.setStyle((f) => this.styleFor(f));
+    // 高亮是"用户当前的查看选择"，不该被"换一天/换指标"的刷新抹掉：刷新后补回来
+    for (const { layer } of this.highlighted) layer.setStyle(this.hlStyle());
     this.drawTemp();
   }
 
@@ -304,22 +308,59 @@ export class AgriMap {
    *
    * 为什么要有这个方向：表格能按"单元/作物"聚合，而地图是按地块画的 —— 点一行表格如果图上没反应，
    * 看的人就得自己去猜"这个单元在地图哪儿"。这里把该组地块**加粗描边 + 换成强调色**并框到视野里。
-   * 复原用 `resetStyle`（Leaflet 会按创建时的 style 回调重算），所以不会留下脏样式。
+   * 复原走我们自己的 `styleFor(feature)`（**不是** Leaflet 的 `resetStyle`，见 `restoreStyle` 的说明）。
+   */
+  /**
+   * 把**一个**地块的样式按"当前状态"复原：高亮中的保持高亮，其余按当前变量/日期重算。
+   *
+   * ⚠️ 别用 `parcelLayer.resetStyle(layer)`（Leaflet 1.1.1 会把 `options.style` 这个**函数**
+   * 拷进 `layer.options`，于是地块拿到默认样式 = 默认蓝 + 粗线，鼠标一划过就"回不去"了）。
+   */
+  restoreStyle(layer) {
+    const isHl = this.highlighted.some((h) => h.layer === layer);
+    layer.setStyle(isHl ? this.hlStyle() : this.styleFor(layer.feature));
+  }
+
+  /** 高亮样式（一处定义，`refresh()` 复用） */
+  hlStyle() {
+    return { weight: 2.6, color: this.token.parcelHover, opacity: 1, fillOpacity: 0.95 };
+  }
+
+  /**
+   * **取消高亮**：把每块地按**当前变量/日期**重新算一遍样式。
+   *
+   * ⚠️ 为什么不能用 Leaflet 的 `resetStyle()`：本仓库打包的是 **Leaflet 1.1.1**，它的实现是
+   * `layer.options = Util.extend({}, this.options.style)` —— 而我们的 `style` 是个**函数**，
+   * 于是复原后的地块拿到的是**默认样式**（Leaflet 默认蓝 + 粗线），看起来就是"高亮永远取消不掉、
+   * 而且越点越多一片蓝"。用自己的 `styleFor(feature)` 复原才是精确的（与 `refresh()` 同源）。
+   */
+  clearHighlight() {
+    const n = this.highlighted.length;
+    for (const { layer, feature } of this.highlighted) layer.setStyle(this.styleFor(feature));
+    this.highlighted = [];
+    this.highlightIdx = [];
+    return n;
+  }
+
+  /**
+   * 高亮一组地块（表格 → 图）。
+   *
+   * **每次调用先清上一次** —— 两次点击之间不能叠加：上一组的"高亮"必须真的消失，
+   * 否则图上会同时挂着两组、看着像"高亮越点越多"。
    */
   highlight(indices, { fit = true, maxFit = 400 } = {}) {
-    for (const l of this.highlighted) this.parcelLayer.resetStyle(l);
-    this.highlighted = [];
+    this.clearHighlight();
     const layers = this.parcelLayer.getLayers();
     for (const i of indices ?? []) {
       const l = layers[i];
       if (!l) continue;
-      l.setStyle({ weight: 2.6, color: this.token.parcelHover, opacity: 1, fillOpacity: 0.95 });
+      l.setStyle(this.hlStyle());
       l.bringToFront?.();
-      this.highlighted.push(l);
+      this.highlighted.push({ layer: l, feature: l.feature });
     }
     this.highlightIdx = [...(indices ?? [])];
     if (fit && this.highlighted.length && this.highlighted.length <= maxFit) {
-      const g = L.featureGroup(this.highlighted);
+      const g = L.featureGroup(this.highlighted.map((h) => h.layer));
       this.map.fitBounds(g.getBounds(), { padding: [60, 60], maxZoom: 16 });
     }
     return this.highlighted.length;

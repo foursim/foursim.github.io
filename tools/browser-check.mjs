@@ -582,6 +582,80 @@ check('所有候选点"新建后"都不比现状差（新建一个收储点不�
 }
 await shot('scenario-1440x900');
 
+
+// ===================== 16. 高亮的取消与切换（用户报的体验问题） =====================
+console.log('\n=== 16. 高亮的取消与切换 ===');
+await boot(1440, 900);
+// ⚠️ 必须先切到「经营单元」页签：表格是按页签渲染的，上一节结束时停在别的页签（没有 data-unit 行）
+await click('#tb-tabs button[data-tab="units"]');
+await sleep(250);
+const hxTwo = await ev(`(()=>{const a=globalThis.__agri;
+  const us=[...new Set(a.rows.map(r=>r.unit_id))];
+  return {a:us[0],b:us[1],na:a.rows.filter(r=>r.unit_id===us[0]).length,nb:a.rows.filter(r=>r.unit_id===us[1]).length};})()`);
+const HX_DEFAULT_BLUE = '#3388ff'; // Leaflet 默认描边色 —— 复原后若变成它，说明用错了 resetStyle
+const hx1 = await ev(`(()=>{const a=globalThis.__agri;
+  const idx=a.rows.filter(r=>r.unit_id==='${hxTwo.a}').map(r=>r.i);
+  const n=a.map.highlight(idx);
+  const l=a.map.highlighted[0].layer;
+  return {n,hl:a.map.highlighted.length,w:l.options.weight,c:l.options.color,
+    fill:l.options.fillColor, wantColor:a.map.styleFor(l.feature).color};})()`);
+check('高亮一组地块：描边加粗并换成强调色（不改填充色，保持变量着色）',
+  hx1.n === hxTwo.na && hx1.w > 2 && hx1.c !== HX_DEFAULT_BLUE && typeof hx1.fill === 'string' && hx1.fill.length > 0,
+  `${hxTwo.a}：${hx1.n} 块，描边 ${hx1.w}px/${hx1.c}`);
+// 点另一组：上一组必须**复原到变量色**，而不是 Leaflet 默认蓝（这正是"取消不掉"的根因）
+const hx2 = await ev(`(()=>{const a=globalThis.__agri;
+  const first=a.map.highlighted[0];
+  const idx=a.rows.filter(r=>r.unit_id==='${hxTwo.b}').map(r=>r.i);
+  const n=a.map.highlight(idx);
+  return {n,hl:a.map.highlighted.length,
+    fw:first.layer.options.weight, fc:first.layer.options.color,
+    wantColor:a.map.styleFor(first.feature).color, defaultBlue:${JSON.stringify(HX_DEFAULT_BLUE)}};})()`);
+check('点第二组时，第一组**先被取消**（复原到变量色，不是默认蓝、也不是叠加）',
+  hx2.hl === hxTwo.nb && hx2.fw < 1 && hx2.fc === hx2.wantColor && hx2.fc !== HX_DEFAULT_BLUE,
+  `上一组描边 ${hx2.fw}px/${hx2.fc}（变量色 ${hx2.wantColor}）· 现高亮 ${hx2.hl} 块`);
+// 鼠标划过再移开：必须回到变量色（同一类 resetStyle 坑）
+const hxHover = await ev(`(()=>{const a=globalThis.__agri;
+  const l=a.map.parcelLayer.getLayers().find(x=>!a.map.highlighted.some(h=>h.layer===x));
+  l.fire('mouseover'); const on=l.options.color;
+  l.fire('mouseout'); const off=l.options.color;
+  return {on, off, want:a.map.styleFor(l.feature).color};})()`);
+check('鼠标划过再移开，地块回到**变量色**（不是 Leaflet 默认蓝）',
+  hxHover.off === hxHover.want && hxHover.on !== hxHover.off && hxHover.off !== HX_DEFAULT_BLUE,
+  `划过 ${hxHover.on} → 移开 ${hxHover.off}（变量色 ${hxHover.want}）`);
+// 再点同一行 = 取消（必须走**两次真实点击**：直接调 map.highlight 会绕过 UI 的切换逻辑）
+const hxToggle = await ev(`(()=>{const a=globalThis.__agri;
+  const tr=[...document.querySelectorAll('#tb-body tr[data-unit]')].find(t=>t.dataset.unit==='${hxTwo.b}');
+  if(!tr) return {ok:false};
+  tr.click();
+  const on={n:a.map.highlightIdx.length, note:document.getElementById('hl-note').textContent};
+  tr.click();
+  const off={n:a.map.highlightIdx.length, note:document.getElementById('hl-note').textContent};
+  return {ok:true, on, off};})()`);
+check('**再点一次同一行 = 取消高亮**（切换式，不需要去找别的地方取消）',
+  hxToggle.ok && hxToggle.on.n > 0 && hxToggle.off.n === 0 && hxToggle.off.note === '',
+  `点第 1 次 ${hxToggle.on.n} 块（状态"${hxToggle.on.note}"）→ 点第 2 次 ${hxToggle.off.n} 块（状态"${hxToggle.off.note}"）`);
+
+// 「取消高亮」按钮
+const hxBtn = await ev(`(()=>{const a=globalThis.__agri;
+  const tr=[...document.querySelectorAll('#tb-body tr[data-unit]')].find(t=>t.dataset.unit==='${hxTwo.a}');
+  tr.click(); const afterClick=a.map.highlightIdx.length;
+  const noteClick=document.getElementById('hl-note').textContent;
+  document.getElementById('btn-clear-hl').click();
+  return {afterClick, noteClick, afterClear:a.map.highlightIdx.length, noteClear:document.getElementById('hl-note').textContent};})()`);
+check('「取消高亮」按钮能清掉高亮，且状态文案随之清空',
+  hxBtn.afterClick > 0 && hxBtn.afterClear === 0 && hxBtn.noteClick.length > 0 && hxBtn.noteClear === '',
+  `点行 → ${hxBtn.afterClick} 块（状态"${hxBtn.noteClick}"）→ 按钮 → ${hxBtn.afterClear} 块`);
+// 换页签：清掉上一次的高亮
+const hxTab = await ev(`(()=>{const a=globalThis.__agri;
+  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  const tr=document.querySelector('#tb-body tr[data-unit]'); tr.click();
+  const on=a.map.highlightIdx.length;
+  document.querySelector('#tb-tabs button[data-tab="crops"]').click();
+  return {on, off:a.map.highlightIdx.length, note:document.getElementById('hl-note').textContent};})()`);
+check('换页签时清掉上一次的高亮（上一页选的组与这一页无关）',
+  hxTab.on > 0 && hxTab.off === 0 && hxTab.note === '', `切页签前 ${hxTab.on} 块 → 后 ${hxTab.off} 块`);
+await shot('highlight-1440x900');
+
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
 ws.close();
