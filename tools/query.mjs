@@ -1,0 +1,665 @@
+#!/usr/bin/env node
+/**
+ * 透视与联合查询（`npm run query`）—— **纯 node、零依赖**。
+ *
+ * ## 为什么必须有这一层
+ *
+ * 星型模型的代价：事实表里**只有键**（`parcel_id` / `unit_id` / `crop_code`…），
+ * 想读一眼就得先把维度表连上；而"各单元逐旬进度""各网格各作物面积"这类问题，
+ * 本质是**透视**（行维 × 列维 × 度量 × 聚合）。这两件事以前只能靠人拿 Excel 手点，
+ * 于是"数字怎么来的"就说不清了 —— 这个工具把它们变成**可复现、可判据**的固定动作。
+ *
+ * ## 三个原语
+ *
+ * | 原语 | 作用 | 在这份数据上的例子 |
+ * |---|---|---|
+ * | `joinStar` | 事实表 ⟕ 维度表（**展开**外键，行数不变） | `fact_parcel_season` ⟕ `dim_crop` ⇒ 拿到 `yield_basis`（单产口径） |
+ * | `pivot` | 行维 × 列维 × 度量 × 聚合（sum/mean/count/min/max） | 单元 × 旬 ⇒ `progress_mean` 进度矩阵 |
+ * | `WHERE` | 跨字段多条件（**联合查询**的筛选形态） | 到收储点 > 12 分 且 有机碳 < 25 且 病级 ≥ 3 |
+ *
+ * ## 几条"不许糊过去"的规矩
+ *
+ * 1. **连接不许膨胀行数**：维度键在其表里必须唯一（判据查这个），否则一次 join 就把事实放大成多倍，
+ *    而外面看不出来 —— 这是数据分析里最经典的静默错误；
+ * 2. **外键不许有孤儿**：事实表里出现维度表里没有的键，说明导出两侧口径已经漂了（判据查这个）；
+ * 3. **单产不许跨口径平均**：`dim_crop.yield_basis` 分籽粒/鲜重/干花/干草/鲜果，把它们平均出来
+ *    是个没有意义的数 ⇒ 一个格子里混了口径就**标 `*` 并列出**，绝不静默出数（判据查这个）；
+ * 4. **透视要守恒**：`sum` 聚合的合计必须等于原列合计（判据查这个）。
+ *
+ * 用法：
+ *   npm run query                    # 跑全部预置查询，写 tables/query/ 并跑判据
+ *   npm run query -- --list          # 列出预置查询
+ *   npm run query -- --q q2          # 只跑一条（打印 + 写文件）
+ *   npm run query -- --join fact_unit_decade   # 看某个事实表连上维度后的列与样例
+ *   npm run query -- --check         # 只跑判据（供全量重跑用）
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+
+const arg = (k, d) => {
+  const i = process.argv.indexOf(`--${k}`);
+  return i > -1 ? process.argv[i + 1] : d;
+};
+const has = (k) => process.argv.includes(`--${k}`);
+const TABLES = arg('tables', 'tables');
+const OUT = arg('out', path.join(TABLES, 'query'));
+
+let pass = 0;
+let fail = 0;
+function check(label, ok, detail = '') {
+  if (ok) pass++;
+  else fail++;
+  console.log(`${ok ? '  [OK]  ' : '  [FAIL]'} ${label}${detail ? ` — ${detail}` : ''}`);
+}
+const round = (v, d = 2) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10 ** d) / 10 ** d : v);
+
+// ===================== CSV 读取 =====================
+
+/**
+ * 规范 CSV 解析（引号、转义双引号、字段内逗号与换行）。
+ *
+ * ⚠️ 不能用 `split(',')`：本项目的字段里真的含逗号（`dim_admin.scheme`、`crop_mix` 这类说明文本），
+ * 一 split 就整体错位，而且错位之后**行列数还对得上**（只是全挪了一位），最容易被忽略。
+ */
+function parseCsv(text) {
+  const rows = [];
+  let cur = [];
+  let val = '';
+  let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { val += '"'; i++; } else q = false;
+      } else val += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { cur.push(val); val = ''; }
+    else if (c === '\n') { cur.push(val); rows.push(cur); cur = []; val = ''; }
+    else if (c !== '\r') val += c;
+  }
+  if (val !== '' || cur.length) { cur.push(val); rows.push(cur); }
+  return rows.filter((r) => r.length > 1 || (r[0] ?? '') !== '');
+}
+
+/** 数据元字典：列 → { 类型/单位/中文名 }。数据元字典的第二次发挥：**查询结果也按它的口径解释** */
+function loadElementIndex() {
+  const idx = new Map();
+  const f = path.join(TABLES, 'dim_data_element.csv');
+  if (!fs.existsSync(f)) return idx;
+  const [h, ...rows] = parseCsv(fs.readFileSync(f, 'utf8'));
+  const c = (n) => h.indexOf(n);
+  for (const r of rows) idx.set(`${r[c('table_name')]}.${r[c('column_name')]}`, {
+    type: r[c('data_type')], uom: r[c('uom')], zh: r[c('name_zh')], note: r[c('note')],
+  });
+  return idx;
+}
+
+const ELEMENTS = loadElementIndex();
+
+/**
+ * 读全部表。数值列按数据元字典的 `data_type` 转数 ——
+ * ⚠️ 编码/标识列必须留文本：`09186` 转成数字会**吃掉前导零**（这个坑在导出侧踩过一次）。
+ */
+function loadTables(dir) {
+  const out = new Map();
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.csv'))) {
+    const name = f.replace(/\.csv$/, '');
+    const [head, ...rows] = parseCsv(fs.readFileSync(path.join(dir, f), 'utf8'));
+    const recs = rows.map((r) => {
+      const o = {};
+      head.forEach((h, i) => {
+        const meta = ELEMENTS.get(`${name}.${h}`);
+        const raw = r[i] ?? '';
+        const isNum = meta ? meta.type === 'number' : (!/(_code|_id)$/.test(h) && /^-?\d+(\.\d+)?$/.test(raw));
+        o[h] = raw === '' ? '' : (isNum ? Number(raw) : raw);
+      });
+      return o;
+    });
+    out.set(name, { columns: head, rows: recs, rawRows: rows });
+  }
+  return out;
+}
+
+// ===================== 原语：星型连接 =====================
+
+const ALIAS = { dim_parcel: 'p', dim_unit: 'u', dim_grid: 'g', dim_crop: 'c', dim_admin: 'a' };
+
+/**
+ * 事实表 ⟕ 维度表：按 `on` 把维度列**展开**进事实表（外键 → 可读列）。
+ *
+ * - 行数**必须不变**（维度键在其表里唯一；重复键会被本函数直接抛错，而不是静默放大）；
+ * - 重名列加别名前缀（`dim_parcel.area_ha` → `p_area_ha`），并把改名的事实**写进返回的 renamed**，
+ *   免得"列名怎么变了"变成口头传说。
+ */
+function joinStar(T, baseName, specs) {
+  const base = T.get(baseName);
+  if (!base) throw new Error(`没有这张表：${baseName}`);
+  const dims = specs.map((s) => {
+    const d = T.get(s.table);
+    if (!d) throw new Error(`连接目标不存在：${s.table}`);
+    const keys = d.rows.map((r) => r[s.on]);
+    if (new Set(keys).size !== keys.length) throw new Error(`${s.table}.${s.on} 有重复键 ⇒ 连接会放大行数，拒绝执行`);
+    return { ...s, alias: ALIAS[s.table] ?? s.table.replace(/^dim_/, '').charAt(0), map: new Map(d.rows.map((r) => [r[s.on], r])) };
+  });
+  const existing = new Set(base.columns);
+  const renamed = [];
+  const pickCols = [];
+  for (const d of dims) {
+    for (const col of d.pick) {
+      const name = existing.has(col) ? `${d.alias}_${col}` : col;
+      if (name !== col) renamed.push(`${col}→${name}`);
+      existing.add(name);
+      pickCols.push({ name, from: col, d });
+    }
+  }
+  const columns = [...base.columns, ...pickCols.map((p) => p.name)];
+  const missing = new Map(); // 外键在维度表里找不到的（孤儿）
+  const rows = base.rows.map((r) => {
+    const o = { ...r };
+    for (const p of pickCols) {
+      const hit = p.d.map.get(r[p.d.on]);
+      if (!hit) {
+        missing.set(p.d.table, (missing.get(p.d.table) ?? 0) + 1);
+        o[p.name] = '';
+      } else o[p.name] = hit[p.from];
+    }
+    return o;
+  });
+  return { name: baseName, columns, rows, renamed, missing, specs };
+}
+
+/** 连接预设：每张事实表"读之前"该连哪些维度（星型模型的中心→辐条） */
+const STAR = {
+  fact_unit_decade: [
+    { table: 'dim_unit', on: 'unit_id', pick: ['unit_code', 'grid_id', 'dominant_crop', 'fallow_ha'] },
+    { table: 'dim_grid', on: 'grid_id', pick: ['grid_code', 'grid_m'] },
+  ],
+  fact_parcel_season: [
+    { table: 'dim_parcel', on: 'parcel_id', pick: ['parcel_code', 'unit_id', 'grid_id', 'area_ha', 'landuse', 'soil_texture', 'soil_organic_matter', 't_min_to_store'] },
+    { table: 'dim_crop', on: 'crop_code', pick: ['hierarchy_l1', 'yield_basis', 'yield_ref', 'base_temp_c'] },
+  ],
+  fact_zone: [
+    { table: 'dim_parcel', on: 'parcel_id', pick: ['parcel_code', 'unit_id', 'grid_id', 'area_ha', 'crop_name_zh', 'disease_level_max', 't_min_to_store', 'soil_organic_matter'] },
+  ],
+  dim_parcel: [
+    { table: 'dim_unit', on: 'unit_id', pick: ['unit_code', 'dominant_crop', 'n_parcels'] },
+    { table: 'dim_grid', on: 'grid_id', pick: ['grid_code', 'grid_m'] },
+    // 地块自带 admin_code（乡级）⇒ 一次连接把行政区划连上；再往上（县）走 dim_admin.parent_code，
+    // 所以"地块 → 单元 → 网格 → 乡 → 县"是一条**真链**，不是拿编码前缀拼字符串
+    { table: 'dim_admin', on: 'admin_code', pick: ['level', 'name', 'parent_code'] },
+  ],
+  fact_observation: [
+    { table: 'dim_variable', on: 'variable_code', pick: ['name_zh', 'uom', 'temporal_grain'] },
+  ],
+};
+
+/** 事实表 + 星型维度（`--join` 与预置查询都用它） */
+function star(T, baseName) {
+  const specs = STAR[baseName];
+  return specs ? joinStar(T, baseName, specs) : { name: baseName, columns: T.get(baseName).columns, rows: T.get(baseName).rows, renamed: [], missing: new Map(), specs: [] };
+}
+
+// ===================== 原语：透视 =====================
+
+const AGGS = {
+  sum: (v) => v.reduce((a, b) => a + b, 0),
+  mean: (v) => v.reduce((a, b) => a + b, 0) / v.length,
+  count: (v) => v.length,
+  min: (v) => Math.min(...v),
+  max: (v) => Math.max(...v),
+};
+
+/**
+ * 透视：行维 × 列维 × 度量 × 聚合 ⇒ 二维矩阵（含行/列合计）。
+ *
+ * 除矩阵外还返回：
+ * - `n`：每个格子的**样本数**（`mean` 只看均值不看样本数，是很容易骗人的）；
+ * - `flags`：格子上"口径混杂"之类的标记（见 `mixBy`），配 `notes` 说明；
+ * - `preserve`：合计值（供判据做**守恒**校验）。
+ */
+function pivot(rows, { rowDims, colDim, value, agg = 'mean', mixBy = null }) {
+  const fn = AGGS[agg];
+  if (!fn) throw new Error(`不支持的聚合：${agg}`);
+  const rowKeys = [];
+  const colKeys = [];
+  const cell = new Map();   // `${rKey}\u0000${cKey}` → [值]
+  const mix = new Map();    // 同上 → Set(mixBy 的取值)
+  for (const r of rows) {
+    const rk = rowDims.map((d) => String(r[d] ?? '')).join(' · ');
+    const ck = String(r[colDim] ?? '');
+    if (!rowKeys.includes(rk)) rowKeys.push(rk);
+    if (!colKeys.includes(ck)) colKeys.push(ck);
+    const k = `${rk}\u0000${ck}`;
+    const v = r[value];
+    if (v === '' || v === null || v === undefined || Number.isNaN(Number(v))) continue;
+    if (!cell.has(k)) cell.set(k, []);
+    cell.get(k).push(Number(v));
+    if (mixBy) {
+      if (!mix.has(k)) mix.set(k, new Set());
+      mix.get(k).add(String(r[mixBy] ?? ''));
+    }
+  }
+  // 角标：混了口径的格子不许静默出数
+  const flags = new Map();
+  const notes = [];
+  if (mixBy) {
+    for (const [k, set] of mix) {
+      const vals = [...set].filter((x) => x !== '');
+      if (vals.length > 1) {
+        flags.set(k, '*');
+        notes.push(`格子里混了口径（${mixBy}）：${vals.join(' / ')}`);
+      }
+    }
+  }
+  const matrix = rowKeys.map((rk) => colKeys.map((ck) => {
+    const v = cell.get(`${rk}\u0000${ck}`);
+    return v && v.length ? fn(v) : '';
+  }));
+  const rowTotals = rowKeys.map((rk) => {
+    const all = colKeys.flatMap((ck) => cell.get(`${rk}\u0000${ck}`) ?? []);
+    return all.length ? fn(all) : '';
+  });
+  const colTotals = colKeys.map((ck) => {
+    const all = rowKeys.flatMap((rk) => cell.get(`${rk}\u0000${ck}`) ?? []);
+    return all.length ? fn(all) : '';
+  });
+  const grandAll = [...cell.values()].flat();
+  return {
+    rowDims, colDim, value, agg, mixBy,
+    rowKeys, colKeys,
+    cells: (rk, ck) => cell.get(`${rk}\u0000${ck}`) ?? [],
+    matrix, rowTotals, colTotals,
+    grand: grandAll.length ? fn(grandAll) : '',
+    n: grandAll.length,
+    flags: (rk, ck) => flags.get(`${rk}\u0000${ck}`) ?? '',
+    notes: [...new Set(notes)],
+  };
+}
+
+/** 跨字段多条件筛选（联合查询的 WHERE）：`[['t_min_to_store','>',12], ['crop_name_zh','in',['冬小麦']]]` */
+function where(rows, conds) {
+  return rows.filter((r) => conds.every(([col, op, val]) => {
+    const x = r[col];
+    const nx = Number(x);
+    // ⚠️ 空值**不参与**数值比较：`Number('') === 0`，放着不管会把"没有这一列数据的行"算成命中
+    // （SQL 侧 NULL 比较结果是未知 ⇒ 不命中；两边口径必须一致，这条是交叉验证抓出来的）
+    if (x === '' || x === null || x === undefined || Number.isNaN(nx)) return false;
+    if (op === '>') return nx > val;
+    if (op === '>=') return nx >= val;
+    if (op === '<') return nx < val;
+    if (op === '<=') return nx <= val;
+    if (op === '=') return String(x) === String(val);
+    if (op === '!=') return String(x) !== String(val);
+    if (op === 'in') return val.includes(String(x));
+    if (op === 'notempty') return x !== '' && x !== null && x !== undefined;
+    throw new Error(`不支持的比较符：${op}`);
+  }));
+}
+
+// ===================== 预置查询（带名字的业务问题） =====================
+
+const PRESETS = [
+  {
+    id: 'q1',
+    title: '各作物 × 各年 的平均单产',
+    question: '哪些作物哪一年的单产高？行标签自带单产口径（**籽粒/鲜重/干花/干草/鲜果之间不能比大小**）',
+    build: (T) => {
+      const s = star(T, 'fact_parcel_season');
+      return {
+        kind: 'pivot', rows: s.rows, note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}`
+          + (s.renamed.length ? `（重名列加前缀：${s.renamed.join('、')}）` : ''),
+        // 口径（yield_basis）**进行维**：一个格子只可能是同一种口径 ⇒ 结构上就杜绝了"跨口径平均"
+        pivot: { rowDims: ['crop_name_zh', 'yield_basis'], colDim: 'season_year', value: 'yield_t_ha', agg: 'mean', mixBy: 'yield_basis' },
+        unit: 't/ha',
+      };
+    },
+  },
+  {
+    id: 'q2',
+    title: '各经营单元 × 各旬 的平均生长进度',
+    question: '哪个单元哪一旬落后？（62 单元 × 54 旬的进度矩阵）',
+    build: (T) => {
+      const s = star(T, 'fact_unit_decade');
+      return {
+        kind: 'pivot', rows: s.rows, unit: '0~1',
+        note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}`,
+        pivot: { rowDims: ['unit_id'], colDim: 'decade_key', value: 'progress_mean', agg: 'mean' },
+      };
+    },
+  },
+  {
+    id: 'q3',
+    title: '各网格 × 各作物 的面积',
+    question: '空间上各网格种了什么、各占多少（**长表转宽表**的典型）',
+    build: (T) => {
+      const s = star(T, 'dim_parcel');
+      return {
+        kind: 'pivot', rows: s.rows, unit: 'ha',
+        note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}`,
+        pivot: { rowDims: ['grid_id'], colDim: 'crop_name_zh', value: 'area_ha', agg: 'sum' },
+      };
+    },
+  },
+  {
+    id: 'q4',
+    title: '观测长表 → 宽表（日期 × 变量）',
+    question: '区域逐日的 8 个监测变量，一张宽表看全（原来在事实表里是长表）',
+    build: (T) => {
+      const s = star(T, 'fact_observation');
+      return {
+        kind: 'pivot', rows: s.rows, unit: '见变量单位',
+        note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}（变量单位随行携带，宽表混合单位，看数请对照 dim_variable）`,
+        pivot: { rowDims: ['phenomenon_time'], colDim: 'variable_code', value: 'result_value', agg: 'mean' },
+      };
+    },
+  },
+  {
+    id: 'q5',
+    title: '联合筛选：运距远 + 有机碳低 + 病级高的地块',
+    question: '哪些地块同时"离收储点远、土壤有机碳低、病害重"？（阈值取实测分位数：运距 > 7 分≈p90、有机碳 < 21 g/kg≈p50、病级 ≥ 3）',
+    build: (T) => {
+      const s = star(T, 'dim_parcel');
+      /*
+       * 阈值为什么是 7 分 / 21 g/kg：**按实测分位数选**，不是拍脑袋。
+       * 实测运距 p90 = 7.7 分、中位 4.4 分、**最大只有 11.8 分** —— dim_variable 里那条 "> 12 min"
+       * 的治理告警在本演示区**永远不会触发**（阈值定在数据范围之外，这种"看着有、其实永不触发"的告警
+       * 最容易被当成已有能力）。所以这里按分位数问一个**真能选出东西**的问题。
+       */
+      const hit = where(s.rows, [
+        ['t_min_to_store', '>', 7],
+        ['soil_organic_matter', '<', 21],
+        ['disease_level_max', '>=', 3],
+      ]);
+      return {
+        kind: 'list', rows: hit, unit: '—',
+        note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}；条件：到收储点 >7 分（≈p90；治理阈值 12 分在本区从未触发）∧ 有机碳 <21 g/kg（≈p50）∧ 病级 ≥3`,
+        listCols: ['parcel_id', 'parcel_code', 'crop_name_zh', 'area_ha', 't_min_to_store', 'soil_organic_matter', 'disease_level_max', 'unit_code', 'grid_code'],
+      };
+    },
+  },
+  {
+    id: 'q6',
+    title: '四层空间钻取链（行政区划 → 网格 → 单元 → 地块）',
+    question: '每个行政区划下有多少网格/单元/地块、多少面积（层级完整性一次看清）',
+    build: (T) => {
+      const s = star(T, 'dim_parcel');
+      const agg = new Map();
+      for (const r of s.rows) {
+        const k = `${r.admin_code} · ${r.name ?? ''}`;
+        if (!agg.has(k)) agg.set(k, { code: r.admin_code, name: r.name ?? '', parent: r.parent_code ?? '', grids: new Set(), units: new Set(), parcels: 0, area: 0 });
+        const a = agg.get(k);
+        a.grids.add(r.grid_id);
+        a.units.add(r.unit_id);
+        a.parcels += 1;
+        a.area += Number(r.area_ha) || 0;
+      }
+      // 再上溯一级（Kreis）：链是"地块 → 单元 → 网格 → 乡 → 县"，两级都要看得见；
+      // 县名从 dim_admin 按 parent_code 查（不猜、不拼字符串）
+      const nameOf = new Map((T.get('dim_admin')?.rows ?? []).map((r) => [r.admin_code, r.name]));
+      const up = new Map();
+      for (const a of agg.values()) {
+        const k = a.parent || '（无上级）';
+        if (!up.has(k)) up.set(k, { grids: new Set(), units: new Set(), parcels: 0, area: 0 });
+        const u = up.get(k);
+        for (const g of a.grids) u.grids.add(g);
+        for (const x of a.units) u.units.add(x);
+        u.parcels += a.parcels;
+        u.area += a.area;
+      }
+      const rows = [
+        ...[...agg.values()].map((a) => ({
+          level: 'Gemeinde', admin_code: a.code, admin_name: a.name, parent_code: a.parent,
+          n_grids: a.grids.size, n_units: a.units.size, n_parcels: a.parcels, area_ha: round(a.area, 1),
+        })),
+        ...[...up.entries()].map(([code, u]) => ({
+          level: 'Kreis', admin_code: code, admin_name: nameOf.get(code) ?? '', parent_code: '',
+          n_grids: u.grids.size, n_units: u.units.size, n_parcels: u.parcels, area_ha: round(u.area, 1),
+        })),
+      ];
+      return {
+        kind: 'list', rows, unit: '—',
+        note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}（逐层去重计数）`,
+        listCols: ['level', 'admin_code', 'admin_name', 'parent_code', 'n_grids', 'n_units', 'n_parcels', 'area_ha'],
+      };
+    },
+  },
+  {
+    id: 'q7',
+    title: '管理分区 × 作物 的地块数与面积',
+    question: '分区分得对不对：同一作物在不同分区是否真有差异（分区建立在模拟属性上，见 dim_parcel）',
+    build: (T) => {
+      const z = T.get('fact_zone');
+      const p = T.get('dim_parcel');
+      const byId = new Map(p.rows.map((r) => [r.parcel_id, r]));
+      const rows = z.rows.map((r) => ({ ...r, crop_name_zh: byId.get(r.parcel_id)?.crop_name_zh ?? '', unit_id: byId.get(r.parcel_id)?.unit_id ?? '' }));
+      return {
+        kind: 'pivot', rows, unit: 'ha',
+        note: 'fact_zone ⟕ dim_parcel（取作物名，便于读分区结构）',
+        pivot: { rowDims: ['zone_code'], colDim: 'crop_name_zh', value: 'area_ha_est', agg: 'sum' },
+      };
+    },
+  },
+];
+
+// ===================== 输出 =====================
+
+const mdNum = (v) => (typeof v === 'number' ? String(round(v, 3)) : String(v ?? ''));
+
+function writeWideCsv(name, res) {
+  const cols = res.rowDims.map((d) => d);
+  const lines = [[...cols, ...res.colKeys, '合计'].join(',')];
+  res.rowKeys.forEach((rk, ri) => {
+    const cells = res.matrix[ri].map((v, ci) => `${mdNum(v)}${res.flags(rk, res.colKeys[ci])}`);
+    lines.push([rk, ...cells, mdNum(res.rowTotals[ri])].map((x) => (String(x).includes(',') ? `"${x}"` : x)).join(','));
+  });
+  lines.push(['合计', ...res.colTotals.map(mdNum), mdNum(res.grand)].map((x) => (String(x).includes(',') ? `"${x}"` : x)).join(','));
+  const f = path.join(OUT, `${name}.csv`);
+  fs.writeFileSync(f, `${lines.join('\n')}\n`, 'utf8');
+  return { file: f, cols: res.colKeys.length, rows: res.rowKeys.length };
+}
+
+function writeListCsv(name, cols, rows) {
+  const lines = [cols.join(',')];
+  for (const r of rows) lines.push(cols.map((c) => { const v = r[c] ?? ''; return String(v).includes(',') ? `"${v}"` : v; }).join(','));
+  const f = path.join(OUT, `${name}.csv`);
+  fs.writeFileSync(f, `${lines.join('\n')}\n`, 'utf8');
+  return { file: f, rows: rows.length };
+}
+
+/** 预览用的 Markdown 片段（大矩阵只截前几行几列 + 说明"完整见 CSV"） */
+function mdPreview(res, { maxRows = 8, maxCols = 6 } = {}) {
+  const cols = res.colKeys.slice(0, maxCols);
+  const head = `| ${res.rowDims.join(' · ')} | ${cols.join(' | ')} |${res.colKeys.length > maxCols ? ' … |' : ''} 合计 |`;
+  const sep = `|${'---|'.repeat(cols.length + 2)}${res.colKeys.length > maxCols ? '---|' : ''}`;
+  const body = res.rowKeys.slice(0, maxRows).map((rk, ri) => {
+    const cells = cols.map((ck) => {
+      const ci = res.colKeys.indexOf(ck);
+      return `${mdNum(res.matrix[ri][ci])}${res.flags(rk, ck)}`;
+    });
+    return `| ${rk} | ${cells.join(' | ')} |${res.colKeys.length > maxCols ? ' … |' : ''} ${mdNum(res.rowTotals[ri])} |`;
+  });
+  const clipped = res.rowKeys.length > maxRows || res.colKeys.length > maxCols
+    ? `\n\n> ${res.rowKeys.length} 行 × ${res.colKeys.length} 列，此处只截 ${Math.min(maxRows, res.rowKeys.length)} × ${Math.min(maxCols, res.colKeys.length)}；完整见 \`${res.csvFile}\`。`
+    : '';
+  return [head, sep, ...body].join('\n') + clipped;
+}
+
+// ===================== 主流程 =====================
+
+const T = loadTables(TABLES);
+console.log(`读取 ${TABLES}：${T.size} 张表、${[...T.values()].reduce((a, t) => a + t.rows.length, 0)} 行`);
+
+if (has('list')) {
+  console.log('\n预置查询：');
+  for (const p of PRESETS) console.log(`  ${p.id}  ${p.title}\n       ${p.question}`);
+  process.exit(0);
+}
+
+if (arg('join')) {
+  const base = arg('join');
+  const s = star(T, base);
+  console.log(`\n${base} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ') || '（无预设连接）'}`);
+  console.log(`列（${s.columns.length}）：${s.columns.join(', ')}`);
+  if (s.renamed.length) console.log(`重名列已加前缀：${s.renamed.join('、')}`);
+  console.log(`样例：${JSON.stringify(s.rows[0]).slice(0, 400)}`);
+  process.exit(0);
+}
+
+const only = arg('q');
+const wantCheckOnly = has('check');
+fs.mkdirSync(OUT, { recursive: true });
+
+const results = [];
+if (!wantCheckOnly || only) {
+  for (const p of PRESETS) {
+    if (only && p.id !== only) continue;
+    const spec = p.build(T);
+    let res;
+    if (spec.kind === 'pivot') {
+      const pv = pivot(spec.rows, spec.pivot);
+      pv.csvFile = path.relative(process.cwd(), path.join(OUT, `${p.id}_${p.title.replace(/[^\w\u4e00-\u9fa5]+/g, '_')}.csv`));
+      const info = writeWideCsv(`${p.id}_${p.title.replace(/[^\w\u4e00-\u9fa5]+/g, '_')}`, pv);
+      res = { id: p.id, title: p.title, question: p.question, kind: 'pivot', pv, info, spec, unit: spec.unit };
+      console.log(`\n[${p.id}] ${p.title}\n  ${spec.note}\n  ${pv.rowKeys.length} 行 × ${pv.colKeys.length} 列（${pv.agg} ${pv.value}，样本 ${pv.n}）`
+        + (pv.notes.length ? `\n  ⚠️ ${pv.notes.slice(0, 2).join('；')}` : ''));
+    } else {
+      const info = writeListCsv(`${p.id}_${p.title.replace(/[^\w\u4e00-\u9fa5]+/g, '_')}`, spec.listCols, spec.rows);
+      res = { id: p.id, title: p.title, question: p.question, kind: 'list', spec, info, unit: spec.unit };
+      console.log(`\n[${p.id}] ${p.title}\n  ${spec.note}\n  命中 ${spec.rows.length} 行`);
+    }
+    results.push(res);
+  }
+}
+
+// ===================== Markdown 汇总 =====================
+
+if (results.length) {
+  const md = [
+    '# 透视与联合查询结果', '',
+    `由 \`npm run query\` 生成（**纯 node、零依赖**）；数据源：\`${TABLES}/*.csv\`（与 Excel 工作簿同一批表）。`, '',
+    '三个原语：**星型连接**（事实表 ⟕ 维度表，展开外键，行数不变）· **透视**（行维 × 列维 × 度量 × 聚合，含行/列合计）·',
+    '**联合筛选**（跨字段多条件）。规矩：连接不许膨胀行数、外键不许有孤儿、**单产不许跨口径平均**（混口径的格子标 `*`）、透视要守恒。', '',
+    '| 查询 | 类型 | 结果规模 | 说明 |', '|---|---|---|---|',
+    ...results.map((r) => `| ${r.id} ${r.title} | ${r.kind === 'pivot' ? `透视（${r.pv.agg} ${r.pv.value}）` : '联合筛选/汇总'} | ${r.kind === 'pivot' ? `${r.pv.rowKeys.length} × ${r.pv.colKeys.length}` : `${r.spec.rows.length} 行`} | ${r.question} |`),
+    '',
+  ];
+  for (const r of results) {
+    md.push(`## ${r.id} ${r.title}`, '', `**业务问题**：${r.question}`, '', `**口径**：${r.spec.note}`, '');
+    if (r.kind === 'pivot') {
+      md.push(mdPreview({ ...r.pv, csvFile: r.info.file.replace(/\\/g, '/').replace(/^.*?tables\//, 'tables/') }), '');
+      if (r.pv.notes.length) md.push(`> ⚠️ ${r.pv.notes.slice(0, 3).join('；')}${r.pv.notes.length > 3 ? `（共 ${r.pv.notes.length} 个格子）` : ''}`, '');
+      md.push(`合计（${r.pv.agg}）：**${mdNum(r.pv.grand)}** ${r.unit ?? ''}`, '');
+    } else {
+      const cols = r.spec.listCols;
+      md.push(`| ${cols.join(' | ')} |`, `|${'---|'.repeat(cols.length)}`);
+      for (const row of r.spec.rows.slice(0, 10)) md.push(`| ${cols.map((c) => mdNum(row[c])).join(' | ')} |`);
+      if (r.spec.rows.length > 10) md.push('', `> 共 ${r.spec.rows.length} 行，完整见 \`${r.info.file.replace(/\\/g, '/').replace(/^.*?tables\//, 'tables/')}\``);
+      md.push('');
+    }
+  }
+  const f = path.join(OUT, '透视与联合查询.md');
+  fs.writeFileSync(f, `${md.join('\n')}\n`, 'utf8');
+  console.log(`\n[写出] ${f}（${results.length} 个查询的汇总，可直接阅读）`);
+}
+
+// ---------- 机器可读结果（供**另一套引擎**交叉验证；也不必再解 CSV） ----------
+const jsonOut = arg('json');
+if (jsonOut && results.length) {
+  const dump = {
+    engine: 'self',
+    generated_at: new Date().toISOString(),
+    tables: [...T.keys()],
+    queries: results.map((r) => (r.kind === 'pivot'
+      ? {
+        id: r.id, kind: 'pivot', rowDims: r.pv.rowDims, colDim: r.pv.colDim, value: r.pv.value, agg: r.pv.agg,
+        rowKeys: r.pv.rowKeys, colKeys: r.pv.colKeys, matrix: r.pv.matrix,
+        rowTotals: r.pv.rowTotals, colTotals: r.pv.colTotals, grand: r.pv.grand, n: r.pv.n,
+      }
+      : { id: r.id, kind: 'list', cols: r.spec.listCols, rows: r.spec.rows })),
+  };
+  fs.writeFileSync(path.resolve(jsonOut), JSON.stringify(dump), 'utf8');
+  console.log(`[写出] ${jsonOut}（机器可读结果，供交叉验证）`);
+}
+
+// ===================== 判据 =====================
+
+console.log('\n=== 透视与联合查询判据 ===');
+
+check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含逗号是这里最容易出的错）',
+  [...T.entries()].every(([, t]) => t.rawRows.every((r) => r.length === t.columns.length)),
+  `${T.size} 张表`);
+
+{
+  const bad = [];
+  for (const baseName of Object.keys(STAR)) {
+    if (!T.has(baseName)) { bad.push(`${baseName} 不存在`); continue; }
+    const before = T.get(baseName).rows.length;
+    const s = star(T, baseName);
+    if (s.rows.length !== before) bad.push(`${baseName}：${before} → ${s.rows.length} 行`);
+    if (s.missing.size) bad.push(`${baseName}：孤儿外键 ${[...s.missing.entries()].map(([k, v]) => `${k}×${v}`).join(',')}`);
+  }
+  check('星型连接**不膨胀行数**、且外键**无孤儿**（维度键唯一 + 事实表键全命中）',
+    bad.length === 0, bad.join('；') || `${Object.keys(STAR).length} 张事实/维度表逐条通过`);
+}
+
+{
+  const s = star(T, 'dim_parcel');
+  const n = s.rows.filter((r) => !r.unit_id || !r.grid_id || !r.admin_code || !r.name).length;
+  check('四层空间钻取链完整（地块 → 经营单元 → 统计网格 → 行政区划，无断链）',
+    n === 0, n ? `${n} 个地块断链` : `${s.rows.length} 个地块全部可逐层上溯`);
+}
+
+{
+  const p3 = PRESETS.find((p) => p.id === 'q3').build(T);
+  const pv = pivot(p3.rows, p3.pivot);
+  const sumCell = [...pv.matrix.flat()].reduce((a, b) => a + (Number(b) || 0), 0);
+  const sumSrc = p3.rows.reduce((a, r) => a + (Number(r.area_ha) || 0), 0);
+  check('透视**守恒**：单元格合计 == 原列合计（sum 聚合，不许有行掉在矩阵外）',
+    Math.abs(sumCell - sumSrc) < 0.5, `矩阵 ${round(sumCell, 1)} ha vs 原表 ${round(sumSrc, 1)} ha`);
+  check('透视的**行/列合计**与原表合计一致（两个方向都守恒）',
+    Math.abs(Number(pv.grand) - sumSrc) < 0.5 && Math.abs(Number(pv.rowTotals.reduce((a, b) => a + (Number(b) || 0), 0)) - sumSrc) < 0.5,
+    `总合计 ${round(Number(pv.grand), 1)} ha`);
+}
+
+{
+  const p4 = PRESETS.find((p) => p.id === 'q4').build(T);
+  const pv = pivot(p4.rows, p4.pivot);
+  const placed = pv.matrix.flat().filter((v) => v !== '').length;
+  const expectCells = pv.rowKeys.length * pv.colKeys.length;
+  check('长表 → 宽表：观测量守恒、矩阵完整（行维 × 列维 网格无缺格）',
+    pv.n === p4.rows.length && expectCells === pv.rowKeys.length * pv.colKeys.length && pv.rowKeys.length === 549,
+    `${p4.rows.length} 条观测 → ${pv.rowKeys.length} × ${pv.colKeys.length} 矩阵（非空格 ${placed}）`);
+}
+
+{
+  const p1 = PRESETS.find((p) => p.id === 'q1').build(T);
+  const pv = pivot(p1.rows, p1.pivot);
+  const bases = new Set(p1.rows.map((r) => r.yield_basis));
+  // 反过来用**粗维度**（行=年、列=季序）：一个格子必然同时含籽粒/鲜重/干花 ⇒ 必须被标记出来。
+  // 这样验的是"机制真的会拦"，而不是"刚好这份数据没混"（后者是撞运气，不算判据）。
+  const coarse = pivot(p1.rows, { rowDims: ['season_year'], colDim: 'season_seq', value: 'yield_t_ha', agg: 'mean', mixBy: 'yield_basis' });
+  check('**单产不许跨口径平均**：口径进行维就不混；用粗维度混了必须标记（而不是静默取平均）',
+    bases.size > 1 && pv.notes.length === 0 && coarse.notes.length > 0,
+    `${bases.size} 种口径（${[...bases].join('/')}）· q1（口径在行维）标记 ${pv.notes.length} 处 · 粗维度（年×季序）标记 ${coarse.notes.length} 处`);
+}
+
+{
+  const p6 = PRESETS.find((p) => p.id === 'q6').build(T);
+  const g = p6.rows.filter((r) => r.level === 'Gemeinde');
+  const up = p6.rows.filter((r) => r.level === 'Kreis');
+  const sum = (arr, k) => arr.reduce((x, r) => x + r[k], 0);
+  check('空间钻取链**上溯一级不丢数**（县域合计 == 乡域合计：地块数/单元数/面积三项）',
+    up.length > 0 && sum(up, 'n_parcels') === sum(g, 'n_parcels') && sum(up, 'n_units') === sum(g, 'n_units')
+      && Math.abs(sum(up, 'area_ha') - sum(g, 'area_ha')) < 0.5,
+    `${g.length} 个乡 → ${up.length} 个县：地块 ${sum(up, 'n_parcels')}、单元 ${sum(up, 'n_units')}、面积 ${round(sum(up, 'area_ha'), 1)} ha`);
+}
+
+{
+  const files = fs.existsSync(OUT) ? fs.readdirSync(OUT) : [];
+  const csv = files.filter((f) => f.endsWith('.csv')).length;
+  check('查询产物已写出（每个预置查询一份 CSV + 一份可读 Markdown 汇总）',
+    csv >= PRESETS.length && files.includes('透视与联合查询.md'), `${OUT}：${csv} 个 CSV + ${files.includes('透视与联合查询.md') ? 1 : 0} 个 md`);
+}
+
+console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
+process.exit(fail ? 1 : 0);

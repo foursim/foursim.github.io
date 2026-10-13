@@ -874,11 +874,224 @@ check('表格区按钮在 1024×640 下不换行（说明文案先被截断，�
   s19Strip.heights.every((h) => h < 32) && s19Strip.rows <= 2,
   `${s19Strip.n} 个按钮（${s19Strip.labels.join('/')}）占用行数 ${s19Strip.rows} · 表头 ${s19Strip.headH}px`);
 const s19Body = await ev(`(()=>{const t=document.getElementById('tablebar'),b=document.getElementById('tb-body');
+  // 只数【可见】页签：被 display:none 收起的按钮 rect 是 0，把它们算进来会得到"2 行"的假失败
+  const vis=[...document.querySelectorAll('#tb-tabs button')].filter(x=>x.getBoundingClientRect().height>0);
   return {strip:Math.round(t.getBoundingClientRect().height), head:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height),
-    body:Math.round(b.getBoundingClientRect().height), tabRows:new Set([...document.querySelectorAll('#tb-tabs button')].map(x=>Math.round(x.getBoundingClientRect().top))).size};})()`);
+    body:Math.round(b.getBoundingClientRect().height), tabRows:new Set(vis.map(x=>Math.round(x.getBoundingClientRect().top))).size,
+    visTabs:vis.length};})()`);
 check('1024×640：页签不折行、表头不吞掉表体（表体 ≥ 96px ≈ 3 行）',
   s19Body.tabRows === 1 && s19Body.head <= 80 && s19Body.body >= 96,
   `页签 ${s19Body.tabRows} 行 · 表头 ${s19Body.head}px · 表体 ${s19Body.body}px（表格区 ${s19Body.strip}px）`);
+
+
+// ===================== 20. 列选择 / 窄屏「更多」/ 排行图 / 与离线表对账 =====================
+console.log('\n=== 20. 列选择 · 更多下拉 · 排行图 · 与离线表对账 ===');
+await boot(1440, 900);
+await ev(`document.getElementById('btn-drawer').click()`);
+await sleep(200);
+const s20Cols = await ev(`(()=>{
+  const a=globalThis.__agri;
+  document.querySelector('#dw-tabs button[data-tab="units"]').click();
+  const th=()=>document.querySelectorAll('#dw-body .tbl thead th').length;
+  const td=()=>document.querySelectorAll('#dw-body .tbl tbody tr:first-child td').length;
+  const before={th:th(), td:td(), foot:document.getElementById('dw-note').textContent};
+  document.getElementById('btn-dw-cols').click();
+  const boxes=[...document.querySelectorAll('#dw-cols input[type=checkbox]')];
+  // 取消勾选第 2 列（主导作物）
+  boxes[1].checked=false; boxes[1].dispatchEvent(new Event('change',{bubbles:true}));
+  const after={th:th(), td:td(), foot:document.getElementById('dw-note').textContent,
+    stored:JSON.parse(localStorage.getItem('agri-monitor-cols')||'{}')};
+  return {before, after, nbox:boxes.length};})()`);
+check('列选择：取消一列 ⇒ 表头与每行都少一格，页脚写明"显示 N/M 列"，选择被记住',
+  s20Cols.after.th === s20Cols.before.th - 1 && s20Cols.after.td === s20Cols.before.td - 1
+    && /显示 \d+\/\d+ 列/.test(s20Cols.after.foot) && (s20Cols.after.stored.units ?? []).length === 1
+    && s20Cols.nbox === s20Cols.before.th,
+  `${s20Cols.before.th} 列 → ${s20Cols.after.th} 列（每行 ${s20Cols.before.td}→${s20Cols.after.td} 格）· 存储 ${JSON.stringify(s20Cols.after.stored)}`);
+// 至少保留一列 + 全选恢复
+const s20Guard = await ev(`(()=>{
+  const boxes=()=>[...document.querySelectorAll('#dw-cols input[type=checkbox]')];
+  // ⚠️ 每改一次浮层都会**重画**（复选框是新节点）：必须每轮重新查询，点旧节点等于没点
+  for(let guard=0;guard<20;guard++){
+    const cs=[...document.querySelectorAll('#dw-cols input[type=checkbox]:checked')];
+    if(cs.length<=1) break;
+    const b=cs[cs.length-1]; b.checked=false; b.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  const th=()=>document.querySelectorAll('#dw-body .tbl thead th').length;
+  const one=th();
+  // 再试着把最后一列也关掉 —— 必须被挡住
+  const last=[...document.querySelectorAll('#dw-cols input[type=checkbox]:checked')][0];
+  last.checked=false; last.dispatchEvent(new Event('change',{bubbles:true}));
+  const stillOne=th();
+  document.querySelector('#dw-cols [data-cols-reset]').click();
+  const restored=th();
+  return {one, stillOne, restored, n:boxes().length};})()`);
+check('至少保留一列（关不掉最后一列），且「全选」能一键恢复',
+  s20Guard.one === 1 && s20Guard.stillOne === 1 && s20Guard.restored === s20Guard.n,
+  `剩 1 列时再关仍为 ${s20Guard.stillOne} 列 · 全选恢复 ${s20Guard.restored} 列`);
+// 隐藏列后排序不串位：隐藏第 1 列，再按"进度 %"降序，首行应是最大值
+const s20Sort = await ev(`(()=>{
+  const boxes=[...document.querySelectorAll('#dw-cols input[type=checkbox]')];
+  boxes[0].checked=false; boxes[0].dispatchEvent(new Event('change',{bubbles:true}));
+  const head=[...document.querySelectorAll('#dw-body .tbl thead th')];
+  const i=head.findIndex(h=>h.textContent.includes('进度'));
+  document.querySelectorAll('#dw-body .tbl thead th')[i].click();
+  const vals=[...document.querySelectorAll('#dw-body .tbl tbody tr')].map(tr=>Number(tr.children[i].textContent.replace(/[^0-9.]/g,'')));
+  const foot=document.getElementById('dw-note').textContent;
+  document.querySelector('#dw-cols [data-cols-reset]').click();
+  return {i, first:vals[0], last:vals[vals.length-1], sorted:foot.includes('已按')};})()`);
+check('隐藏列之后排序仍按**那一列**走（投影不串位 —— 这是列选择最容易出的 bug）',
+  s20Sort.i >= 0 && s20Sort.first >= s20Sort.last && s20Sort.sorted,
+  `按第 ${s20Sort.i + 1} 个可见列：首 ${s20Sort.first} → 末 ${s20Sort.last}`);
+// 排行图
+const s20Chart = await ev(`(()=>{const a=globalThis.__agri;
+  document.querySelector('#dw-tabs button[data-tab="crops"]').click();
+  const on={shown:!document.getElementById('dw-chart-wrap').classList.contains('hidden'),
+    info:a.ui.drawerChartInfo && {col:a.ui.drawerChartInfo.col, n:a.ui.drawerChartInfo.items.length,
+      topLabel:a.ui.drawerChartInfo.items[0]?.label, topValue:a.ui.drawerChartInfo.items[0]?.value}};
+  const cvs=document.getElementById('dw-chart');
+  const ctx=cvs.getContext('2d');
+  const px=ctx.getImageData(0,0,cvs.width,cvs.height).data;
+  let ink=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) ink++;
+  document.querySelector('#dw-tabs button[data-tab="frame"]').click();
+  const off={shown:!document.getElementById('dw-chart-wrap').classList.contains('hidden'), info:a.ui.drawerChartInfo};
+  return {on, off, ink};})()`);
+check('抽屉里的排行图：作物表画出面积排行（真画了像素），指标表不画（结论表配图是噪音）',
+  s20Chart.on.shown && s20Chart.on.info && s20Chart.on.info.col === '面积 ha' && s20Chart.on.info.n > 0
+    && s20Chart.ink > 200 && s20Chart.off.shown === false && s20Chart.off.info === null,
+  `作物：${s20Chart.on.info?.n} 条，首位 ${s20Chart.on.info?.topLabel}=${s20Chart.on.info?.topValue} ha，着色像素 ${s20Chart.ink} · 指标表图隐藏=${!s20Chart.off.shown}`);
+// 窄屏「更多」下拉
+await boot(1024, 640);
+const s20More = await ev(`(()=>{const a=globalThis.__agri;
+  const vis=[...document.querySelectorAll('#tb-tabs button')].filter(b=>b.getBoundingClientRect().height>0);
+  const sel=document.getElementById('tb-more');
+  const selVisible=getComputedStyle(sel).display!=='none';
+  const rowsBefore=document.querySelectorAll('#tb-body .tbl tbody tr').length;
+  sel.value='scenario'; sel.dispatchEvent(new Event('change',{bubbles:true}));
+  return {vis:vis.length, labels:vis.map(b=>b.textContent.trim()), selVisible, opt:sel.options.length,
+    active:a.ui.activeTable, rowsBefore, rowsAfter:document.querySelectorAll('#tb-body .tbl tbody tr').length};})()`);
+check('1024×640：页签只留 3 个 + 「更多」下拉承载其余（避免折行吃掉表体）',
+  s20More.vis === 3 && s20More.selVisible && s20More.opt === 7,
+  `可见页签 ${s20More.vis} 个（${s20More.labels.join('/')}）· 下拉 ${s20More.opt - 1} 项`);
+check('「更多」下拉能切到被收起的那张表（情景推演）',
+  s20More.active === 'scenario' && s20More.rowsAfter !== s20More.rowsBefore,
+  `${s20More.rowsBefore} 行 → ${s20More.rowsAfter} 行，activeTable=${s20More.active}`);
+// 与离线表对账（同一份数据，两条路径）
+const s20Rec = await ev(`(async()=>{const a=globalThis.__agi ? null : globalThis.__agri;
+  const parse=(txt)=>{const out=[];let cur=[],val='',q=false;
+    for(let i=0;i<txt.length;i++){const c=txt[i];
+      if(q){ if(c==='"'){ if(txt[i+1]==='"'){val+='"';i++;} else {q=false;} } else {val+=c;} }
+      else if(c==='"'){q=true;}
+      else if(c===','){cur.push(val);val='';}
+      else if(c==='\\n'){cur.push(val);if(cur.length>1||cur[0]!=='')out.push(cur);cur=[];val='';}
+      else if(c!=='\\r'){val+=c;}}
+    if(val!==''||cur.length){cur.push(val);out.push(cur);}
+    return out;};
+  const [uh,...ur]=parse(await (await fetch('tables/dim_unit.csv')).text());
+  const [ph,...pr]=parse(await (await fetch('tables/dim_parcel.csv')).text());
+  const ui=uh.indexOf('unit_id'), un=uh.indexOf('n_parcels'), ua=uh.indexOf('area_ha');
+  const pi=ph.indexOf('parcel_id'), pa=ph.indexOf('area_ha'), pc=ph.indexOf('crop_name_zh'), pco=ph.indexOf('crop_code');
+  const day=a.state.day, tb=a.buildTables(day);
+  // ① 单元数 / 地块数 / 总面积
+  const offUnits=new Map(ur.map(r=>[r[ui], Number(r[un])]));
+  const offArea=pr.reduce((s,r)=>s+Number(r[pa]),0);
+  // ② 每单元地块数逐个比
+  const badUnit=tb.units.filter(u=>offUnits.get(u.id)!==u.n).map(u=>u.id);
+  // ③ 作物面积（按中文名，排除休耕）
+  const offCrop=new Map();
+  for(const r of pr){ if(r[pco]==='FALLOW') continue; const k=r[pc]||'未分类'; offCrop.set(k,(offCrop.get(k)||0)+Number(r[pa])); }
+  const badCrop=tb.crops.filter(c=>c.name!=='休耕').filter(c=>Math.abs((offCrop.get(c.name)||0)-c.area)>0.5).map(c=>c.name);
+  return {offUnits:ur.length, uiUnits:tb.units.length, offParcels:pr.length, uiParcels:a.rows.length,
+    offArea:Math.round(offArea*10)/10, uiArea:Math.round(a.rows.reduce((s,r)=>s+r.area_ha,0)*10)/10,
+    badUnit:badUnit.slice(0,3), badUnitN:badUnit.length, badCrop:badCrop.slice(0,3), badCropN:badCrop.length,
+    nCrop:tb.crops.filter(c=>c.name!=='休耕').length};})()`);
+check('与离线表对账：单元数、地块数、总面积一致（页面与 tables/*.csv 是同一份数据的两条路径）',
+  s20Rec.offUnits === s20Rec.uiUnits && s20Rec.offParcels === s20Rec.uiParcels
+    && Math.abs(s20Rec.offArea - s20Rec.uiArea) < 0.5,
+  `单元 ${s20Rec.uiUnits}/${s20Rec.offUnits} · 地块 ${s20Rec.uiParcels}/${s20Rec.offParcels} · 面积 ${s20Rec.uiArea}/${s20Rec.offArea} ha`);
+check('与离线表对账：**每个单元的地块数**逐个吻合（口径没漂）',
+  s20Rec.badUnitN === 0, s20Rec.badUnitN ? `不一致 ${s20Rec.badUnitN} 个：${s20Rec.badUnit.join(',')}` : '62 个单元全部一致');
+check('与离线表对账：**按作物的面积**吻合（排除休耕后逐类比）',
+  s20Rec.badCropN === 0, s20Rec.badCropN ? `不一致 ${s20Rec.badCropN} 类：${s20Rec.badCrop.join(',')}` : `${s20Rec.nCrop} 类全部一致`);
+await shot('drawer-cols-1440x900');
+
+
+// ===================== 21. 纯静态保证（无后端 / 无 CDN / 换任意静态服务器都能跑） =====================
+console.log('\n=== 21. 纯静态保证（无后端 / 无 CDN / 任意静态服务器） ===');
+await boot(1440, 900);
+
+{
+  const net = await ev(`(()=>{const rs=performance.getEntriesByType('resource').map(r=>new URL(r.name));
+    return {n:rs.length, origins:[...new Set(rs.map(u=>u.origin))],
+      ws:rs.filter(u=>/^wss?:$/.test(u.protocol)).length,
+      ext:rs.filter(u=>u.origin!==location.origin).map(u=>u.href).slice(0,3)};})()`);
+  check('运行期**只加载同源静态资源**：无 CDN、无后端接口、无 websocket（纯静态的第一条硬线）',
+    net.ext.length === 0 && net.ws === 0 && net.n > 0,
+    `${net.n} 个请求，来源：${net.origins.join(' / ')}${net.ext.length ? `；外部：${net.ext.join(',')}` : ''}`);
+}
+
+{
+  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'style.css'];
+  const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1])
+    .concat([...src.matchAll(/from\s+["'](https?:\/\/[^"']+)/g)].map((m) => m[1]));
+  // 页面代码里不该出现任何"要后端"的痕迹（这几样一旦出现，纯静态就破了）
+  const backend = /child_process|require\(|\bduckdb\b|WebSocket\(|new\s+EventSource|\/api\//.test(src);
+  check('页面源码**零外部依赖**：无 CDN 外链、无 node/python/DB 调用、无后端接口路径',
+    ext.length === 0 && !backend,
+    ext.length ? `外链：${ext.slice(0, 3).join(',')}` : `扫描 ${files.length} 个文件：只有本地引用（vendor/leaflet 已本地化）`);
+}
+
+{
+  // 换成"陌生"的静态服务器：python -m http.server —— 证明页面不依赖项目自带 serve.mjs 的任何特性
+  let info = null;
+  let py = null;
+  const pyPort = 8300 + Math.floor(Math.random() * 300);
+  try {
+    py = spawn('python', ['-m', 'http.server', String(pyPort), '--bind', '127.0.0.1'], { cwd: process.cwd(), stdio: 'ignore' });
+    await sleep(1400);
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send('Page.navigate', { url: `http://127.0.0.1:${pyPort}/index.html?t=${Date.now()}` });
+    await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), 'python http.server 就绪');
+    info = await ev(`(()=>{const a=globalThis.__agri;return {parcels:a.model.parcels.length, map:!!document.querySelector('.leaflet-container'), fatal:!!document.querySelector('.fatal')};})()`);
+  } catch (err) {
+    info = { error: String(err.message ?? err).slice(0, 80) };
+  } finally {
+    py?.kill();
+  }
+  check('换成**任意静态服务器**（python -m http.server，不含任何后端）页面照样完整跑起来',
+    !!info && !info.error && info.parcels > 0 && info.map && !info.fatal,
+    info?.error ? `失败：${info.error}` : `python http.server:${pyPort} ⇒ ${info.parcels} 个地块、地图容器就绪、无失败提示`);
+}
+
+{
+  // 数据缺失：要给出**可读提示**（白屏是最糟的失败形态）
+  await send('Network.enable');
+  await send('Network.setBlockedURLs', { urls: ['*parcels.geojson*'] });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}&blocked=1` });
+  await sleep(3600);
+  const fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, text:f?f.textContent.replace(/\s+/g,' '):''};})()`);
+  await send('Network.setBlockedURLs', { urls: [] });
+  check('数据加载失败时给**可读提示**（含"用静态服务器打开"与补救步骤），而不是白屏',
+    fb.shown && /服务器|file/.test(fb.text), fb.shown ? fb.text.slice(0, 70) : '没有任何提示');
+}
+
+{
+  // 真·file:// 打开：模块脚本被 CORS 拦掉 ⇒ 走内联兜底（这段内联脚本正是为此而存在）
+  const fileUrl = `file:///${path.resolve('index.html').replace(/\\/g, '/')}`;
+  let fb = null;
+  try {
+    await send('Page.navigate', { url: `${fileUrl}?t=${Date.now()}` });
+    await sleep(4200);
+    fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, boot:!!globalThis.__agriBoot, text:f?f.textContent.replace(/\s+/g,' ').slice(0,140):''};})()`);
+  } catch (err) {
+    fb = { error: String(err.message ?? err).slice(0, 80) };
+  }
+  check('**file:// 直接打开**时不白屏：内联兜底给出原因与做法（模块脚本被拦时 fatal() 根本不会执行）',
+    !!fb && !fb.error && fb.shown && !fb.boot && /静态服务器/.test(fb.text),
+    fb?.error ? `无法测：${fb.error}` : `兜底提示已显示（模块未执行 boot=${fb?.boot}）：${(fb?.text ?? '').slice(0, 60)}`);
+}
+await boot(1440, 900);
+await shot('static-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

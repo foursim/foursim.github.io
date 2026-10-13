@@ -30,6 +30,9 @@ function fatal(err) {
     注意：<code>file://</code> 直接打开会被浏览器的模块/CORS 规则拦住，必须用 http 服务。</p></div>`;
 }
 
+// 兜底提示的判据：模块真的执行了才有它（file:// 下模块会被拦，于是没有它 ⇒ 提示"请用静态服务器打开"）
+globalThis.__agriBoot = true;
+
 try {
   const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC,
     soilFile, elevFile, villagesFC, scenarioFile] = await Promise.all([

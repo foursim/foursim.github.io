@@ -173,7 +173,7 @@ const VARIABLES = [
   ['YIELD_T', '总产', 'total yield', '当季地块总产量', 'number', '0~500', 't', 'parcel', '1季', 'model', 1, '', ''],
   ['GDD_NEED', '生育期积温需求', 'growing degree days requirement', '该作物完成生育期所需积温', 'number', '0~3000', '℃·d', 'parcel', '1季', 'model', 0, '', '作物参数表'],
   ['HARVESTED_HA', '收获面积', 'harvested area', '当日收获面积', 'number', '0~1000', 'ha', 'region', '1天', 'model', 1, '', ''],
-  ['T_MIN_STORE', '到收储点时间', 'travel time to collection point', '地块到最近收储点的行驶时间', 'number', '0~60', 'min', 'parcel', '静态', 'derived', 0, '> 12 min', 'OSM 路网 + 多源 Dijkstra'],
+  ['T_MIN_STORE', '到收储点时间', 'travel time to collection point', '地块到最近收储点的行驶时间', 'number', '0~60', 'min', 'parcel', '静态', 'derived', 0, '> 12 min（治理阈值；本演示区实测最大 11.8 分，未触发）', 'OSM 路网 + 多源 Dijkstra'],
   ['ACCESS_M', '下道距离', 'off-road access distance', '地块质心到最优接入路网节点的距离', 'number', '0~2000', 'm', 'parcel', '静态', 'derived', 0, '> 300 m', ''],
   ['AREA_HA', '面积', 'area', '地块/单元面积', 'number', '0~1000', 'ha', 'parcel/unit', '静态', 'osm', 0, '', 'OSM 几何量算'],
   ['SOIL_QUALITY', '土壤质量指数', 'soil quality index', '地块土壤质地/管理的相对潜力（模拟）', 'number', '0.5~1.5', '1', 'parcel', '静态', 'model', 1, '', ''],
@@ -333,6 +333,19 @@ const dates = model.days.map((d, i) => ({
 counts.dim_date = writeCsv('dim_date',
   ['date_key', 'year', 'month', 'day', 'doy', 'is_growing_season'], dates);
 
+/**
+ * **作物大类逐类显式映射**（值域与 `dim_crop.hierarchy_l1` 声明一致）。
+ *
+ * ⚠️ 原来写的是"否则就算谷物"的三元兜底，结果**果园被算成了谷物**（清理重复行时才暴露）：
+ * 兜底会让"漏配的类别"悄悄落到某个默认值上，而且没人会去核对。改成显式表：缺映射就是空值，判据直接报出来。
+ */
+const HIERARCHY = {
+  WINTER_WHEAT: 'cereal', WINTER_BARLEY: 'cereal',
+  WINTER_RAPESEED: 'industrial',   // 油料作物按工业原料归（归谷物还会把"单产口径"混在一起看）
+  SILAGE_MAIZE: 'fodder', HOPS: 'industrial', MEADOW: 'grassland',
+  ORCHARD: 'permanent', FALLOW: 'fallow',
+};
+
 // ---------- dim_crop（作物字典：含层级位与单位，参照 EuroCrops 的作物码归一思路） ----------
 counts.dim_crop = writeCsv('dim_crop',
   ['crop_code', 'crop_name_zh', 'crop_name_en', 'hierarchy_l1', 'base_temp_c', 'gdd_need_cd',
@@ -341,7 +354,7 @@ counts.dim_crop = writeCsv('dim_crop',
     crop_code: c.key,
     crop_name_zh: c.name,
     crop_name_en: c.key,
-    hierarchy_l1: c.key.includes('SILAGE') ? 'fodder' : (c.key === 'HOPS' ? 'industrial' : (c.key === 'MEADOW' ? 'grassland' : 'cereal')),
+    hierarchy_l1: HIERARCHY[c.key],
     base_temp_c: c.base,
     gdd_need_cd: c.gddNeed,
     yield_ref: c.yieldRef,
@@ -352,15 +365,13 @@ counts.dim_crop = writeCsv('dim_crop',
     disease_code: c.disease ?? '',
   })), { crop_code: 'FALLOW', crop_name_zh: '休耕', crop_name_en: 'fallow', hierarchy_l1: 'fallow',
     base_temp_c: '', gdd_need_cd: '', yield_ref: 0, yield_uom: 't/ha', yield_basis: '', sow_window: '', harvest_md: '', disease_code: '' },
-  { crop_code: 'ORCHARD', crop_name_zh: '果园', crop_name_en: 'orchard', hierarchy_l1: 'permanent',
-    base_temp_c: 5, gdd_need_cd: 0, yield_ref: 12, yield_uom: 't/ha', yield_basis: '鲜果', sow_window: '', harvest_md: '09-25', disease_code: 'SCAB' }]);
+  ]);   // ⚠️ 只补 CROPS 里没有的作物（FALLOW）；ORCHARD 本来就在 CROPS 里，再手写一遍就是重复键
 
 // ---------- dim_source（数据源与许可：**每一行数据都必须能追到来源**） ----------
 counts.dim_source = writeCsv('dim_source',
   ['source_id', 'name', 'url', 'license', 'synthetic', 'usage'],
   [
-    { source_id: 'osm', name: 'OpenStreetMap (via Overpass API)', url: 'https://www.openstreetmap.org', license: 'ODbL-1.0', synthetic: 0, usage: '地块几何 / 路网 / 农业设施点' },
-    { source_id: 'osm', name: 'OpenStreetMap (via Overpass API)', url: 'https://www.openstreetmap.org', license: 'ODbL-1.0', synthetic: 0, usage: '地块几何 / 路网 / 农业设施点 / **行政边界**' },
+    { source_id: 'osm', name: 'OpenStreetMap (via Overpass API)', url: 'https://www.openstreetmap.org', license: 'ODbL-1.0', synthetic: 0, usage: '地块几何 / 路网 / 农业设施点 / 行政边界（OSM boundary=administrative）' },
     { source_id: 'nasa-power', name: 'NASA POWER (MERRA-2), community=AG', url: 'https://power.larc.nasa.gov', license: 'NASA open data', synthetic: 0, usage: '气象锚点（校准与验收用）' },
     { source_id: 'model', name: `本项目模型 seed=${SITE.seed}`, url: '', license: '本仓库', synthetic: 1, usage: '作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成' },
     { source_id: 'derived', name: '派生（路网 Dijkstra / 空间聚类）', url: '', license: 'ODbL-1.0（依 OSM）', synthetic: 0, usage: '可达性时间 / 经营单元 / 统计网格 / 管理分区样点' },
@@ -374,10 +385,13 @@ counts.dim_source = writeCsv('dim_source',
 const gridCount = new Map();
 for (const p of units.parcel) gridCount.set(p.grid_id, (gridCount.get(p.grid_id) ?? 0) + 1);
 counts.dim_grid = writeCsv('dim_grid',
-  ['grid_id', 'grid_code', 'grid_m', 'n_parcels', 'crs', 'source_id'],
+  ['grid_id', 'grid_code', 'admin_code', 'grid_m', 'n_parcels', 'crs', 'source_id'],
   [...gridCount.entries()].map(([grid_id, n]) => ({
     grid_id,
     grid_code: adminOf(`G-${grid_id.replace(/^G\d+-/, '')}`),
+    // 行政区划码 = **乡级（Gemeinde）**，也就是最具体的那一级；
+    // 再往上（Kreis）靠 dim_admin.parent_code 上溯 —— 这样"地块→网格→乡→县"是一条真链，不是拼字符串
+    admin_code: ADMIN.admin_code,
     grid_m: units.metadata.grid_m,
     n_parcels: n,
     crs: 'EPSG:4326',
@@ -396,7 +410,7 @@ counts.dim_unit = writeCsv('dim_unit',
 
 // ---------- dim_parcel（地块维：几何属性 + 可达性 + 土壤位留空） ----------
 counts.dim_parcel = writeCsv('dim_parcel',
-  ['parcel_id', 'parcel_code', 'unit_id', 'grid_id', 'area_ha', 'centroid_lon', 'centroid_lat', 'landuse',
+  ['parcel_id', 'parcel_code', 'admin_code', 'unit_id', 'grid_id', 'area_ha', 'centroid_lon', 'centroid_lat', 'landuse',
     'crop_code', 'crop_name_zh', 'fallow', 'sow_day', 'harvest_day', 'season_count', 'gdd_need_cd',
     'yield_t_ha_avg', 'yield_t_total', 'disease_level_max', 'treated', 't_min_to_store', 'access_m',
     'soil_quality', 'soil_quality_source', 'soil_texture', 'soil_ph', 'soil_organic_matter',
@@ -408,7 +422,8 @@ counts.dim_parcel = writeCsv('dim_parcel',
     const z = zoneOf.get(r.id);
     const [lon, lat] = centroid(f);
     return {
-      parcel_id: r.id, parcel_code: adminOf(`P-${pad(i + 1, 6)}`), unit_id: u.unit_id ?? '', grid_id: u.grid_id ?? '',
+      parcel_id: r.id, parcel_code: adminOf(`P-${pad(i + 1, 6)}`), admin_code: ADMIN.admin_code,
+      unit_id: u.unit_id ?? '', grid_id: u.grid_id ?? '',
       area_ha: r.area_ha, centroid_lon: round(lon, 6), centroid_lat: round(lat, 6), landuse: r.landuse,
       crop_code: r.fallow ? 'FALLOW' : (r.crop ?? ''), crop_name_zh: r.cropName, fallow: r.fallow ? 1 : 0,
       sow_day: r.sowDay ?? '', harvest_day: r.harvestDay ?? '', season_count: (r.seasons ?? []).length,
@@ -881,6 +896,30 @@ const table = (t) => {
 };
 console.log('\n=== 导出判据 ===');
 const parcelIds = new Set(table('dim_parcel').map((r) => r.parcel_id));
+{
+  /*
+   * **维度表主键必须唯一**：重复键的后果不是"多一行"，而是**任何**连接都会把事实静默放大成多倍，
+   * 从外面完全看不出来 —— 数据分析里最典型的一类静默错误。
+   * 这条判据是被真事逼出来的：dim_crop 的 ORCHARD 重复（手写补行时没注意它已在 CROPS 里）、
+   * dim_source 的 osm 写了两行；两者都是查询引擎拒绝连接时才暴露的（导出侧本该先抓住）。
+   */
+  const KEYS = {
+    dim_date: 'date_key', dim_crop: 'crop_code', dim_source: 'source_id', dim_grid: 'grid_id',
+    dim_unit: 'unit_id', dim_parcel: 'parcel_id', dim_admin: 'admin_code', dim_variable: 'variable_code',
+  };
+  const bad = [];
+  for (const [t, k] of Object.entries(KEYS)) {
+    const vals = table(t).map((r) => r[k]);
+    if (new Set(vals).size !== vals.length) bad.push(`${t}.${k}：${vals.length} 行却只有 ${new Set(vals).size} 个唯一值`);
+  }
+  check('维度表**主键唯一**（重复键会让任何连接静默放大行数）', bad.length === 0,
+    bad.join('；') || `${Object.keys(KEYS).length} 张维度表逐张检查通过`);
+}
+
+check('作物大类**逐类显式映射**（没有兜底 —— 果园曾因"否则算谷物"被算成谷物）',
+  CROPS.every((c) => HIERARCHY[c.key]) && new Set(CROPS.map((c) => HIERARCHY[c.key])).size >= 4,
+  `${CROPS.length} 类作物 ⇒ ${[...new Set(CROPS.map((c) => HIERARCHY[c.key]))].join('/')}`);
+
 check('dim_parcel 主键唯一', parcelIds.size === counts.dim_parcel, `${parcelIds.size}/${counts.dim_parcel}`);
 for (const t of ['fact_parcel_season', 'fact_parcel_event', 'fact_zone']) {
   const rows2 = table(t);

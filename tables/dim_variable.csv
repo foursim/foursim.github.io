@@ -11,7 +11,7 @@ YIELD_HA,单产,yield per hectare,当季单位面积产量,number,0~60,t/ha,parc
 YIELD_T,总产,total yield,当季地块总产量,number,0~500,t,parcel,1季,model,1,,
 GDD_NEED,生育期积温需求,growing degree days requirement,该作物完成生育期所需积温,number,0~3000,℃·d,parcel,1季,model,0,,作物参数表
 HARVESTED_HA,收获面积,harvested area,当日收获面积,number,0~1000,ha,region,1天,model,1,,
-T_MIN_STORE,到收储点时间,travel time to collection point,地块到最近收储点的行驶时间,number,0~60,min,parcel,静态,derived,0,> 12 min,OSM 路网 + 多源 Dijkstra
+T_MIN_STORE,到收储点时间,travel time to collection point,地块到最近收储点的行驶时间,number,0~60,min,parcel,静态,derived,0,> 12 min（治理阈值；本演示区实测最大 11.8 分，未触发）,OSM 路网 + 多源 Dijkstra
 ACCESS_M,下道距离,off-road access distance,地块质心到最优接入路网节点的距离,number,0~2000,m,parcel,静态,derived,0,> 300 m,
 AREA_HA,面积,area,地块/单元面积,number,0~1000,ha,parcel/unit,静态,osm,0,,OSM 几何量算
 SOIL_QUALITY,土壤质量指数,soil quality index,地块土壤质地/管理的相对潜力（模拟）,number,0.5~1.5,1,parcel,静态,model,1,,

@@ -31,6 +31,8 @@
   <section id="tablebar">
     <div class="tb-head">
       <div id="tb-tabs" class="tb-tabs"></div>
+      <!-- 窄列宽下页签折行会吃掉表体，所以把"排后面的表"收进下拉（≤1240px 才出现） -->
+      <select id="tb-more" class="mini" title="更多表格" aria-label="更多表格"></select>
       <div class="tb-actions">
         <span id="hl-note" class="tb-note"></span>
         <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开</button>
@@ -91,12 +93,17 @@
       <div class="dw-title">数据视图 <span id="dw-count"></span></div>
       <div class="dw-tools">
         <input id="dw-filter" type="search" placeholder="筛选关键字…" aria-label="筛选">
+        <button id="btn-dw-cols" class="mini" title="选择要显示哪些列（会记住选择）">列</button>
         <button id="btn-dw-export" class="mini" title="导出当前视图（含筛选与排序后的行）">导出结果</button>
         <button id="btn-dw-csv" class="mini" title="导出当前帧全部地块数据（CSV）">导出地块</button>
         <button id="drawer-close" class="mini" aria-label="关闭数据视图">×</button>
       </div>
     </div>
     <div id="dw-tabs" class="dw-tabs"></div>
+    <!-- 列选择浮层：9 列的表在窄屏必须能"先挑列再看" -->
+    <div id="dw-cols" class="cols-pop hidden"></div>
+    <!-- 排行条形图：表看数值、图看谁高谁低（只给排行有意义的表配） -->
+    <div id="dw-chart-wrap" class="dw-chart-wrap hidden"><canvas id="dw-chart"></canvas></div>
     <div id="dw-body" class="dw-body"></div>
     <!-- 交互提示放页脚：标题栏里的长文案会换行并把筛选框挤窄（那是"细节"阶段要修的第一条） -->
     <div class="dw-foot"><span id="dw-note"></span></div>
@@ -114,5 +121,25 @@
 <!-- Leaflet 用普通 script 先加载（模块里的地图代码依赖全局 L）；顺序不能颠倒 -->
 <script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="js/main.js"></script>
+<script>
+  /*
+   * 纯静态兜底：本页只依赖同源的 HTML/CSS/JS 与 data/ 下的本地文件（无后端、无 CDN、无数据库）。
+   *
+   * 但用 file:// 直接双击打开时，浏览器会按 CORS 规则拦掉 type="module" 脚本 ——
+   * 那时候连 main.js 里的 fatal() 都不会执行，页面就是**一片白屏**，而且没人知道为什么。
+   * 所以这里放一段**内联**（非模块、必然执行）的兜底：3 秒后还没看到启动标记，就把原因和做法写在页面上。
+   * 判断依据是 main.js 顶部设的 __agriBoot：模块没被拦掉就一定有它，所以不会误报"数据还在加载"。
+   */
+  setTimeout(function () {
+    if (globalThis.__agriBoot || globalThis.__agri) return;
+    var el = document.getElementById('map');
+    if (!el || el.querySelector('.fatal')) return; // 已有更具体的错误信息就不覆盖
+    el.innerHTML = '<div class="fatal"><h2>请用静态服务器打开</h2>'
+      + '<p>本页面是纯静态的（只需同源的 HTML/CSS/JS 与 data/ 下的本地文件），不需要后端；'
+      + '但直接用 file:// 双击打开时，浏览器会拦掉模块脚本与本地 JSON 请求。</p>'
+      + '<p class="dim">任选一种：<code>npm run serve</code>（项目自带静态服务器）、'
+      + '<code>python -m http.server</code>、或任意静态托管（Nginx / 对象存储 / GitHub Pages）。</p></div>';
+  }, 3000);
+</script>
 </body>
 </html>

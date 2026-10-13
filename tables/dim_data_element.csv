@@ -25,6 +25,7 @@ dim_source,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派
 dim_source,usage,用途,usage,用途,text,,,,O,model,1,
 dim_grid,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
 dim_grid,grid_code,统计网格编码,statistical grid code,统计网格编码,text,,,,M,derived,0,
+dim_grid,admin_code,行政区划码,administrative code,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS,text,,,,M,derived,0,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS
 dim_grid,grid_m,网格边长,grid size,网格边长,number,,>0,m,M,model,1,
 dim_grid,n_parcels,地块数,number of parcels,地块数,number,,>0,1,M,model,1,
 dim_grid,crs,坐标参考系,coordinate reference system,坐标参考系,text,,EPSG:4326,,M,model,1,
@@ -40,6 +41,7 @@ dim_unit,fallow_ha,休耕面积,fallow area,休耕面积,number,,0~1000,ha,O,mod
 dim_unit,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
 dim_parcel,parcel_id,地块标识,parcel identifier,P1 自然田块主键（OSM way/relation 派生）,text,,,,M,osm,0,P1 自然田块主键（OSM way/relation 派生）
 dim_parcel,parcel_code,地块编码,parcel code,国内口径编码,text,,行政区划码-图层码-顺序号,,M,derived,0,国内口径编码
+dim_parcel,admin_code,行政区划码,administrative code,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS,text,,,,M,derived,0,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS
 dim_parcel,unit_id,经营单元标识,management unit identifier,P2 连片作业片区,text,,,,M,derived,0,P2 连片作业片区
 dim_parcel,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
 dim_parcel,area_ha,面积,area,OSM 几何量算,number,,>0,ha,M,osm,0,OSM 几何量算

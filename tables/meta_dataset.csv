@@ -3,7 +3,7 @@ metadata_group,element_name,element_value,obligation,data_type
 标识信息,dataset_name_en,Wolnzach township agricultural monitoring dataset,M,文本
 标识信息,dataset_version,0.2.0,M,文本
 标识信息,abstract,以 OSM 真实地块/路网/设施为骨架、监测值由本项目确定性模型生成的乡镇尺度农业监测数据集；含 P1 自然田块 / P2 经营单元 / P4 统计网格三层空间单元,M,文本
-数据特征,record_counts,dim_date:549; dim_crop:9; dim_source:9; dim_grid:217; dim_unit:62; dim_parcel:501; fact_parcel_season:586; fact_parcel_event:2159; fact_region_daily:549; fact_observation:4392; fact_zone:744; dim_admin:2; dim_variable:16; fact_unit_decade:3348,M,文本
+数据特征,record_counts,dim_date:549; dim_crop:8; dim_source:8; dim_grid:217; dim_unit:62; dim_parcel:501; fact_parcel_season:586; fact_parcel_event:2159; fact_region_daily:549; fact_observation:4392; fact_zone:744; dim_admin:2; dim_variable:16; fact_unit_decade:3348,M,文本
 数据特征,collection_method,真实数据：OSM（地块/路网/设施/行政边界/居民点）、NASA POWER（气象锚点）、ISRIC SoilGrids（土壤）、Copernicus GLO-90（高程）；生成数据：作物/农事/产量/病害/水肥（seed 固定 ⇒ 可复现）,M,文本
 数据特征,update_frequency,按需重算（模型确定性；取数脚本见 tools/）,M,文本
 数据特征,synthetic_flag,逐行 synthetic 列（1=模型生成，0=实测/派生自实测）,M,布尔

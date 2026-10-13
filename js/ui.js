@@ -8,8 +8,8 @@
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf } from './geo.js';
-import { THEME } from './theme.js';
-import { sparkline, bars, colorbar } from './charts.js';
+import { THEME, cssVar } from './theme.js';
+import { sparkline, bars, colorbar, hbars } from './charts.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -24,6 +24,18 @@ const LAYERS = [
   ['admin', '行政边界（乡/县）'],
   ['villages', '居民点（真实地名）'],
 ];
+
+/**
+ * 抽屉里给哪些表配**排行图**、画哪一列。
+ *
+ * 只给"排行有意义"的表配：作物看面积谁大、问题看命中谁多、单元看谁离收储点最远。
+ * 指标表（8 行阈值判定）与告警表本身已是结论，再画图是噪音 —— 不配。
+ */
+const CHART_SPEC = {
+  crops: { col: '面积 ha', top: 10 },
+  focus: { col: '命中', top: 6 },
+  units: { col: '到收储点 min', top: 12 },
+};
 
 /** 地图下方表格区的页签（key / 标题） */
 /**
@@ -100,6 +112,10 @@ export class UI {
     this.drawerTab = 'focus';
     this.drawerFilter = '';
     this.drawerSort = null;
+    /** 列选择：{ 表名: [隐藏的列下标] }，存 localStorage ⇒ 刷新后仍在 */
+    this.colHidden = UI.loadColHidden();
+    /** 当前抽屉里的图（判据与导出要用它核对） */
+    this.drawerChartInfo = null;
     this.refs = {};
     this.lastHtml = {};
     this.cacheDom();
@@ -117,7 +133,8 @@ export class UI {
       'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-tb-expand',
       'tablebar', 'btn-export-csv', 'btn-export-png',
       'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
-      'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export'];
+      'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
+      'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -144,6 +161,9 @@ export class UI {
       .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
     this.refs['dw-tabs'].innerHTML = TABLE_TABS
       .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
+    // 窄屏用下拉承载"排后面的表"：页签折行会吃掉表体（实测表头 154px vs 表体 39px）
+    this.refs['tb-more'].innerHTML = '<option value="">更多…</option>'
+      + TABLE_TABS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
     this.refs.bottombar.innerHTML = this.footerText();
   }
 
@@ -169,11 +189,10 @@ export class UI {
     refs['btn-play'].addEventListener('click', () => actions.onTogglePlay());
     refs['tb-tabs'].addEventListener('click', (ev) => {
       const b = pick(ev, 'button[data-tab]');
-      if (!b) return;
-      // 换页签先清掉上一次的高亮：上一页选的组与这一页无关，留着就是"无关联的高亮"
-      if (this.activeTable !== b.dataset.tab) actions.onClearHighlight?.({ silent: true });
-      this.activeTable = b.dataset.tab;
-      this.renderTables();
+      if (b) this.setTable(b.dataset.tab);
+    });
+    refs['tb-more'].addEventListener('change', (ev) => {
+      if (ev.target.value) this.setTable(ev.target.value);
     });
     /*
      * **表格 → 地图**（反向联动）：点表格行 ⇒ 地图上高亮相关地块。
@@ -211,15 +230,46 @@ export class UI {
     }
     refs['drawer-close'].addEventListener('click', () => this.closeDrawer());
     refs['drawer-mask'].addEventListener('click', () => this.closeDrawer());
+    // ---- 列选择（9 列的表在窄屏必须能"先挑列再看"）----
+    refs['btn-dw-cols'].addEventListener('click', () => {
+      const pop = refs['dw-cols'];
+      const nowHidden = pop.classList.toggle('hidden');
+      if (!nowHidden) this.renderColsPop();
+    });
+    refs['dw-cols'].addEventListener('change', (ev) => {
+      const cb = pick(ev, 'input[type="checkbox"]');
+      if (!cb) return;
+      const { cols } = this.buildTable(this.drawerTab);
+      const idx = Number(cb.dataset.col);
+      const hidden = this.hiddenCols();
+      if (cb.checked) hidden.delete(idx);
+      else {
+        // 至少留一列：全隐藏会让表格变成空壳，这属于"不能让用户进到的状态"，直接挡住
+        if (hidden.size + 1 >= cols.length) {
+          this.toast('至少保留一列', 'warn');
+          cb.checked = true;
+          return;
+        }
+        hidden.add(idx);
+      }
+      this.colHidden[this.drawerTab] = [...hidden];
+      this.saveColHidden();
+      this.renderColsPop();
+      this.renderDrawer();
+    });
+    refs['dw-cols'].addEventListener('click', (ev) => {
+      if (!pick(ev, '[data-cols-reset]')) return;
+      delete this.colHidden[this.drawerTab];
+      this.saveColHidden();
+      this.renderColsPop();
+      this.renderDrawer();
+    });
     refs['btn-dw-csv'].addEventListener('click', () => actions.onExportCsv?.());
     // 导出**当前视图**（筛选 + 排序后的行）：看得懂之后能拿得走，闭环才成立
     refs['btn-dw-export'].addEventListener('click', () => actions.onExportView?.(this.drawerResult()));
     refs['dw-tabs'].addEventListener('click', (ev) => {
       const b = pick(ev, 'button[data-tab]');
-      if (!b) return;
-      if (this.drawerTab !== b.dataset.tab) actions.onClearHighlight?.({ silent: true });
-      this.drawerTab = b.dataset.tab;
-      this.renderDrawer();
+      if (b) this.setTable(b.dataset.tab, { drawer: true });
     });
     refs['dw-filter'].addEventListener('input', () => {
       this.drawerFilter = refs['dw-filter'].value;
@@ -486,6 +536,83 @@ export class UI {
    * 数据来自离线预计算的 `data/scenario.json`：每个候选点都已用**真实路网**重算过全网时间，
    * 浏览器只做"最近候选点的查表"，不在前端跑 Dijkstra（见 `tools/scenario.mjs` 的说明）。
    */
+  /** 切换表格页签（底部条页签 / 窄屏「更多」下拉 / 抽屉页签都走它，避免三处逻辑各写一遍） */
+  setTable(key, { drawer = false } = {}) {
+    if (drawer) {
+      if (this.drawerTab === key) return;
+      this.actions?.onClearHighlight?.({ silent: true });
+      this.drawerTab = key;
+      this.drawerSort = null;   // 换了表，之前的排序列没有意义
+      this.colsPopOpen = false;
+      this.refs['dw-cols']?.classList?.add?.('hidden');
+      this.renderDrawer();
+      return;
+    }
+    if (this.activeTable === key) return;
+    // 换页签先清掉上一次的高亮：上一页选的组与这一页无关，留着就是"无关联的高亮"
+    this.actions?.onClearHighlight?.({ silent: true });
+    this.activeTable = key;
+    if (this.refs['tb-more']) this.refs['tb-more'].value = '';
+    this.renderTables();
+  }
+
+  static loadColHidden() {
+    try {
+      const raw = globalThis.localStorage?.getItem('agri-monitor-cols');
+      return raw ? (JSON.parse(raw) ?? {}) : {};
+    } catch { return {}; }   // 隐私模式等读不到 localStorage：不记住即可，不影响功能
+  }
+
+  saveColHidden() {
+    try {
+      globalThis.localStorage?.setItem('agri-monitor-cols', JSON.stringify(this.colHidden ?? {}));
+    } catch { /* 同上：记不住不算错 */ }
+  }
+
+  hiddenCols(key = this.drawerTab) {
+    return new Set(this.colHidden?.[key] ?? []);
+  }
+
+  /** 列选择浮层：勾选要显示的列（「全选」= 清掉本表的隐藏设置） */
+  renderColsPop() {
+    const el = this.refs['dw-cols'];
+    if (!el) return;
+    const { cols } = this.buildTable(this.drawerTab);
+    const hidden = this.hiddenCols();
+    const label = (TABLE_TABS.find(([k]) => k === this.drawerTab) ?? [null, this.drawerTab])[1];
+    el.innerHTML = `<div class="cols-title">显示哪些列（${label}）
+      <button class="mini" data-cols-reset="1" title="恢复显示全部列">全选</button></div>`
+      + cols.map((c, i) => `<label><input type="checkbox" data-col="${i}"${hidden.has(i) ? '' : ' checked'}> ${c.label}</label>`).join('');
+  }
+
+  /**
+   * 抽屉里的排行图：**表看数值、图看谁高谁低**。
+   * 只画当前视图的前 N 行（跟着筛选/排序走），所以"筛完再看图"才是有效的动作。
+   */
+  renderDrawerChart(cols, rows) {
+    const wrap = this.refs['dw-chart-wrap'];
+    const cvs = this.refs['dw-chart'];
+    if (!wrap || !cvs) return;
+    const spec = CHART_SPEC[this.drawerTab];
+    const ci = spec ? cols.findIndex((c) => c.label === spec.col) : -1;
+    const text = (c) => String((typeof c === 'object' && c !== null ? c.text : c) ?? '').replace(/<[^>]*>/g, '');
+    const items = (spec && ci >= 0 && rows.length)
+      ? rows.slice(0, spec.top).map((r, k) => ({
+        label: text(r.cells[0]),
+        value: Number(text(r.cells[ci]).replace(/[^\d.-]/g, '')) || 0,
+        color: k === 0 ? cssVar('--brand', '#1a4f8a') : cssVar('--brand-soft', '#cfe0f5'),
+      })).filter((it) => it.value > 0)
+      : [];
+    if (!items.length) {
+      wrap.classList.add('hidden');
+      this.drawerChartInfo = null;
+      return;
+    }
+    wrap.classList.remove('hidden');
+    hbars(cvs, items, { unit: spec.col });
+    this.drawerChartInfo = { col: spec.col, items };
+  }
+
   /** 「导出结果」要导的东西（列 + 筛选排序后的行 + 表名） */
   drawerResult() {
     const label = (TABLE_TABS.find(([k]) => k === this.drawerTab) ?? [null, this.drawerTab])[1];
@@ -701,11 +828,21 @@ export class UI {
       b.classList.toggle('on', b.dataset.tab === this.drawerTab);
     }
     const { cols, rows, note } = this.buildTable(this.drawerTab);
-    // 筛选：任一列文本包含关键字（大小写不敏感）
+    /*
+     * **列选择**：先投影出"要显示的列"。
+     * ⚠️ 投影时保留**原始下标**（`v.i`），否则筛/排/导三处都会跟着错位 ——
+     * 而且排序用的是"可见列的下标"（`st.col` 指向 `outCols`），所以投影必须在筛选排序**之前**做完。
+     */
+    const hidden = this.hiddenCols();
+    let vis = cols.map((c, i) => ({ c, i })).filter((v) => !hidden.has(v.i));
+    if (!vis.length) vis = [{ c: cols[0], i: 0 }]; // UI 已挡住"全隐藏"，但代码不许假设它一定成功
+    const outCols = vis.map((v) => v.c);
+    const project = (r) => ({ ...r, cells: vis.map((v) => r.cells[v.i]) });
+    // 筛选：任一**可见**列文本包含关键字（大小写不敏感）——筛的就是看得见的那些列
     const kw = String(this.drawerFilter ?? '').trim().toLowerCase();
-    let out = rows;
+    let out = rows.map(project);
     if (kw) {
-      out = rows.filter((r) => r.cells.some((c) => {
+      out = out.filter((r) => r.cells.some((c) => {
         const o = typeof c === 'object' && c !== null ? c : { text: c };
         return String(o.text ?? '').toLowerCase().includes(kw);
       }));
@@ -718,7 +855,7 @@ export class UI {
       const cmp = (typeof x === 'number' && typeof y === 'number') ? x - y : String(x).localeCompare(String(y));
       return st.dir * cmp;
     });
-    const head = cols.map((c, i) => {
+    const head = outCols.map((c, i) => {
       const sorted = st && st.col === i;
       const cls = [c.num ? 'num' : '', c.mono ? 'mono' : '', 'sortable', sorted ? 'sorted' : ''].filter(Boolean).join(' ');
       const arrow = sorted ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
@@ -734,12 +871,14 @@ export class UI {
     if (dw) {
       dw.textContent = `${note} · 共 ${rows.length} 行`
         + (out.length !== rows.length ? ` · 筛选后 ${out.length} 行` : '')
-        + (st ? ` · 已按「${cols[st.col]?.label ?? ''}」${st.dir > 0 ? '升序' : '降序'}` : '')
+        + (st ? ` · 已按「${outCols[st.col]?.label ?? ''}」${st.dir > 0 ? '升序' : '降序'}` : '')
+        + (outCols.length < cols.length ? ` · 显示 ${outCols.length}/${cols.length} 列` : '')
         + ' · 点列头排序 · 点行在图上高亮 · 「导出结果」导的就是这张表';
     }
-    // 供「导出结果」用：当前页签的列 + 过滤排序后的行
-    this.drawerCols = cols;
+    // 供「导出结果」用：**当前视图**的列 + 过滤排序后的行（导的就是"你现在看到的"）
+    this.drawerCols = outCols;
     this.drawerRows = out;
+    this.renderDrawerChart(outCols, out);
   }
 
   toast(text, kind = 'info') {

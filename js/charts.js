@@ -5,6 +5,8 @@
  * 不引第三方图表库的理由与地图一致：运行时零外部请求、体积可控。
  */
 
+import { cssVar } from './theme.js';
+
 const DPR = () => Math.min(2, (globalThis.devicePixelRatio || 1));
 
 /** 把 canvas 按容器宽度和 DPR 准备好，返回 ctx 与逻辑尺寸 */
@@ -79,6 +81,36 @@ export function bars(canvas, items, { height = 64, showPct = true } = {}) {
     x += bw + 2;
   }
   return hits;
+}
+
+/**
+ * **水平条形排行图**：每项一条（"谁高谁低"一眼看出）。
+ *
+ * 与 `bars()` 的分工：`bars` 是**一条**按比例分段的堆叠条（看构成，如作物构成）；
+ * `hbars` 是**每项一条**的排行（看大小对比）——抽屉里"哪几块/哪个单元最要紧"要的是后者。
+ */
+export function hbars(canvas, items, { unit = '', rowH = 16, labelW = null } = {}) {
+  const h = Math.max(rowH + 4, items.length * rowH + 4);
+  const { ctx, w } = prepare(canvas, h);
+  const fg = cssVar('--fg', '#12263f');
+  const dimText = cssVar('--dim', '#5b6b7f');
+  const lw = labelW ?? Math.min(160, Math.max(70, Math.round(w * 0.3)));
+  const vw = 58;
+  const barW = Math.max(8, w - lw - vw - 4);
+  const vmax = Math.max(...items.map((i) => i.value), 1e-9);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  items.forEach((it, i) => {
+    const y = i * rowH + rowH / 2 + 3;
+    ctx.fillStyle = dimText;
+    ctx.fillText(String(it.label).slice(0, 18), 0, y);
+    const bw = (barW * it.value) / vmax;
+    ctx.fillStyle = it.color || fg;
+    ctx.fillRect(lw, y - 5, Math.max(1, bw), 10);
+    ctx.fillStyle = fg;
+    ctx.fillText(`${Math.round(it.value * 10) / 10}${unit ? '' : ''}`, lw + barW + 4, y);
+  });
+  return items;
 }
 
 /** 水平色带图例（用与地图同一份标度：CSS 渐变由 geo.js 生成） */
