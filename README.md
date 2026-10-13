@@ -28,8 +28,15 @@ data/poi.geojson      164 个农业设施点（36 KB：筒仓 6 / 谷仓 8 / 农
 data/weather_daily.json  549 天实测气象锚点（33 KB，NASA POWER）
 tools/fetch-data.mjs  取数与**数据合理性校验**（parcels / roads / poi / weather / check）
 tools/build-access.mjs 可达性分析（离线）：路网建图 + 多源 Dijkstra + 等时圈
+tools/build-units.mjs  三层空间单元：P2 经营单元（连片作业片区）+ P4 统计网格（250 m）
+tools/build-zones.mjs  P3 管理分区（**演示**）：25 m 网格采样 + k-means
+tools/export-tables.mjs 导出维度/事实/元数据表（CSV + schema.json + 数据字典），并跑导出判据
+tables/                12 张表（dim_* / fact_* / meta_dataset）+ schema.json + 数据字典.md
 data/access.json      501 块地的"到收储点"分钟数与下道距离（11 KB）
 data/isochrones.geojson 等时圈等值线（3 / 4.5 / 6 / 7.5 分钟）
+data/units.json|units.geojson  P2 经营单元 62 个（含"地块→单元/网格"归属）
+data/grids.geojson     P4 统计网格 217 格（250 m，编码可复现）
+data/zones.geojson|zones.json  P3 管理分区：363 块地 / 12833 样点 / 744 个分区（演示）
 tools/agro-smoke.mjs  模型判据（38 条，node）
 tools/browser-check.mjs 真浏览器验收（32 条，CDP 真实鼠标；找不到浏览器时跳过）
 ```
@@ -37,9 +44,11 @@ tools/browser-check.mjs 真浏览器验收（32 条，CDP 真实鼠标；找不�
 ## 快速开始
 
 ```bash
-npm run data:all        # 取数（parcels / roads / poi / weather / access）+ 合理性校验
+npm run data:all        # 取数 + 分层 + 分区 + 合理性校验 + 导出表格（一条命令跑完）
+                        #   = parcels → roads → poi → weather → access → units → zones → check → export:tables
 npm test                # 模型判据 38 条
-npm run test:browser    # 真浏览器验收 32 条（Chrome/Edge，找不到浏览器时自动跳过）
+npm run test:browser    # 真浏览器验收 42 条（Chrome/Edge，找不到浏览器时自动跳过）
+npm run export:tables   # 单独重跑表格导出（含 15 条导出判据，失败即非 0 退出）
 
 npm run serve           # 启动静态服务器 → 打开 http://localhost:8080/
 npm run serve:sub       # 同上，但挂在子路径下 → http://localhost:8080/webtrade/
@@ -87,6 +96,48 @@ npm run serve:lan       # 再打印局域网地址，手机同网段可直接打
 6. **告警阈值按本地区分位数定**（水分 p15/p85、生长期气温 p2/p98、日降水 p97、病害 ≥3 级）。
    绝对阈值换个地区立刻失效：本区根区湿度只有 0.61~0.80、生长期日均温最高 25.7 ℃。
 
+## 三层空间单元（P1 自然田块 / P2 经营单元 / P4 统计网格）
+
+参照欧盟 **LPIS** 把"稳定身份"与"逐年属性"分开的做法（`agricultural parcel` = 单一作物+单一农户的连续地块，
+见 [FIG 2007](https://www.fig.net/pub/fig2007/papers/ts_1g/ts01g_03_inan_cete_1404.pdf)；LPIS 对外发布还有**匿名化**版本）：
+
+| 层 | 是什么 | 本区结果 | 用途 |
+|---|---|---|---|
+| **P1 自然田块** | OSM 真实可见田块边界（`data/parcels.geojson`） | **501 块** / 990 ha / 中位 1.12 ha | 逐块作业与监测 |
+| **P2 经营单元** | **空间连片的作业片区**（地块间距 ≤30 m、面积上限 30 ha，贪心合并） | **62 个** / 面积中位 19.7 ha / 最大 30 ha | 轮作计划、作业编组、管理口径 |
+| **P4 统计网格** | 250 m 规则网格（按经纬度取整编码，可复现；思路同 OGC API – DGGS） | **217 格** | 汇总上报 |
+| P3 管理分区（**演示**） | 25 m 网格采样 + 一维 k-means 分 2~3 区（方法同精准农业的 management zone） | 363 块地 / **12833 样点** / 744 区 | 变量施肥/灌溉的处方图雏形 |
+
+两条被数据打回来的设计决定（都写进注释了）：
+
+1. **"经营单元"不能要求同作物**。本区地块确实是连片马赛克（456/501 的最近邻 ≤5 m、中位距离 0 m），
+   但**同作物相邻极少** —— 作物是逐地块抽的，任意相邻对同作物的概率只有 ~1/7；
+   拿它当约束，501 块只能合出 351 个单元（等于没聚合）。语义上也该如此：**单元是空间单元，作物是属性**。
+2. **邻接必须按"点到线段"算**。第一版用"顶点到顶点"，把真实相邻判成几十米远（T 型接头 + 抽稀后顶点稀疏），
+   相邻候选对从上千对掉到 199 对。
+
+## 数据表（照规范落地）
+
+字段口径不是自己拍的，对着三条权威规范：
+
+| 规范 | 落地方式 |
+|---|---|
+| **NY/T 4061-2021《农业大数据核心元数据》** | `meta_dataset.csv` 按**标识信息 / 数据特征 / 时空范围**三组组织（含必选标记），扩展元素只增不改名 |
+| **GB/T 19710 地理信息 元数据**（NY/T 4061 引用） | CRS/SR/空间范围写在 `schema.json` 与 `meta_dataset` |
+| **OGC SensorThings API**（Observation 口径） | 时序观测落**长表** `fact_observation`：`thing_id / observed_property / phenomenon_time / result_value / result_uom` |
+| 第三次全国土壤普查属性图规范 | `dim_parcel` 留出土壤质地/pH/有机质列位（**现在留空，不编造**） |
+| EuroCrops（作物码归一思路） | `dim_crop` 带层级位与单位（籽粒/鲜重/干花口径分列） |
+
+导出的 12 张表（`npm run export:tables`）：
+
+```
+meta_dataset 18 · dim_date 549 · dim_crop 9 · dim_source 4 · dim_grid 217 · dim_unit 62 · dim_parcel 501
+fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fact_observation 4392 · fact_zone 744
+```
+
+粒度取舍（呼应"气温精细化、收成放宽"）：**区域逐日**（549 行）保留；**地块只做季+事件**；
+地块级逐日（275k 行）**不落盘** —— 由确定性模型按需重算，需要时再加导出开关。
+
 ## 可达性分析（算出来的，不是摆上去的）
 
 路网早就有（1576 条路段，含田间道），但之前只是**背景画线**。`tools/build-access.mjs` 让它回答农业物流里
@@ -118,7 +169,7 @@ npm run serve:lan       # 再打印局域网地址，手机同网段可直接打
 要么自备 PMTiles（几十 MB，GitHub Pages 的 Range 支持还得实测）；③ 这个页面要看的是地块上的值，
 底图只会抢注意力。图层结构已经预留，将来要加一层 `L.tileLayer` 即可。
 
-## 判据（`npm test` = 模型 38 条；`npm run test:browser` = 浏览器 32 条；`npm run data:check` = 数据 25 项）
+## 判据（模型 38 + 真浏览器 42 + 数据 25 + 导出 15 = **120 条**）
 
 模型判据里刻意放了**能失败**的断言，例如：
 - 把湿度压掉 40 个百分点 ⇒ 病害必须**完全不出现**（钉住"病害由温湿驱动"）；
@@ -155,7 +206,12 @@ npm run serve:lan       # 再打印局域网地址，手机同网段可直接打
 12. **地块时间与栅格口径不一致**（地块用"最近节点"、栅格用"全节点最小"）⇒ 两者对不上，
     而且"最近节点"落在孤立碎片上就会产生假不可达。统一成"全节点取最小"，另把"下道距离"单独记下来当盲区信号；
 13. **等时圈层级写死 15/20 分钟** ⇒ 在"全程 ≤13 分钟"的乡镇上永远是 0 段（空图层）。
-    改成按本地区 p25/p50/p75/p90 定层级，并加判据"每一层都必须有线段"。
+    改成按本地区 p25/p50/p75/p90 定层级，并加判据"每一层都必须有线段"；
+14. **邻接判定用"顶点到顶点"** ⇒ 把真实相邻的地块判成几十米远（T 型接头 + 抽稀），聚合候选对从上千掉到 199；
+15. **把"同作物"当经营单元的约束** ⇒ 501 块只合出 351 个单元（随机作物下相邻同作物概率仅 ~1/7）；
+16. **CSV 解析没去掉 `\r`** ⇒ 若仓库检出成 CRLF，`synthetic === '1'` 会假失败（已加 `.gitattributes` 统一 LF + 解析去 `\r`）；
+17. **`meta_dataset` 静默写成空表**：`writeCsv` 期望对象而我传了数组，所有单元格为空且不报错
+    ⇒ 加"每个元素都有名有值"判据才抓到。
 
 ## 部署（GitHub Pages 项目站）
 
