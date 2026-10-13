@@ -26,7 +26,12 @@ const LAYERS = [
 ];
 
 /** 地图下方表格区的页签（key / 标题） */
+/**
+ * 表格页签。**简洁版**：不分组、不做查询构造器 ——
+ * 五张表覆盖"结论/空间/趋势/异常"，外加一张「重点」放**带名字的业务问题**（联合查询的落地形态）。
+ */
 const TABLE_TABS = [
+  ['focus', '重点问题'],
   ['frame', '当前帧指标'],
   ['units', '经营单元'],
   ['crops', '作物与收成'],
@@ -87,7 +92,8 @@ export class UI {
     this.selected = null;
     /** 表格区：数据由 main 算好传进来（同一个来源，避免"表里一套、屏上另一套"） */
     this.tables = {};
-    this.activeTable = 'frame';
+    // 默认落在「重点问题」：速览的第一眼应该是**结论**，而不是一堆原始读数
+    this.activeTable = 'focus';
     this.lastTablesSig = '';
     this.refs = {};
     this.lastHtml = {};
@@ -103,7 +109,8 @@ export class UI {
     const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-label', 'btn-play', 'speed-group',
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
-      'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-export-csv', 'btn-export-png'];
+      'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-tb-expand',
+      'tablebar', 'btn-export-csv', 'btn-export-png'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -172,10 +179,19 @@ export class UI {
       const unit = pick(ev, '[data-unit]');
       if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
       const crop = pick(ev, '[data-crop]');
-      if (crop) actions.onHighlightCrop?.(crop.dataset.crop);
+      if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
+      // 「重点问题」：点一行 = 在图上高亮该问题的命中地块（联合查询的结果直接落到空间上）
+      const q = pick(ev, '[data-question]');
+      if (q) actions.onQuestion?.(q.dataset.question);
     });
     // 高亮的状态与取消：状态写在按钮旁边（"图上这一片蓝框是什么"必须一眼能看出、且能一键清掉）
     refs['btn-clear-hl'].addEventListener('click', () => actions.onClearHighlight?.());
+    // 展开/收起表格区：小屏上"读数据"与"看地图"分时复用同一块屏幕（不是把表格叠得更高）
+    refs['btn-tb-expand'].addEventListener('click', () => {
+      const on = refs.tablebar.classList.toggle('expanded');
+      refs['btn-tb-expand'].textContent = on ? '收起表格' : '展开表格';
+      refs['btn-tb-expand'].classList.toggle('on', on);
+    });
     refs['btn-export-csv'].addEventListener('click', () => actions.onExportCsv?.());
     refs['btn-export-png'].addEventListener('click', () => actions.onExportPng?.());
     refs['btn-help'].addEventListener('click', () => this.openHelp());
@@ -472,7 +488,18 @@ export class UI {
     let rows = [];
     let note = '';
 
-    if (this.activeTable === 'frame') {
+    if (this.activeTable === 'focus') {
+      const list = t.questions ?? [];
+      cols = [{ label: '问题' }, { label: '命中', num: true }, { label: '面积 ha', num: true },
+        { label: '最严重 / 摘要' }, { label: '口径（可核对）' }];
+      rows = list.map((q) => ({
+        attrs: ` data-question="${q.key}" title="点击：在图上高亮这 ${q.hits.length} 块命中地块"`,
+        cls: q.hits.length >= 5 ? (q.level ?? '') : '',
+        cells: [q.title, { text: String(q.hits.length), num: true }, { text: nm(q.ha, 1), num: true },
+          { text: q.top || '—', cls: 'small wrap' }, { text: q.desc, cls: 'dim small wrap' }],
+      }));
+      note = `${list.length} 个问题 · 点一行在图上高亮命中地块 · ${fmtDay(this.model.days[d])}`;
+    } else if (this.activeTable === 'frame') {
       cols = [{ label: '指标' }, { label: '当前值', num: true }, { label: '单位' },
         { label: '阈值判定' }, { label: '近 7 日', num: true }, { label: '依据 / 口径' }];
       rows = FRAME_ROWS.map(([label, unit, getV, dec, rule, ref]) => {
@@ -556,7 +583,8 @@ export class UI {
       note = `${list.length} 条 · ${fmtDay(this.model.days[d])}`;
     }
 
-    this.refs['tb-note'].textContent = note;
+    // **行数透明**：132px 里只露 5 行时，用户必须知道"还有多少没看到"（否则会以为看到的就是全部）
+    this.refs['tb-note'].textContent = `${note}${note ? ' · ' : ''}共 ${rows.length} 行`;
     this.setHtml('tb-body', UI.tableHtml(cols, rows));
   }
 

@@ -195,6 +195,107 @@ try {
    * 两边各算一次是这类看板最常见也最伤信任的错（表说正常、告警说超标）。
    * 粒度按需求分：指标/单元到**日**，收成放宽到**季**。
    */
+  /**
+   * **联合查询的落地形态：带名字的业务问题**（简洁版）。
+   *
+   * 为什么不给"查询构造器"：政企看板的使用者要的是**答案**不是**分析台**；
+   * 自由拖拽"行/列/值"对业务人员是门槛，还要占掉宝贵的竖向空间（见 README 的空间预算实测）。
+   * 所以每个问题 = 一句可核对的口径 + 命中数/面积 + 最严重的几块，**点一行就在图上高亮**。
+   * 这些问题真正"联"了多张表：地块（P1）× 可达性（路网 Dijkstra）× 土壤（SoilGrids）× 居民点（OSM）。
+   */
+  function buildQuestions(day) {
+    const pct = (arr, q) => {
+      const a = arr.filter((v) => v != null).sort((x, y) => x - y);
+      return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * q))] : 0;
+    };
+    const accP90 = pct(rows.map((r) => r.t_min), 0.9);
+    const socP25 = pct(rows.map((r) => r.soil?.soc_g_kg), 0.25);
+    const ha = (list) => list.reduce((a, r) => a + r.area_ha, 0);
+    const out = [];
+
+    // ① 运输盲区 ∩ 土壤贫瘠（可达性 × 土壤）—— 最典型的"两张外部数据集联起来才有意义"的问题
+    {
+      const hit = rows.filter((r) => r.t_min != null && r.t_min > accP90 && (r.soil?.soc_g_kg ?? 1e9) < socP25);
+      const worst = [...hit].sort((a, b) => (b.t_min ?? 0) - (a.t_min ?? 0)).slice(0, 2);
+      out.push({
+        key: 'blind-poor', title: '运输盲区 ∩ 土壤贫瘠', level: 'mid',
+        hits: hit.map((r) => r.i), ha: ha(hit),
+        top: worst.length ? worst.map((r) => `${parcelCode(r.i)}（${r.t_min.toFixed(1)} 分 · 有机碳 ${r.soil.soc_g_kg.toFixed(1)}）`).join('、') : '没有同时满足的地块',
+        desc: `到收储点 > ${accP90.toFixed(1)} 分（p90）且 有机碳 < ${socP25.toFixed(1)} g/kg（p25）`,
+      });
+    }
+    // ② 进度落后 ∩ 病害风险（同单元内比较，避免"跨单元比进度"这种没意义的比较）
+    {
+      const byUnit = new Map();
+      for (const r of rows) {
+        if (!r.unit_id || !(r.gddNeed > 0)) continue;
+        if (!byUnit.has(r.unit_id)) byUnit.set(r.unit_id, []);
+        byUnit.get(r.unit_id).push(r);
+      }
+      const hit = [];
+      for (const list of byUnit.values()) {
+        const sorted = list.map((r) => get(r, 'progress', day)).sort((a, b) => a - b);
+        const p25 = sorted[Math.floor(sorted.length * 0.25)] ?? 0;
+        for (const r of list) if (get(r, 'progress', day) < p25 && get(r, 'disease', day) >= 3) hit.push(r);
+      }
+      out.push({
+        key: 'lag-disease', title: '进度落后 ∩ 病害风险',
+        hits: hit.map((r) => r.i), ha: ha(hit),
+        top: hit.length ? hit.slice(0, 2).map((r) => `${parcelCode(r.i)}（${r.cropName} ${Math.round(get(r, 'progress', day) * 100)}% · ${get(r, 'disease', day)} 级）`).join('、') : '当日没有',
+        desc: '进度 < 本经营单元 p25 且 病害气象等级 ≥ 3',
+      });
+    }
+    // ③ 盲区最重的"村"（就近归属到真实居民点 —— 点位真实，不是村界）
+    {
+      const blind = rows.filter((r) => r.t_min != null && r.t_min > accP90);
+      const byV = new Map();
+      for (const r of blind) {
+        const v = nearestVillage(r.i);
+        if (v) byV.set(v, (byV.get(v) ?? 0) + r.area_ha);
+      }
+      const sorted = [...byV.entries()].sort((a, b) => b[1] - a[1]);
+      const top = sorted[0]?.[0] ?? null;
+      out.push({
+        key: 'village-blind', title: '盲区最重的村（就近归属）',
+        hits: top ? blind.filter((r) => nearestVillage(r.i) === top).map((r) => r.i) : [],
+        ha: sorted[0]?.[1] ?? 0,
+        top: sorted.length ? `${top}：${sorted[0][1].toFixed(1)} ha`
+          + (sorted[1] ? `（第 2 名 ${sorted[1][0]} ${sorted[1][1].toFixed(1)} ha）` : '') : '没有盲区',
+        desc: `到收储点 > ${accP90.toFixed(1)} 分的地块，按最近居民点归堆`,
+      });
+    }
+    // ④ 最远的 10 块地（基线对照：不做归属，直接看最不利的）
+    {
+      const far = rows.filter((r) => r.t_min != null).sort((a, b) => b.t_min - a.t_min).slice(0, 10);
+      out.push({
+        key: 'far-10', title: '到收储点最远的 10 块地', hits: far.map((r) => r.i), ha: ha(far),
+        top: far.length ? `${parcelCode(far[0].i)}：${far[0].t_min.toFixed(1)} 分` : '—',
+        desc: '按到最近收储点的行驶时间降序取前 10',
+      });
+    }
+    return out;
+  }
+
+  /** 地块 → 最近的居民点名字（501 × 55 次距离计算；只算一次并缓存） */
+  let villageAssign = null;
+  function nearestVillage(i) {
+    if (i == null || !villagesFC?.features?.length) return null;
+    if (!villageAssign) {
+      villageAssign = rows.map((r) => {
+        const [lon, lat] = centroids[r.i];
+        let best = null;
+        let bd = Infinity;
+        for (const f of villagesFC.features) {
+          const [vlon, vlat] = f.geometry.coordinates;
+          const d = (vlat - lat) ** 2 + ((vlon - lon) * Math.cos((lat * Math.PI) / 180)) ** 2;
+          if (d < bd) { bd = d; best = f.properties.name; }
+        }
+        return best;
+      });
+    }
+    return villageAssign[i];
+  }
+
   function buildTables(day) {
     // —— P2 经营单元：面积加权均值 + 最严病级 + 最远可达时间（"最需要关注"的口径）——
     const acc = new Map();
@@ -248,7 +349,11 @@ try {
       yieldHa: c.yArea ? c.ySum / c.yArea : 0, yieldT: c.t, basis: c.basis, ref: c.ref,
     })).sort((x, y) => y.area - x.area);
 
-    return { sig: `${day}|${unitRows.length}|${cropRows.length}`, units: unitRows, crops: cropRows };
+    return {
+      sig: `${day}|${unitRows.length}|${cropRows.length}`,
+      units: unitRows, crops: cropRows,
+      questions: buildQuestions(day),
+    };
   }
 
   const state = { day: 0, variable: 'progress', playing: false, daysPerSec: 4 };
@@ -429,12 +534,16 @@ try {
     ui.toast(`拟建点：平均可省 ${best.avg_gain_min} 分钟/块，高亮 ${n} 个受影响地块`, 'ok');
   }
 
+  /** 最近一次算出的表数据（问题高亮要从里面取命中列表） */
+  let lastTables = null;
+
   function setDay(day) {
     state.day = Math.min(model.days.length - 1, Math.max(0, Math.round(day)));
     region.temp = model.region.T2M[state.day];
     map.setDay(state.day);
     ui.setDay(state.day);
-    ui.setTables(buildTables(state.day));
+    lastTables = buildTables(state.day);
+    ui.setTables(lastTables);
   }
 
   const ui = new UI({
@@ -479,6 +588,13 @@ try {
         if (hlKey) ui.toast(`${cropCode}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
       },
       /** 取消高亮（表格右上角按钮 / 切页签时静默调用） */
+      /** 「重点问题」点一行 ⇒ 高亮该问题的命中地块（与单元/作物走同一条高亮通道） */
+      onQuestion: (key) => {
+        const q = (lastTables?.questions ?? []).find((x) => x.key === key);
+        if (!q) return;
+        const n = highlightGroup(`q:${key}`, q.hits, q.title);
+        if (hlKey) ui.toast(`${q.title}：命中 ${n} 块（${q.ha.toFixed(1)} ha）已在图上高亮`, 'ok');
+      },
       onClearHighlight: ({ silent = false } = {}) => {
         const n = map.clearHighlight();
         hlKey = null;

@@ -194,6 +194,13 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
  * 内容少时行高由内容决定（grid 的 auto 行），地图自动变大。
  */
 #tablebar { background: var(--panel); display: flex; flex-direction: column; min-height: 132px; max-height: 30vh; overflow: hidden; }
+/*
+ * **展开态**：表格是"扫一眼"用的，但实测 720p 只有 132px（62 行的表只露 5 行）、1024×640 只有 60px（2 行）——
+ * 所以给一个"整块交换"的开关：读数据时把地图让出来，读完再收回（分时复用，而不是把表格叠得更高）。
+ * 用 `max-height` 过渡：收起后行高仍由内容决定，不会留空档。
+ */
+#tablebar.expanded { max-height: 62vh; }
+#btn-tb-expand.on { font-weight: 600; }
 .tb-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .tb-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tb-tabs button { font-size: 12px; padding: 3px 9px; }
@@ -210,10 +217,13 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 .tbl tbody tr:hover { background: var(--brand-soft); }
 .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl td.tag { font-weight: 600; }
-.tbl tbody tr[data-unit], .tbl tbody tr[data-crop] { cursor: pointer; }
-.tbl tbody tr[data-unit]:hover td, .tbl tbody tr[data-crop]:hover td { background: var(--brand-soft); }
+.tbl tbody tr[data-unit], .tbl tbody tr[data-crop], .tbl tbody tr[data-question] { cursor: pointer; }
+.tbl tbody tr[data-unit]:hover td, .tbl tbody tr[data-crop]:hover td,
+.tbl tbody tr[data-question]:hover td { background: var(--brand-soft); }
 .tbl tr.high td { background: var(--bad-soft); }
 .tbl tr.mid td { background: var(--warn-soft); }
+/* 长文本列（口径说明/摘要）：允许换行，否则一行文本把整张表撑出横向滚动 —— 速览最忌横向滚 */
+.tbl td.wrap, .tbl th.wrap { white-space: normal; min-width: 160px; max-width: 460px; line-height: 1.35; }
 .tbl td.mono, .tbl th.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
 
 /* ---------- 底部条 ---------- */

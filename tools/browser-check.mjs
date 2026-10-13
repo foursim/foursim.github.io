@@ -422,8 +422,8 @@ const tb1 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
   return {tabs:q('#tb-tabs button').length, rows:q('#tb-body .tbl tbody tr').length,
     head:q('#tb-body .tbl thead th').length, note:document.getElementById('tb-note').textContent,
     active:document.querySelector('#tb-tabs button.on')?.textContent};})()`);
-check('表格区默认显示「当前帧指标」：8 行 × 6 列（与模型变量一一对应）',
-  tb1.tabs === 5 && tb1.active === '当前帧指标' && tb1.rows === 8 && tb1.head === 6,
+check('表格区默认显示「重点问题」：4 个带名字的问题 × 5 列（速览第一眼是结论）',
+  tb1.tabs === 6 && tb1.active === '重点问题' && tb1.rows === 4 && tb1.head === 5,
   `${tb1.tabs} 个页签 / ${tb1.active} ${tb1.rows} 行 × ${tb1.head} 列 / ${tb1.note}`);
 await click('#tb-tabs button[data-tab="units"]');
 await sleep(250);
@@ -655,6 +655,67 @@ const hxTab = await ev(`(()=>{const a=globalThis.__agri;
 check('换页签时清掉上一次的高亮（上一页选的组与这一页无关）',
   hxTab.on > 0 && hxTab.off === 0 && hxTab.note === '', `切页签前 ${hxTab.on} 块 → 后 ${hxTab.off} 块`);
 await shot('highlight-1440x900');
+
+
+// ===================== 17. 简洁版数据展示（展开 / 行数透明 / 联合查询问题） =====================
+console.log('\n=== 17. 表格区展开与重点问题 ===');
+await boot(1440, 900);
+// ① 行数透明
+const qzDensity = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  const note=document.getElementById('tb-note').textContent;
+  const rows=q('#tb-body .tbl tbody tr').length;
+  return {note, rows, has:new RegExp('共 '+rows+' 行').test(note)};})()`);
+check('行数透明：表头写明"共 N 行"（132px 里只露 5 行时，用户必须知道还有多少没看到）',
+  qzDensity.has, qzDensity.note);
+// ② 展开 / 收起
+const qzExp = await ev(`(()=>{const tb=document.getElementById('tablebar');const mp=document.getElementById('map');
+  const h0=Math.round(tb.getBoundingClientRect().height), m0=Math.round(mp.getBoundingClientRect().height);
+  document.getElementById('btn-tb-expand').click();
+  const h1=Math.round(tb.getBoundingClientRect().height), m1=Math.round(mp.getBoundingClientRect().height);
+  const label=document.getElementById('btn-tb-expand').textContent;
+  document.getElementById('btn-tb-expand').click();
+  const h2=Math.round(tb.getBoundingClientRect().height);
+  return {h0,m0,h1,m1,h2,label};})()`);
+check('「展开表格」把表格区放大并让出地图空间，再点可复位（分时复用，而不是叠更高）',
+  qzExp.h1 > qzExp.h0 * 1.5 && qzExp.m1 < qzExp.m0 && qzExp.m1 > 200 && Math.abs(qzExp.h2 - qzExp.h0) < 6 && qzExp.label === '收起表格',
+  `表格 ${qzExp.h0}→${qzExp.h1}px（按钮显示"${qzExp.label}"）· 地图 ${qzExp.m0}→${qzExp.m1}px · 复位 ${qzExp.h2}px`);
+// ③ 重点问题：命中数可核对 + 点一行高亮命中地块
+const qzFocus = await ev(`(()=>{const a=globalThis.__agri;
+  document.querySelector('#tb-tabs button[data-tab="focus"]').click();
+  const rows=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+  const qs=a.buildTables(a.state.day).questions;
+  return {n:rows.length, titles:[...document.querySelectorAll('#tb-body .tbl tbody tr td:first-child')].map(t=>t.textContent),
+    hits:qs.map(q=>({key:q.key,n:q.hits.length,ha:+q.ha.toFixed(1),desc:q.desc}))};})()`);
+check('「重点问题」列出 4 个带名字的业务问题（各自带命中数/面积/口径）',
+  qzFocus.n === 4 && qzFocus.titles.includes('运输盲区 ∩ 土壤贫瘠') && qzFocus.hits.every((h) => h.desc.length > 8 && h.n > 0),
+  qzFocus.hits.map((h) => `${h.key}=${h.n}块/${h.ha}ha`).join(' · '));
+// 命中地块必须真的满足口径（独立复算，不能"表格说命中、数据不满足"）
+const qzVerify = await ev(`(()=>{const a=globalThis.__agri;const day=a.state.day;
+  const pct=(arr,q)=>{const x=arr.filter(v=>v!=null).sort((m,n)=>m-n);return x[Math.floor(x.length*q)];};
+  const accP90=pct(a.rows.map(r=>r.t_min),0.9), socP25=pct(a.rows.map(r=>r.soil&&r.soil.soc_g_kg),0.25);
+  const q=a.buildTables(day).questions.find(x=>x.key==='blind-poor');
+  const bad=q.hits.filter(i=>!(a.rows[i].t_min>accP90 && a.rows[i].soil.soc_g_kg<socP25));
+  const miss=a.rows.filter(r=>r.t_min>accP90 && r.soil&&r.soil.soc_g_kg<socP25).length;
+  return {bad:bad.length, miss, hit:q.hits.length, accP90:+accP90.toFixed(2), socP25:+socP25.toFixed(2)};})()`);
+check('「运输盲区 ∩ 土壤贫瘠」的命中集合与口径**逐块吻合**（不漏不误）',
+  qzVerify.bad === 0 && qzVerify.hit === qzVerify.miss,
+  `命中 ${qzVerify.hit} / 独立复算 ${qzVerify.miss} / 不符 ${qzVerify.bad}（p90 ${qzVerify.accP90} 分、p25 ${qzVerify.socP25} g/kg）`);
+const qzClick = await ev(`(()=>{const a=globalThis.__agri;
+  const tr=[...document.querySelectorAll('#tb-body .tbl tbody tr')].find(t=>t.dataset.question);
+  const key=tr.dataset.question;
+  const want=a.buildTables(a.state.day).questions.find(q=>q.key===key).hits.length;
+  tr.click();
+  return {key, want, got:a.map.highlightIdx.length, note:document.getElementById('hl-note').textContent};})()`);
+check('点「重点问题」一行 ⇒ 图上高亮该问题的命中地块（联合查询结果落到空间上）',
+  qzClick.got === qzClick.want && qzClick.got > 0 && qzClick.note.length > 0,
+  `${qzClick.key}：命中 ${qzClick.want} → 高亮 ${qzClick.got} 块（状态"${qzClick.note}"）`);
+// 速览最忌横向滚动：问题表不能把表格区撑出横向滚动条
+const qzOverflow = await ev(`(()=>{const b=document.getElementById('tb-body');
+  return {sw:b.scrollWidth, cw:b.clientWidth, over:b.scrollWidth-b.clientWidth};})()`);
+check('「重点问题」表不产生横向滚动（长口径文本换行显示）',
+  qzOverflow.over <= 2, `内容 ${qzOverflow.sw}px / 可视 ${qzOverflow.cw}px（溢出 ${qzOverflow.over}px）`);
+await shot('focus-questions-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
