@@ -106,9 +106,9 @@ async function click(sel) {
   }
   return null;
 }
-const boot = async (w, h) => {
+const boot = async (w, h, query = '') => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}${query}` });
   await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
   await sleep(700);
 };
@@ -356,6 +356,146 @@ await click('#btn-play');
 await sleep(1200);
 const mob = await ev(`({day:globalThis.__agri.state.day, play:globalThis.__agri.state.playing})`);
 check('窄屏：播放按钮可点且真的在推进', mob.play === true, `到第 ${mob.day} 天`);
+
+
+// ===================== 10. 三套政企配色（临时版本，供选型） =====================
+console.log('\n=== 10. 三套配色 ===');
+await boot(1440, 900);
+const themes = await ev(`(()=>{
+  const cv=(k)=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const mapBg=()=>getComputedStyle(document.getElementById('map')).backgroundColor;
+  const out={};
+  for(const key of ['gov','tech','dark']){
+    document.documentElement.dataset.theme=key;
+    out[key]={brand:cv('--brand'), panel:cv('--panel'), mapBg:mapBg(), topbar:getComputedStyle(document.getElementById('topbar')).backgroundColor};
+  }
+  document.documentElement.dataset.theme='gov';
+  return out;})()`);
+const distinct = new Set(Object.values(themes).map((t) => `${t.brand}|${t.panel}|${t.mapBg}`));
+check('三套配色的主色/面板/地图底色互不相同（真的换了，不是只改个名字）', distinct.size === 3,
+  Object.entries(themes).map(([k, v]) => `${k}:${v.brand}/${v.mapBg}`).join('  '));
+const lum = (c) => { const m = (c.match(/[\d.]+/g) ?? []).map(Number); return m.length >= 3 ? m[0] * 0.299 + m[1] * 0.587 + m[2] * 0.114 : 0; };
+check('A/B 两套确为"蓝白"（浅底，地图底色亮度 > 180）',
+  lum(themes.gov.mapBg) > 180 && lum(themes.tech.mapBg) > 180,
+  `gov ${Math.round(lum(themes.gov.mapBg))} / tech ${Math.round(lum(themes.tech.mapBg))} / dark ${Math.round(lum(themes.dark.mapBg))}`);
+
+// 走真实交互切一次：下拉 change → actions.onTheme → applyTheme + map.setTheme
+await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='gov';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await sleep(200);
+const brandGov = await ev(`getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`);
+await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='tech';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await sleep(300);
+const switched = await ev(`({brand:getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(),
+  theme:document.documentElement.dataset.theme, saved:localStorage.getItem('agri-monitor-theme'),
+  anchor:getComputedStyle(document.querySelector('#topbar button')).backgroundColor})`);
+check('下拉切换真的生效（dataset.theme + CSS 变量 + 记住选择）',
+  switched.theme === 'tech' && switched.brand !== brandGov && switched.saved === 'tech',
+  `${brandGov} → ${switched.brand} / ${switched.theme} / 记忆 ${switched.saved}`);
+const tokenChanged = await ev(`(()=>{const a=globalThis.__agri;a.map.setTheme();
+  return {road:a.map.token.roadMajor, admin:a.map.token.adminLine};})()`);
+check('地图令牌随主题刷新（canvas 图层吃不到 CSS 变量，必须显式重刷）',
+  /^#|^rgb/.test(tokenChanged.road ?? '') && /^#|^rgb/.test(tokenChanged.admin ?? ''),
+  `road ${tokenChanged.road} / admin ${tokenChanged.admin}`);
+
+for (const [key, tag] of [['gov', 'A-政务深蓝'], ['tech', 'B-科技亮蓝'], ['dark', 'C-指挥大屏']]) {
+  await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='${key}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await sleep(350);
+  await shot(`theme-${tag}-1440x900`);
+}
+await boot(1440, 900, '&theme=tech');
+check('URL 参数 ?theme= 优先于记忆（甩个链接就能指定方案）',
+  await ev(`document.documentElement.dataset.theme`) === 'tech',
+  await ev(`document.documentElement.dataset.theme`));
+
+// ===================== 11. 行政边界（真实数据） =====================
+console.log('\n=== 11. 行政边界 ===');
+await boot(1440, 900);
+const adm = await ev(`(()=>{const a=globalThis.__agri;const L=a.map.adminLayer.getLayers();
+  return {n:L.length, names:a.admin.features.map(f=>f.properties.name),
+    codes:a.admin.features.map(f=>f.properties.admin_code), levels:a.admin.features.map(f=>f.properties.level),
+    visible:a.map.map.hasLayer(a.map.adminLayer), code:a.ADMIN_CODE,
+    street:a.admin.features.find(f=>String(f.properties.admin_level)==='8')?.properties.osm_id};})()`);
+check('行政边界来自真实数据：乡 + 县两级、都带官方行政区划码',
+  adm.n >= 2 && adm.codes.every((c) => c) && adm.levels.includes('Gemeinde') && adm.levels.includes('Kreis'),
+  adm.names.map((n, i) => `${n}(${adm.codes[i]})`).join(' / '));
+check('地块编码前缀 = 真实的市镇（Gemeinde）行政区划码',
+  adm.code === adm.codes[adm.levels.indexOf('Gemeinde')], `${adm.code} ← admin.geojson 的 ${adm.street ?? ''}`);
+await ev(`(()=>{const cb=document.querySelector('input[data-layer="admin"]');cb.checked=false;
+  cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await sleep(200);
+const admOff = await ev(`globalThis.__agri.map.map.hasLayer(globalThis.__agri.map.adminLayer)`);
+await ev(`(()=>{const cb=document.querySelector('input[data-layer="admin"]');cb.checked=true;
+  cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await sleep(200);
+const admOn = await ev(`globalThis.__agri.map.map.hasLayer(globalThis.__agri.map.adminLayer)`);
+check('「行政边界（村/县）」开关真的能关掉/打开图层', admOff === false && admOn === true, `关 ${admOff} → 开 ${admOn}`);
+await shot('admin-boundary-1440x900');
+
+// ===================== 12. 地图下方的表格 =====================
+console.log('\n=== 12. 表格区 ===');
+const tb1 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  return {tabs:q('#tb-tabs button').length, rows:q('#tb-body .tbl tbody tr').length,
+    head:q('#tb-body .tbl thead th').length, note:document.getElementById('tb-note').textContent,
+    active:document.querySelector('#tb-tabs button.on')?.textContent};})()`);
+check('表格区默认显示「当前帧指标」：8 行 × 6 列（与模型变量一一对应）',
+  tb1.tabs === 4 && tb1.active === '当前帧指标' && tb1.rows === 8 && tb1.head === 6,
+  `${tb1.tabs} 个页签 / ${tb1.active} ${tb1.rows} 行 × ${tb1.head} 列 / ${tb1.note}`);
+await click('#tb-tabs button[data-tab="units"]');
+await sleep(250);
+const tb2 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  return {rows:q('#tb-body .tbl tbody tr').length, first:q('#tb-body .tbl tbody tr td')?.[0]?.textContent,
+    note:document.getElementById('tb-note').textContent};})()`);
+check('「经营单元」表列出全部 62 个 P2 单元，编码用真实行政码前缀',
+  tb2.rows === 62 && /^09186162-U-\d{4}$/.test(tb2.first ?? ''), `${tb2.rows} 行，首行 ${tb2.first}（${tb2.note}）`);
+await click('#tb-tabs button[data-tab="crops"]');
+await sleep(250);
+const tb3 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  return {rows:q('#tb-body .tbl tbody tr').length, head:[...q('#tb-body .tbl thead th')].map(t=>t.textContent)};})()`);
+check('「作物与收成」按作物聚合且带「单产口径」列（不同口径不能直接比大小）',
+  tb3.rows >= 5 && tb3.head.includes('单产口径'), `${tb3.rows} 行 / ${tb3.head.join(' | ')}`);
+// 先跳到有告警的那一天，再切到告警页签（否则表格里可能"当日无告警"，点不到地块）
+const zAlarmDay = await ev(`(()=>{const a=globalThis.__agri;
+  for(let d=0;d<a.model.days.length;d++){if(a.ui.alarmsFor(d).length){a.setDay(d);return d;}}
+  return -1;})()`);
+await click('#tb-tabs button[data-tab="alarms"]');
+await sleep(250);
+const tb4 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
+  return {rows:q('#tb-body .tbl tbody tr').length, btn:!!document.querySelector('#tb-body [data-parcel]')};})()`);
+check('「告警明细」在有告警的日子列出条目并给出可点地块', zAlarmDay >= 0 && tb4.rows >= 1 && tb4.btn,
+  `第 ${zAlarmDay} 天 / ${tb4.rows} 行`);
+const focus = await ev(`(()=>{const b=document.querySelector('#tb-body [data-parcel]');if(!b)return null;
+  b.click();return {sel:globalThis.__agri.ui.selected?.i ?? null, want:Number(b.dataset.parcel)};})()`);
+check('表格里点「涉及地块」能定位到那块地（与告警面板同一行为）',
+  focus && focus.sel === focus.want, JSON.stringify(focus));
+await shot('tables-1440x900');
+
+// ===================== 13. 导出 CSV / PNG =====================
+console.log('\n=== 13. 导出 ===');
+const csv = await ev(`(async()=>{
+  const a=globalThis.__agri;
+  let captured=null;
+  const oc=URL.createObjectURL; URL.createObjectURL=(b)=>{captured=b;return 'blob:stub';};
+  const ok=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){};
+  a.exportCsv();
+  await new Promise(r=>setTimeout(r,80));
+  URL.createObjectURL=oc; HTMLAnchorElement.prototype.click=ok;
+  if(!captured) return {ok:false};
+  const text=await captured.text();
+  const lines=text.split('\\n');
+  return {ok:true, type:captured.type, kb:Math.round(captured.size/1024), header:lines[0], first:lines[1], rows:lines.length-1};})()`);
+check('导出 CSV：行数 = 地块数、列名与离线表对齐、编码用真实行政码',
+  csv.ok && csv.rows === 501 && /parcel_code/.test(csv.header ?? '') && /09186162-P-000001/.test(csv.first ?? ''),
+  csv.ok ? `${csv.rows} 行 / ${csv.kb} KB` : '没捕获到 Blob');
+const png = await ev(`(async()=>{
+  let captured=null;
+  const oc=URL.createObjectURL; URL.createObjectURL=(b)=>{captured=b;return 'blob:stub';};
+  const ok=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){};
+  globalThis.__agri.exportPng();
+  await new Promise(r=>setTimeout(r,800));
+  URL.createObjectURL=oc; HTMLAnchorElement.prototype.click=ok;
+  return captured ? {type:captured.type, kb:Math.round(captured.size/1024)} : null;})()`);
+check('导出 PNG：拿到 image/png 且体积合理（说明真的画上了地图与图例）',
+  png && png.type === 'image/png' && png.kb > 15, png ? `${png.kb} KB` : '没捕获到 Blob');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

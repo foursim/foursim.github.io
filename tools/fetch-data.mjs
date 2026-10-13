@@ -18,6 +18,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
+];
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const POWER = 'https://power.larc.nasa.gov/api/temporal/daily/point';
 const UA = 'webTrade-agri-monitor/0.1 (research demo)';
@@ -592,7 +597,144 @@ function check() {
 }
 
 // ---------- 入口 ----------
+/**
+ * 行政边界（`data/admin.geojson`）——**真实数据**：OSM 的 `boundary=administrative` 关系。
+ *
+ * ## 为什么存成"线的集合"而不是多边形
+ * 多边形的内外环拼接（multipolygon 的 member way 首尾相接）要一套拓扑缝合，容易出错；
+ * 而**边界线**只需要把外环的 way 原样留给渲染 —— 相邻 way 共享端点，画出来不会有缝。
+ * 这个项目要的是"看得见村界/县界、能按边界做汇总"，线足够；真要面，后面再用缝合工具补。
+ *
+ * ## `de:amtlicher_gemeindeschluessel`
+ * 德国市镇在 OSM 里常带**官方市镇代码**（AGS）标签 —— 有就取真值，`dim_admin` 里那句
+ * "Gemeinde 级码待补"就可以落成实数（取不到就如实留空，不猜）。
+ */
+/**
+ * Overpass 镜像轮询。
+ *
+ * ⚠️ 主站过载是**常态**（实测报 `Dispatcher_Client::request_read_and_idx::timeout`，
+ * 而主站过载时对"关系 + bbox"查询会**安静地返回 0 个元素** —— 那时候最容易误判成"这地方没有边界"）。
+ * 所以：多镜像 + 失败重试 + 每个镜像之间歇一下。
+ */
+async function overpass(data, label) {
+  let lastErr;
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      return await getJson(url, {
+        body: new URLSearchParams({ data }).toString(),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        label: `${label}@${new URL(url).host}`,
+      });
+    } catch (err) {
+      lastErr = err;
+      await sleep(1200);
+    }
+  }
+  throw new Error(`${label}：所有镜像都失败（${lastErr?.message}）`);
+}
+
+async function admin() {
+  const bbox = opt('bbox', '48.600,11.560,48.630,11.620');
+  const levels = opt('levels', '8,6').split(',').map((x) => x.trim());
+  const tolM = Number(opt('simplify-m', 25));
+  // ⚠️ 顺序是 **S,W,N,E**（与 parcels 子命令同一个约定）；按 W,S,E,N 拆会让 bbox 变成
+  // "经度当纬度"，Overpass 直接返回 0 个关系 —— 这个 bug 我踩过一次，误判成"服务器过载"。
+  const [s, w, n, e] = bbox.split(',').map(Number);
+  // is_in 用点：默认取 bbox 中心（真实地块范围的中心一定落在本乡镇内）
+  const [atLat, atLon] = opt('at', `${((s + n) / 2).toFixed(5)},${((w + e) / 2).toFixed(5)}`).split(',').map(Number);
+
+  /*
+   * ① `is_in` 定位"这个点属于哪些行政区"。
+   * ⚠️ 为什么不用"bbox + relation"：Overpass 的 bbox 过滤对**关系**不生效（实测同框查询返回 0 个关系，
+   * 而 is_in 明确答出 Wolnzach / Landkreis Pfaffenhofen an der Ilm）—— 用错了会得出"这里没有边界"的错结论。
+   */
+  console.log(`[行政] is_in(${atLat},${atLon}) 查所属行政区（admin_level ${levels.join('/')}）…`);
+  const inRaw = await overpass(`[out:json][timeout:40];is_in(${atLat},${atLon});out tags;`, 'Overpass(is_in)');
+  const targets = (inRaw.elements ?? [])
+    .filter((x) => x.tags?.boundary === 'administrative' && levels.includes(String(x.tags.admin_level)))
+    .map((x) => ({ name: x.tags.name ?? x.tags['name:de'], level: String(x.tags.admin_level) }))
+    .filter((x) => x.name);
+  if (!targets.length) throw new Error('is_in 没找到任何行政边界（换 --at 试试点别的地方）');
+  console.log(`[行政] 找到 ${targets.length} 个：${targets.map((t) => `${t.level}:${t.name}`).join('、')}`);
+
+  // ② 再按**名字 + 层级**取几何：每次只有一两百个点，轻且稳（比按 bbox 拉整片轻得多）
+  const elements = [];
+  for (const t of targets) {
+    const q = `[out:json][timeout:55];rel["boundary"="administrative"]["admin_level"="${t.level}"]["name"="${t.name}"];out geom;`;
+    const raw = await overpass(q, `Overpass(${t.name})`);
+    const got = raw.elements ?? [];
+    if (!got.length) console.log(`[行政] ⚠️ ${t.name}（level ${t.level}）没取到几何，跳过`);
+    elements.push(...got);
+    await sleep(900);
+  }
+
+  const LEVEL_NAME = { '2': '国家', '4': '州', '6': 'Kreis', '8': 'Gemeinde', '9': 'Gemeindeteil', '10': 'Ortsteil' };
+  const feats = [];
+  const diag = { 关系: 0, 取到名称: 0, 取到官方码: 0, 外环way: 0, 抽稀后点数: 0 };
+  for (const el of elements) {
+    if (el.type !== 'relation') continue;
+    diag.关系++;
+    const tags = el.tags ?? {};
+    const name = tags.name ?? tags['name:de'] ?? '';
+    if (name) diag.取到名称++;
+    const ags = tags['de:amtlicher_gemeindeschluessel'] ?? tags['ref'] ?? '';
+    if (ags) diag.取到官方码++;
+    const outer = (el.members ?? []).filter((m) => m.type === 'way' && m.role !== 'inner' && Array.isArray(m.geometry));
+    if (!outer.length) continue;
+    const lines = [];
+    for (const m of outer) {
+      // 边界线是**开口**折线 ⇒ 用 dpKeep 抽稀（对闭合环那套会退化，见上面的说明）
+      const pts = m.geometry.filter((_, i) => dpKeep(m.geometry, tolM)[i])
+        .map((p) => [round6(p.lon), round6(p.lat)]);
+      if (pts.length < 2) continue;
+      lines.push(pts);
+      diag.外环way++;
+      diag.抽稀后点数 += pts.length;
+    }
+    if (!lines.length) continue;
+    feats.push({
+      type: 'Feature',
+      properties: {
+        admin_code: ags || null,
+        admin_level: tags.admin_level ?? '',
+        level: LEVEL_NAME[tags.admin_level] ?? `level-${tags.admin_level}`,
+        name,
+        osm_id: `relation/${el.id}`,
+        official_status: tags.official_status ?? '',
+        source: 'OSM/Overpass',
+        license: 'ODbL-1.0',
+      },
+      geometry: { type: 'MultiLineString', coordinates: lines },
+    });
+  }
+  const out = {
+    type: 'FeatureCollection',
+    metadata: {
+      dataset: '行政边界（真实）',
+      source: 'OpenStreetMap boundary=administrative（Overpass API）',
+      license: 'ODbL-1.0',
+      fetched_at: new Date().toISOString(),
+      bbox: [w, s, e, n],
+      is_in_at: [atLat, atLon],
+      admin_levels: levels.join(','),
+      simplify_m: tolM,
+      note: '存**边界线**（外环 way 原样保留，不缝合多边形）；官方市镇码取 OSM 的 de:amtlicher_gemeindeschluessel',
+      features: feats.length,
+    },
+    features: feats,
+  };
+  const file = path.join(opt('out', 'data'), 'admin.geojson');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(out)}\n`, 'utf8');
+  console.log(`[行政] 诊断：${JSON.stringify(diag)}`);
+  for (const f of feats) {
+    console.log(`  ${f.properties.level.padEnd(9)} ${f.properties.name.padEnd(28)} code=${f.properties.admin_code ?? '（无）'} 线 ${f.geometry.coordinates.length} 段`);
+  }
+  console.log(`[行政] 写出 ${file}（${(fs.statSync(file).size / 1024).toFixed(0)} KB，${feats.length} 个边界）`);
+}
+
 if (cmd === 'parcels') await parcels();
+else if (cmd === 'admin') await admin();
 else if (cmd === 'weather') await weather();
 else if (cmd === 'roads') await roads();
 else if (cmd === 'poi') await poi();

@@ -1,2 +1,3 @@
-admin_code,level,name,country,state,postal_code,scheme
-09186,Kreis,Landkreis Pfaffenhofen a.d.Ilm,DE,Bayern,85283,国内口径：行政区划码 + 图层码 + 顺序号（《农村土地承包经营权要素编码规则》）；本演示区在德国 ⇒ 前缀用 AGS 县级码 09186，Gemeinde 级码待官方登记补齐（不猜）
+admin_code,parent_code,level,name,country,state,postal_code,scheme,source_id,license
+09186162,09186,Gemeinde,Wolnzach,DE,Bayern,85283,国内口径：行政区划码 + 图层码 + 顺序号（《农村土地承包经营权要素编码规则》）；本演示区在德国 ⇒ 用 OSM 的官方市镇码 AGS（县级 09186 / 乡级 09186162，均为实数）,osm,ODbL-1.0
+09186,,Kreis,Landkreis Pfaffenhofen an der Ilm,DE,Bayern,,AGS 县级码（OSM de:amtlicher_gemeindeschluessel）,osm,ODbL-1.0

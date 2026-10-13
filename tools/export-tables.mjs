@@ -103,16 +103,44 @@ const counts = {};
  * （Landkreis Pfaffenhofen a.d.Ilm；Wolnzach 属该县已核实，邮编 85283），**Gemeinde 级码不猜**，
  * 在 `dim_admin` 里如实标注待补。结构一致 ⇒ 换到中国演示区只换前缀，表结构一行都不用改。
  */
+/**
+ * **行政区划码用真实值**：读 `data/admin.geojson`（OSM `boundary=administrative` +
+ * `de:amtlicher_gemeindeschluessel`），而不是手写一个。
+ *
+ * 编码规则照国内口径「行政区划码 + 图层码 + 顺序号」（《农村土地承包经营权要素编码规则》）：
+ * 中国演示区把前缀换成 GB/T 2260 六位县级码即可，表结构一行都不用改。
+ * 实测取到：Gemeinde `09186162`（Wolnzach）、Kreis `09186`（Landkreis Pfaffenhofen a.d.Ilm）。
+ */
+const adminFC = JSON.parse(fs.readFileSync(path.join(DATA, 'admin.geojson'), 'utf8'));
+const townAdmin = adminFC.features.find((f) => String(f.properties.admin_level) === '8') ?? adminFC.features[0];
+const districtAdmin = adminFC.features.find((f) => String(f.properties.admin_level) === '6');
 const ADMIN = {
-  admin_code: '09186',
-  level: 'Kreis',
-  name: 'Landkreis Pfaffenhofen a.d.Ilm',
+  admin_code: townAdmin?.properties.admin_code ?? '00000000',
+  level: townAdmin?.properties.level ?? 'Gemeinde',
+  name: townAdmin?.properties.name ?? '（未知）',
+  parent_code: districtAdmin?.properties.admin_code ?? '',
   country: 'DE',
   state: 'Bayern',
   postal_code: '85283',
   scheme: '国内口径：行政区划码 + 图层码 + 顺序号（《农村土地承包经营权要素编码规则》）；'
-    + '本演示区在德国 ⇒ 前缀用 AGS 县级码 09186，Gemeinde 级码待官方登记补齐（不猜）',
+    + '本演示区在德国 ⇒ 用 OSM 的官方市镇码 AGS（县级 09186 / 乡级 09186162，均为实数）',
 };
+/** 两级行政区划各一行（乡 + 县），父码指上去 */
+const ADMIN_ROWS = [
+  { ...ADMIN, source_id: 'osm', license: 'ODbL-1.0' },
+  {
+    admin_code: districtAdmin?.properties.admin_code ?? '',
+    parent_code: '',
+    level: districtAdmin?.properties.level ?? 'Kreis',
+    name: districtAdmin?.properties.name ?? '',
+    country: 'DE',
+    state: 'Bayern',
+    postal_code: '',
+    scheme: 'AGS 县级码（OSM de:amtlicher_gemeindeschluessel）',
+    source_id: 'osm',
+    license: 'ODbL-1.0',
+  },
+];
 const pad = (n, w) => String(n).padStart(w, '0');
 const adminOf = (v) => `${ADMIN.admin_code}-${v}`;
 
@@ -169,7 +197,8 @@ const COLDEF = {
   grid_id: D('统计网格标识', 'statistical grid identifier', '', '', 'M', 'P4 250 m 规则网格'),
   grid_code: D('统计网格编码', 'statistical grid code', '', '', 'M'),
   grid_m: D('网格边长', 'grid size', 'm', '>0', 'M'),
-  admin_code: D('行政区划码', 'administrative code', '', '', 'M', '中国用 GB/T 2260；本演示区用德国 AGS 县级码'),
+  admin_code: D('行政区划码', 'administrative code', '', '', 'M', '中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS'),
+  parent_code: D('上级行政区划码', 'parent administrative code', '', '', 'O', '乡指县；县为空'),
   landuse: D('土地利用类型', 'land use type', '', 'farmland/meadow/orchard/vineyard', 'M', 'OSM landuse'),
   crop_code: D('作物代码', 'crop code', '', '见 dim_crop', 'M'),
   crop_name_zh: D('作物中文名', 'crop name (zh)', '', '', 'M'),
@@ -316,6 +345,7 @@ counts.dim_source = writeCsv('dim_source',
   ['source_id', 'name', 'url', 'license', 'synthetic', 'usage'],
   [
     { source_id: 'osm', name: 'OpenStreetMap (via Overpass API)', url: 'https://www.openstreetmap.org', license: 'ODbL-1.0', synthetic: 0, usage: '地块几何 / 路网 / 农业设施点' },
+    { source_id: 'osm', name: 'OpenStreetMap (via Overpass API)', url: 'https://www.openstreetmap.org', license: 'ODbL-1.0', synthetic: 0, usage: '地块几何 / 路网 / 农业设施点 / **行政边界**' },
     { source_id: 'nasa-power', name: 'NASA POWER (MERRA-2), community=AG', url: 'https://power.larc.nasa.gov', license: 'NASA open data', synthetic: 0, usage: '气象锚点（校准与验收用）' },
     { source_id: 'model', name: `本项目模型 seed=${SITE.seed}`, url: '', license: '本仓库', synthetic: 1, usage: '作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成' },
     { source_id: 'derived', name: '派生（路网 Dijkstra / 空间聚类）', url: '', license: 'ODbL-1.0（依 OSM）', synthetic: 0, usage: '可达性时间 / 经营单元 / 统计网格 / 管理分区样点' },
@@ -477,8 +507,8 @@ counts.fact_zone = writeCsv('fact_zone',
 
 // ---------- dim_admin（行政区划/统计区划：如实标注演示区在德国、村码待补） ----------
 counts.dim_admin = writeCsv('dim_admin',
-  ['admin_code', 'level', 'name', 'country', 'state', 'postal_code', 'scheme'],
-  [{ ...ADMIN }]);
+  ['admin_code', 'parent_code', 'level', 'name', 'country', 'state', 'postal_code', 'scheme', 'source_id', 'license'],
+  ADMIN_ROWS);
 
 // ---------- dim_variable（变量字典：长表只需 variable_code 一列） ----------
 counts.dim_variable = writeCsv('dim_variable', VAR_COLS, varRows);
@@ -610,7 +640,7 @@ const metaGroups = [
 const COL_SOURCE = {
   parcel_id: 'osm', area_ha: 'osm', centroid_lon: 'osm', centroid_lat: 'osm', landuse: 'osm',
   parcel_code: 'derived', unit_id: 'derived', unit_code: 'derived', grid_id: 'derived', grid_code: 'derived',
-  admin_code: 'derived', t_min_to_store: 'derived', access_m: 'derived',
+  admin_code: 'derived', parent_code: 'derived', t_min_to_store: 'derived', access_m: 'derived',
   yield_ref: 'statistics', base_temp_c: 'statistics', gdd_need_cd: 'statistics',
   sow_window: 'statistics', harvest_md: 'statistics', yield_basis: 'statistics',
   soil_texture: 'soil-survey', soil_ph: 'soil-survey', soil_organic_matter: 'soil-survey', land_quality_grade: 'soil-survey',
@@ -907,15 +937,24 @@ check('数据元字典覆盖**每一张表的每一列**（防止"表加了列�
 }
 
 {
-  // 编码：唯一 + 结构合规（行政区划码-图层码-顺序号）
-  const re = /^\d{5}-[PUG]-[0-9A-Za-z-]+$/;
+  // 编码：结构合规 + **前缀必须是 dim_admin 里真实存在的行政区划码**（比"数位数"强：能抓住写错的码）
+  const re = /^([0-9]{5,8})-([PUG])-[0-9A-Za-z-]+$/;
+  const admin = new Set(table('dim_admin').map((r) => r.admin_code).filter(Boolean));
   const p2 = table('dim_parcel');
   const u2 = table('dim_unit');
   const g2 = table('dim_grid');
-  const codes = [...p2.map((r) => r.parcel_code), ...u2.map((r) => r.unit_code), ...g2.map((r) => r.grid_code)];
-  check('三层编码：非空、结构合规（行政区划码-图层码-顺序号）、globally 唯一',
-    codes.every((c) => re.test(c)) && new Set(codes).size === codes.length,
-    `${new Set(codes).size}/${codes.length} 个唯一，例 ${p2[0].parcel_code}`);
+  const all = [
+    ...p2.map((r) => ['P', r.parcel_code]),
+    ...u2.map((r) => ['U', r.unit_code]),
+    ...g2.map((r) => ['G', r.grid_code]),
+  ];
+  const badShape = all.filter(([, c]) => !re.test(c));
+  const badPrefix = all.filter(([, c]) => !admin.has(c.match(re)?.[1]));
+  const badLayer = all.filter(([L, c]) => re.test(c) && c.match(re)[2] !== L);
+  const codes = all.map(([, c]) => c);
+  check('三层编码：结构合规 + 前缀是 dim_admin 里的合法行政区划码 + 图层码正确 + 全局唯一',
+    badShape.length + badPrefix.length + badLayer.length === 0 && new Set(codes).size === codes.length,
+    `唯一 ${new Set(codes).size}/${codes.length}，前缀 ${[...admin].join('/')}，例 ${p2[0].parcel_code}`);
 }
 
 {

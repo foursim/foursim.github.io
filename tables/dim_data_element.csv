@@ -123,13 +123,16 @@ fact_zone,area_ha_est,面积(估),estimated area,面积(估),number,,≥0,ha,O,m
 fact_zone,sample_m,采样网格边长,sampling grid size,采样网格边长,number,,>0,m,M,model,1,
 fact_zone,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
 fact_zone,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
-dim_admin,admin_code,行政区划码,administrative code,中国用 GB/T 2260；本演示区用德国 AGS 县级码,text,,,,M,derived,0,中国用 GB/T 2260；本演示区用德国 AGS 县级码
+dim_admin,admin_code,行政区划码,administrative code,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS,text,,,,M,derived,0,中国用 GB/T 2260 六位县级码；本演示区用 OSM 的官方市镇码 AGS
+dim_admin,parent_code,上级行政区划码,parent administrative code,乡指县；县为空,text,,,,O,derived,0,乡指县；县为空
 dim_admin,level,层级,level,层级,text,,Kreis/Gemeinde/县/乡/村,,M,model,1,
 dim_admin,name,名称,name,名称,text,,,,M,model,1,
 dim_admin,country,国家,country,国家,text,,ISO 3166-1,,M,model,1,
 dim_admin,state,州/省,state,州/省,text,,,,O,model,1,
 dim_admin,postal_code,邮政编码,postal code,邮政编码,text,,,,O,model,1,
 dim_admin,scheme,编码口径,coding scheme,编码口径,text,,,,M,model,1,
+dim_admin,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_admin,license,许可,license,许可,text,,,,M,model,1,
 dim_variable,variable_code,变量代码,variable code,变量代码,text,,见 dim_variable,,M,model,1,
 dim_variable,name_zh,中文名称,name in Chinese,中文名称,text,,,,M,model,1,
 dim_variable,name_en,英文名称,name in English,英文名称,text,,,,M,model,1,

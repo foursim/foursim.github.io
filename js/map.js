@@ -13,31 +13,37 @@
  * 播放时每帧只调 `setStyle`，**不重建几何**（重建才是卡顿与"点击丢失"的来源）。
  */
 import { VARIABLES, colorOf } from './geo.js';
+import { mapTokens } from './theme.js';
 
 /**
- * 路网样式：**刻意压暗**。
- * 路是背景（要看的是地块上的监测值），第一版用了亮黄 + 粗线，结果整张图被路抢走了注意力。
+ * 路网样式：**刻意压暗**（路是背景，要看的是地块上的监测值），且**等级越高越显眼**。
+ *
+ * ⚠️ 颜色不再写死：Leaflet 画在 canvas 上，**吃不到 CSS 变量**，所以由 `mapTokens()` 从 CSS 里读出来，
+ * 切主题时 `setTheme()` 重刷一次 —— 这样"三套配色"只需要维护 CSS 一处。
  */
-const ROAD_STYLE = {
-  motorway: { color: '#8a7a52', weight: 2.2 },
-  trunk: { color: '#847455', weight: 2 },
-  primary: { color: '#7d6f50', weight: 1.8 },
-  secondary: { color: '#75694c', weight: 1.5 },
-  tertiary: { color: '#6d6248', weight: 1.2 },
-  unclassified: { color: '#5f5741', weight: 1 },
-  residential: { color: '#57503c', weight: 0.9 },
-  track: { color: '#4f4a38', weight: 0.8, dashArray: '3 3' }, // 田间道：农机进出靠它
-};
+const roadTone = (t) => ({
+  motorway: { color: t.roadMajor, weight: 2.2 },
+  trunk: { color: t.roadMajor, weight: 2 },
+  primary: { color: t.roadMid, weight: 1.8 },
+  secondary: { color: t.roadMid, weight: 1.5 },
+  tertiary: { color: t.roadMinor, weight: 1.2 },
+  unclassified: { color: t.roadMinor, weight: 1 },
+  residential: { color: t.roadTrack, weight: 0.9 },
+  track: { color: t.roadTrack, weight: 0.8, dashArray: '3 3' }, // 田间道：农机进出靠它
+});
 
 export class AgriMap {
-  constructor({ el, parcels, roads, poi, isochrones, units, grids, zones, rows, get, region, onSelect }) {
+  constructor({ el, parcels, roads, poi, isochrones, units, grids, zones, admin, rows, get, region, onSelect }) {
+    /** 主题色令牌（从 CSS 变量读；切主题时 `setTheme()` 重读） */
+    this.token = mapTokens();
     this.rows = rows;
     this.get = get;
     this.region = region; // 区域序列的"当前值"容器（main 每天更新，供气温圈等区域量使用）
     this.onSelect = onSelect;
     this.variable = 'progress';
     this.day = 0;
-    this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true, units: true, grids: false, zones: false };
+    this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true,
+      units: true, grids: false, zones: false, admin: true };
 
     this.map = L.map(el, {
       zoomControl: true,
@@ -56,30 +62,38 @@ export class AgriMap {
         layer.bindTooltip('', { sticky: true, className: 'tip' });
         layer.on('tooltipopen', () => layer.setTooltipContent(this.tipFor(row)));
         layer.on('click', () => this.onSelect?.(row));
-        layer.on('mouseover', () => layer.setStyle({ weight: 1.6, color: '#f0f4e8' }));
+        layer.on('mouseover', () => layer.setStyle({ weight: 1.6, color: this.token.parcelHover }));
         layer.on('mouseout', () => this.parcelLayer.resetStyle(layer));
       },
     }).addTo(this.map);
 
     this.roadLayer = L.geoJSON(roads, {
       style: (f) => {
-        const s = ROAD_STYLE[f.properties.highway] ?? { color: '#7d7a63', weight: 1 };
+        const s = roadTone(this.token)[f.properties.highway] ?? { color: this.token.roadMinor, weight: 1 };
         return { ...s, opacity: 0.85, lineCap: 'round' };
       },
       interactive: false,
     }).addTo(this.map);
 
+    /** 农业设施点：**留下引用**，切主题时按 kind 重新上色 */
+    const poiTone = (t, kind) => (kind === 'silo' ? t.poiSilo : (kind === 'agrarian' ? t.poiAgrarian : t.poiOther));
+    this.poiList = [];
     this.poiLayer = L.layerGroup(
-      (poi?.features ?? []).map((f) => L.circleMarker(
-        [f.geometry.coordinates[1], f.geometry.coordinates[0]],
-        {
-          radius: f.properties.kind === 'silo' ? 5 : 3.5,
-          color: '#0b0e0c',
-          weight: 1,
-          fillColor: f.properties.kind === 'silo' ? '#e0c050' : (f.properties.kind === 'agrarian' ? '#78c8ff' : '#b0913f'),
-          fillOpacity: 0.95,
-        },
-      ).bindTooltip(`${f.properties.label}${f.properties.name ? ` · ${f.properties.name}` : ''}`, { direction: 'top' })),
+      (poi?.features ?? []).map((f) => {
+        const kind = f.properties.kind;
+        const layer = L.circleMarker(
+          [f.geometry.coordinates[1], f.geometry.coordinates[0]],
+          {
+            radius: kind === 'silo' ? 5 : 3.5,
+            color: this.token.parcelStroke,
+            weight: 1,
+            fillColor: poiTone(this.token, kind),
+            fillOpacity: 0.95,
+          },
+        ).bindTooltip(`${f.properties.label}${f.properties.name ? ` · ${f.properties.name}` : ''}`, { direction: 'top' });
+        this.poiList.push({ layer, kind });
+        return layer;
+      }),
     ).addTo(this.map);
 
     /**
@@ -97,19 +111,69 @@ export class AgriMap {
     /** P2 经营单元轮廓（单元几何 = 成员地块环的集合，相邻所以看起来连成一片） */
     this.unitLayer = L.geoJSON(units, {
       interactive: false,
-      style: () => ({ color: '#ffffff', weight: 1.6, opacity: 0.55, fill: false, dashArray: '8 4' }),
+      style: () => ({ color: this.token.unitLine, weight: 1.6, opacity: 0.55, fill: false, dashArray: '8 4' }),
     }).addTo(this.map);
     /** P4 统计网格线 */
     this.gridLayer = L.geoJSON(grids, {
       interactive: false,
-      style: () => ({ color: '#9fd0c8', weight: 1, opacity: 0.5, fill: false, dashArray: '2 6' }),
+      style: () => ({ color: this.token.gridLine, weight: 1, opacity: 0.5, fill: false, dashArray: '2 6' }),
     });
+
+    /**
+     * **行政边界**（真实数据：OSM `boundary=administrative`，见 `tools/fetch-data.mjs admin`）。
+     *
+     * 存的是**边界线**（外环 way 原样保留，不缝合多边形）—— 相邻 way 共享端点，画出来没有缝。
+     * 乡级（Gemeinde）实线、县级（Kreis）虚线：一眼分得出"乡界"与"县界"。
+     * 线不填色 ⇒ **不涉及审图号**那套（不渲染行政区域面）。
+     */
+    this.adminLayer = L.geoJSON(admin ?? { type: 'FeatureCollection', features: [] }, {
+      style: (f) => this.adminStyle(f),
+      onEachFeature: (f, layer) => layer.bindTooltip(
+        `${f.properties.name}${f.properties.admin_code ? ` · ${f.properties.admin_code}` : ''}（${f.properties.level}）`,
+        { sticky: true },
+      ),
+    }).addTo(this.map);
     // P3 管理分区样点：**按需加载**（12000+ 个点约 2.3 MB，首屏不该背这个包）
     this.zoneLayer = null;
 
     // 区域气温：**一个圆 + 数值**，不给地块编造地块级温差（见 geo.js 的说明）
     this.tempLayer = L.layerGroup().addTo(this.map);
     this.map.on('zoomend', () => this.drawTemp());
+  }
+
+  /** 行政边界线的样式：乡级实线、县级虚线（线宽/虚线按层级分，颜色走主题令牌） */
+  adminStyle(f) {
+    const lvl = String(f.properties.admin_level ?? '');
+    const isTown = lvl === '8';
+    return {
+      color: this.token.adminLine,
+      weight: isTown ? 2.2 : 1.4,
+      opacity: isTown ? 0.9 : 0.55,
+      dashArray: isTown ? null : '9 6',
+      fill: false,
+      interactive: true,
+    };
+  }
+
+  /**
+   * **切主题**：重读令牌 → 把吃不到 CSS 变量的图层（canvas 上的那些）刷一遍。
+   * 只改样式、不重建几何 —— 重建几何正是播放卡顿与点击丢失的来源。
+   */
+  setTheme() {
+    this.token = mapTokens();
+    const t = this.token;
+    const tone = roadTone(t);
+    this.roadLayer.setStyle((f) => ({ ...(tone[f.properties.highway] ?? { color: t.roadMinor, weight: 1 }), opacity: 0.85, lineCap: 'round' }));
+    this.adminLayer.setStyle((f) => this.adminStyle(f));
+    this.unitLayer.setStyle(() => ({ color: t.unitLine, weight: 1.6, opacity: 0.55, fill: false, dashArray: '8 4' }));
+    this.gridLayer.setStyle(() => ({ color: t.gridLine, weight: 1, opacity: 0.5, fill: false, dashArray: '2 6' }));
+    for (const { layer, kind } of this.poiList) {
+      layer.setStyle({
+        color: t.parcelStroke,
+        fillColor: kind === 'silo' ? t.poiSilo : (kind === 'agrarian' ? t.poiAgrarian : t.poiOther),
+      });
+    }
+    this.refresh(); // 地块填充/描边也跟着换
   }
 
   /** 当前变量 + 当前日期下，一个地块该是什么颜色 */
@@ -121,7 +185,7 @@ export class AgriMap {
       ? '#3a3f3a'
       : (spec.type === 'class' ? (colorOf[this.variable](v) ?? '#555a55') : colorOf[this.variable](v));
     return {
-      color: '#12160f',
+      color: this.token.parcelStroke,
       weight: 0.5,
       opacity: this.visible.parcels ? 0.7 : 0,
       fillColor: fill,
@@ -165,6 +229,7 @@ export class AgriMap {
     else if (name === 'iso') { if (on) this.isoLayer.addTo(this.map); else this.map.removeLayer(this.isoLayer); }
     else if (name === 'units') { if (on) this.unitLayer.addTo(this.map); else this.map.removeLayer(this.unitLayer); }
     else if (name === 'grids') { if (on) this.gridLayer.addTo(this.map); else this.map.removeLayer(this.gridLayer); }
+    else if (name === 'admin') { if (on) this.adminLayer.addTo(this.map); else this.map.removeLayer(this.adminLayer); }
     else if (name === 'zones') {
       if (this.zoneLayer && on) this.zoneLayer.addTo(this.map);
       else if (this.zoneLayer && !on) this.map.removeLayer(this.zoneLayer);

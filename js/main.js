@@ -6,9 +6,11 @@
  * 所以时间轴一处推进，所有视图一起动 —— 这是这类监测界面最容易做错的地方
  * （各视图各存一份状态，播着播着就对不上了）。
  */
-import { simulate, levelOf } from './agro.js';
+import { simulate, levelOf, CROPS } from './agro.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
+import { initTheme, applyTheme, THEMES, cssVar } from './theme.js';
+import { VARIABLES, legendItems, fmtDay } from './geo.js';
 
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
 
@@ -29,7 +31,7 @@ function fatal(err) {
 }
 
 try {
-  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC] = await Promise.all([
+  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC] = await Promise.all([
     loadJson('data/parcels.geojson'),
     loadJson('data/roads.geojson'),
     loadJson('data/poi.geojson'),
@@ -39,6 +41,7 @@ try {
     loadJson('data/units.json'),
     loadJson('data/units.geojson'),
     loadJson('data/grids.geojson'),
+    loadJson('data/admin.geojson'),
   ]);
 
   // 地图要素与模型输出按**下标对齐**（模型不关心几何，界面靠 i 索引二者）
@@ -150,10 +153,206 @@ try {
   /** 区域量的"当前值"（气温圈要用） */
   const region = { temp: model.region.T2M[0] };
 
+  /**
+   * 行政区划码：**用真实的市镇码**（`data/admin.geojson` 里 OSM 的 `de:amtlicher_gemeindeschluessel`）。
+   * 编码规则照国内口径「行政区划码 + 图层码 + 顺序号」，所以换到中国演示区只换前缀。
+   */
+  const townFeature = adminFC.features.find((f) => String(f.properties.admin_level) === '8') ?? adminFC.features[0];
+  const ADMIN_CODE = townFeature?.properties.admin_code ?? '00000000';
+  const codeOf = (layer, seq, width) => `${ADMIN_CODE}-${layer}-${String(seq).padStart(width, '0')}`;
+  const parcelCode = (i) => codeOf('P', i + 1, 6);
+  const unitCode = (unitId) => codeOf('U', String(unitId).replace(/\D/g, '') || '0', 4);
+
+  // 地块质心（导出 CSV 要坐标；只算一次）
+  const centroids = parcelsFC.features.map((f) => {
+    const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+    let x = 0;
+    let y = 0;
+    for (const [lon, lat] of ring) { x += lon; y += lat; }
+    return [x / ring.length, y / ring.length];
+  });
+  const CROP_BY = Object.fromEntries(CROPS.map((c) => [c.key, c]));
+
+  /**
+   * 地图下方几张表的聚合。
+   *
+   * ⚠️ **与屏幕同源**：都读同一份 `rows` / `region` / `get`，UI 不再自己算一遍 ——
+   * 两边各算一次是这类看板最常见也最伤信任的错（表说正常、告警说超标）。
+   * 粒度按需求分：指标/单元到**日**，收成放宽到**季**。
+   */
+  function buildTables(day) {
+    // —— P2 经营单元：面积加权均值 + 最严病级 + 最远可达时间（"最需要关注"的口径）——
+    const acc = new Map();
+    for (const r of rows) {
+      if (!r.unit_id) continue;
+      let a = acc.get(r.unit_id);
+      if (!a) {
+        a = { n: 0, area: 0, w: 0, f: 0, p: 0, pw: 0, disease: 1, tMin: null };
+        acc.set(r.unit_id, a);
+      }
+      a.n++;
+      a.area += r.area_ha;
+      a.w += get(r, 'water', day) * r.area_ha;
+      a.f += get(r, 'fert', day) * r.area_ha;
+      if (r.gddNeed > 0) { a.p += get(r, 'progress', day) * r.area_ha; a.pw += r.area_ha; }
+      a.disease = Math.max(a.disease, get(r, 'disease', day));
+      if (r.t_min != null) a.tMin = a.tMin == null ? r.t_min : Math.max(a.tMin, r.t_min);
+    }
+    const unitProps = new Map(unitsFC.features.map((f) => [f.properties.unit_id, f.properties]));
+    const unitRows = [...acc.entries()].map(([id, a]) => ({
+      code: unitCode(id),
+      crop: unitProps.get(id)?.dominant_crop ?? '',
+      area: a.area,
+      n: a.n,
+      progress: a.pw ? a.p / a.pw : 0,
+      disease: a.disease,
+      water: a.area ? a.w / a.area : 0,
+      fert: a.area ? a.f / a.area : 0,
+      tMin: a.tMin,
+    })).sort((x, y) => (y.disease - x.disease) || (x.progress - y.progress));
+
+    // —— 作物与收成：按作物聚合（休耕单列，不然面积对不上账）——
+    const cAcc = new Map();
+    for (const r of rows) {
+      const key = r.fallow ? 'FALLOW' : (r.crop ?? 'UNKNOWN');
+      let c = cAcc.get(key);
+      if (!c) {
+        const cp = CROP_BY[r.crop];
+        c = { name: r.fallow ? '休耕' : (r.cropName ?? '未分类'), n: 0, area: 0, yArea: 0, ySum: 0, t: 0,
+          basis: cp?.basis ?? '', ref: cp?.yieldRef ?? 0 };
+        cAcc.set(key, c);
+      }
+      c.n++;
+      c.area += r.area_ha;
+      const y = r.yield_t_ha ?? 0;
+      if (y > 0 && !r.fallow) { c.ySum += y * r.area_ha; c.yArea += r.area_ha; c.t += r.yield_t ?? y * r.area_ha; }
+    }
+    const cropRows = [...cAcc.values()].map((c) => ({
+      name: c.name, n: c.n, area: c.area,
+      yieldHa: c.yArea ? c.ySum / c.yArea : 0, yieldT: c.t, basis: c.basis, ref: c.ref,
+    })).sort((x, y) => y.area - x.area);
+
+    return { sig: `${day}|${unitRows.length}|${cropRows.length}`, units: unitRows, crops: cropRows };
+  }
+
   const state = { day: 0, variable: 'progress', playing: false, daysPerSec: 4 };
+
+  // ==================== 导出（CSV / PNG） ====================
+  const csvCell = (v) => {
+    const t = v == null ? '' : String(v);
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  /** 导出**当前帧**的地块表（编码与列名与 `tables/fact_parcel_*` 对齐，便于和离线表对账） */
+  function exportCsv() {
+    const day = state.day;
+    const ymd = ymdAt(day);
+    const head = ['date_key', 'parcel_id', 'parcel_code', 'unit_id', 'grid_id', 'crop_code', 'crop_name_zh',
+      'area_ha', 'centroid_lon', 'centroid_lat', 'progress', 'disease_level', 'water_index', 'fertility_index',
+      'tillage', 'sow_day', 'harvest_day', 'yield_t_ha', 't_min_to_store', 'access_m', 'synthetic'];
+    const lines = [head.join(',')];
+    rows.forEach((r, i) => {
+      const [lon, lat] = centroids[i];
+      lines.push([
+        ymd, r.id, parcelCode(i), r.unit_id ?? '', r.grid_id ?? '', r.fallow ? 'FALLOW' : (r.crop ?? ''),
+        r.cropName ?? '', r.area_ha.toFixed(3), lon.toFixed(6), lat.toFixed(6),
+        get(r, 'progress', day).toFixed(4), get(r, 'disease', day), get(r, 'water', day).toFixed(4),
+        get(r, 'fert', day).toFixed(4), tillageOf(r, day), r.sowDay ?? '', r.harvestDay ?? '',
+        get(r, 'yield', day) ? get(r, 'yield', day).toFixed(2) : '', r.t_min?.toFixed(1) ?? '', r.access_m ?? '', 1,
+      ].map(csvCell).join(','));
+    });
+    download(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `农业监测_${ymd}.csv`);
+    ui.toast(`已导出 ${rows.length} 个地块（${ymd}）`, 'ok');
+  }
+
+  /**
+   * 导出地图 PNG：把 Leaflet 的 canvas 层逐个贴到一张新画布上，再画标题与图例。
+   *
+   * ⚠️ **不含 `divIcon` 标签**（气温数值那类 DOM 图标不在 canvas 里）—— 这是已知取舍：
+   * 为了不引 `html2canvas`（会破坏"零依赖"），只做 canvas 合成；要连标签一起截，就得引依赖。
+   * 换来的好处是导出的图自带标题/日期/图例，贴进汇报材料不用再解释。
+   */
+  function exportPng() {
+    const el = $('map');
+    const box = el.getBoundingClientRect();
+    const c = document.createElement('canvas');
+    c.width = Math.round(box.width);
+    c.height = Math.round(box.height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = cssVar('--map-bg', '#f1f5fa');
+    ctx.fillRect(0, 0, c.width, c.height);
+    let drawn = 0;
+    for (const cv of el.querySelectorAll('canvas')) {
+      const b = cv.getBoundingClientRect();
+      if (!b.width || !b.height) continue;
+      try {
+        ctx.drawImage(cv, b.left - box.left, b.top - box.top, b.width, b.height);
+        drawn++;
+      } catch { /* 跨域画布之类：跳过，不让导出整个失败 */ }
+    }
+    const fg = cssVar('--fg', '#12263f');
+    const panel = cssVar('--panel', '#ffffff');
+    const line = cssVar('--line', '#d3e0ee');
+    // 标题条
+    ctx.fillStyle = panel;
+    ctx.fillRect(0, 0, c.width, 26);
+    ctx.strokeStyle = line;
+    ctx.beginPath();
+    ctx.moveTo(0, 26.5);
+    ctx.lineTo(c.width, 26.5);
+    ctx.stroke();
+    ctx.fillStyle = fg;
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.fillText(`${SITE.name}`, 10, 18);
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText(fmtDay(ymdAt(state.day)), c.width - 96, 18);
+    // 图例框
+    const items = legendItems(state.variable).slice(0, 6);
+    const pad = 10;
+    const lh = 16;
+    const boxH = 30 + items.length * lh;
+    const boxW = 196;
+    const y0 = c.height - boxH - pad;
+    ctx.fillStyle = panel;
+    ctx.strokeStyle = line;
+    ctx.beginPath();
+    ctx.rect(pad, y0, boxW, boxH);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = fg;
+    ctx.font = '600 12px system-ui, sans-serif';
+    const spec = VARIABLES[state.variable];
+    ctx.fillText(`${spec.label}${spec.unit ? `（${spec.unit}）` : ''}`, pad + 8, y0 + 18);
+    items.forEach((it, i) => {
+      const y = y0 + 32 + i * lh;
+      ctx.fillStyle = it.color;
+      ctx.fillRect(pad + 8, y, 14, 12);
+      ctx.fillStyle = fg;
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText(String(it.label).slice(0, 16), pad + 28, y + 11);
+    });
+    c.toBlob((blob) => {
+      if (blob) download(blob, `农业监测地图_${ymdAt(state.day)}_${state.variable}.png`);
+    }, 'image/png');
+    ui.toast(`已导出地图（${drawn} 个图层；不含 DOM 标签）`, 'ok');
+  }
+
+  // 主题要在建 UI/地图**之前**定下来（地图读 CSS 变量取色）
+  const themeKey0 = initTheme();
 
   const map = new AgriMap({
     el: $('map'),
+    admin: adminFC,
     parcels: parcelsFC,
     roads: roadsFC,
     poi: poiFC,
@@ -173,6 +372,7 @@ try {
     region.temp = model.region.T2M[state.day];
     map.setDay(state.day);
     ui.setDay(state.day);
+    ui.setTables(buildTables(state.day));
   }
 
   const ui = new UI({
@@ -200,11 +400,22 @@ try {
         map.focusParcel(row);
         ui.select(row);
       },
+      // 三套配色（临时版本）：只换 `data-theme`，地图吃不到 CSS 变量所以单独刷一次
+      onTheme: (key) => {
+        const k = applyTheme(key);
+        ui.setThemeKey(k);
+        map.setTheme();
+        ui.toast(`视觉：${THEMES.find((t) => t.key === k)?.name ?? k}`);
+      },
+      onExportCsv: () => exportCsv(),
+      onExportPng: () => exportPng(),
     },
   });
 
   ui.setVariable(state.variable);
   ui.setSpeed(state.daysPerSec);
+  ui.setThemeKey(themeKey0);
+  map.setTheme(); // 首屏就按选定主题给 canvas 图层上色
   // 默认落在**生长季中**：第 0 天是 7 月 1 日，冬作物还没播、青贮玉米刚起步，
   // 整张图会是一片"进度 0"，第一眼看不出这是个监测看板。
   const firstDay = model.days.indexOf('20250615');
@@ -224,7 +435,8 @@ try {
   requestAnimationFrame(frame);
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
-  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, tables: null };
+  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson,
+    admin: adminFC, buildTables, exportCsv, exportPng, themeKey: themeKey0, ADMIN_CODE };
 } catch (err) {
   fatal(err);
 }

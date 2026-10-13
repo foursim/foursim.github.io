@@ -19,12 +19,27 @@
       <span id="day-label" class="day"></span>
       <span id="speed-group" class="speeds"></span>
     </div>
-    <div class="group">
+    <div class="group right">
+      <label class="small" for="theme-sel" title="三套政企配色，临时版本供选型">视觉</label>
+      <select id="theme-sel" class="mini"></select>
       <button id="btn-help" title="数据来源与模型口径">说明</button>
     </div>
   </header>
 
   <div id="map"></div>
+
+  <!-- 地图下方的表格区：几张小表（当前帧指标 / 单元 / 收成 / 告警），一屏内可核数 -->
+  <section id="tablebar">
+    <div class="tb-head">
+      <div id="tb-tabs" class="tb-tabs"></div>
+      <div class="tb-actions">
+        <span id="tb-note" class="tb-note"></span>
+        <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
+        <button id="btn-export-png" class="mini" title="导出地图 PNG（含标题、日期与图例）">导出 PNG</button>
+      </div>
+    </div>
+    <div id="tb-body" class="tb-body"></div>
+  </section>
 
   <aside id="panel-left" class="panel">
     <section>

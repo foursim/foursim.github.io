@@ -8,6 +8,7 @@
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf } from './geo.js';
+import { THEMES } from './theme.js';
 import { sparkline, bars, colorbar } from './charts.js';
 
 const LAYERS = [
@@ -20,6 +21,46 @@ const LAYERS = [
   ['units', 'P2 经营单元'],
   ['grids', 'P4 统计网格'],
   ['zones', 'P3 管理分区样点'],
+  ['admin', '行政边界（村/县）'],
+];
+
+/** 地图下方表格区的页签（key / 标题） */
+const TABLE_TABS = [
+  ['frame', '当前帧指标'],
+  ['units', '经营单元'],
+  ['crops', '作物与收成'],
+  ['alarms', '告警明细'],
+];
+
+/**
+ * 「当前帧指标」表的行定义：`标签 / 单位 / 取值 / 小数位 / 阈值判定 / 依据`。
+ *
+ * 阈值判定**复用 main 里的分位数阈值**（`this.th`）—— 表里写的和告警里判的必须是同一套，
+ * 否则会出现"表说正常、告警说超标"这种最伤信任的错。
+ */
+const FRAME_ROWS = [
+  ['平均气温', '℃', (R, d) => R.T2M[d], 1,
+    (v, th) => (v <= th.tempLow ? ['bad', `≤ 本地 p2（${th.tempLow}℃）`] : (v >= th.tempHigh ? ['bad', `≥ 本地 p98（${th.tempHigh}℃）`] : ['ok', '在常年区间内'])),
+    '区域日值（NASA POWER 校准）'],
+  ['相对湿度', '%', (R, d) => R.RH2M[d], 0,
+    (v) => (v > 85 ? ['warn', '> 85%，病害适宜'] : (v < 40 ? ['warn', '偏干'] : ['ok', '正常'])),
+    '中国气象局 病害气象阈值'],
+  ['降水', 'mm', (R, d) => R.PREC[d], 1,
+    (v, th) => (v >= th.precipHigh ? ['warn', `≥ 本地 p97（${th.precipHigh} mm）`] : (v > 0 ? ['ok', '有降水'] : ['ok', '无降水'])),
+    'p97 以上记强降水（淋失/渍涝）'],
+  ['根区土壤湿度', '1', (R, d) => R.GWETROOT[d], 3,
+    (v) => (v < 0.3 ? ['bad', '偏旱'] : (v > 0.9 ? ['warn', '偏湿'] : ['ok', '适宜'])),
+    'NASA POWER GWETROOT 口径'],
+  ['生长进度', '1', (R, d) => R.progress[d], 2,
+    (v) => (v >= 0.999 ? ['ok', '已达收获进度'] : ['ok', '生长中']), '积温法 GDD（面积加权）'],
+  ['病害气象等级', '级', (R, d) => R.diseaseLevel[d], 0,
+    (v, th) => (v >= th.diseaseLevel ? ['bad', `${v} 级 ≥ 告警线 ${th.diseaseLevel}`] : ['ok', `${v} 级`]),
+    'QX/T 促病指数分级'],
+  ['水分保持', '1', (R, d) => R.waterIdx[d], 2,
+    (v, th) => (v < th.waterLow ? ['bad', `< 本地 p15（${th.waterLow}）`] : (v > th.waterHigh ? ['warn', `> 本地 p85（${th.waterHigh}）`] : ['ok', '正常'])),
+    'FAO-56 土壤水量平衡'],
+  ['养分保持', '1', (R, d) => R.fertIdx[d], 2,
+    (v) => (v < 0.35 ? ['warn', '偏低'] : ['ok', '正常']), '基肥 − 吸收 − 淋失'],
 ];
 
 export class UI {
@@ -42,6 +83,10 @@ export class UI {
     this.day = 0;
     this.variable = 'progress';
     this.selected = null;
+    /** 表格区：数据由 main 算好传进来（同一个来源，避免"表里一套、屏上另一套"） */
+    this.tables = {};
+    this.activeTable = 'frame';
+    this.lastTablesSig = '';
     this.refs = {};
     this.lastHtml = {};
     this.cacheDom();
@@ -55,7 +100,8 @@ export class UI {
   cacheDom() {
     const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-label', 'btn-play', 'speed-group',
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
-      'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close'];
+      'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
+      'tb-tabs', 'tb-body', 'tb-note', 'theme-sel', 'btn-export-csv', 'btn-export-png'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -78,6 +124,12 @@ export class UI {
     this.refs['speed-group'].innerHTML = [[1, '1×'], [4, '4×'], [12, '12×']]
       .map(([d, l]) => `<button class="mini" data-days="${d}">${l}</button>`).join('');
     this.refs['day-slider'].max = String(this.model.days.length - 1);
+    // 三套配色（临时版本）：选项文案带上各自定位，方便一边看一边比
+    this.refs['theme-sel'].innerHTML = THEMES
+      .map((t) => `<option value="${t.key}" title="${t.desc}">${t.name}</option>`).join('');
+    this.refs['theme-sel'].value = this.themeKey ?? 'gov';
+    this.refs['tb-tabs'].innerHTML = TABLE_TABS
+      .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
     this.refs.bottombar.innerHTML = this.footerText();
   }
 
@@ -101,6 +153,21 @@ export class UI {
       if (b) actions.onSpeed(Number(b.dataset.days));
     });
     refs['btn-play'].addEventListener('click', () => actions.onTogglePlay());
+    // 主题切换：只改 `data-theme`（CSS 变量整套换），地图由 main 通知重刷
+    refs['theme-sel'].addEventListener('change', () => actions.onTheme?.(refs['theme-sel'].value));
+    refs['tb-tabs'].addEventListener('click', (ev) => {
+      const b = pick(ev, 'button[data-tab]');
+      if (!b) return;
+      this.activeTable = b.dataset.tab;
+      this.renderTables();
+    });
+    // 表格里点"涉及地块"→ 定位（与告警面板同一个行为）
+    refs['tb-body'].addEventListener('click', (ev) => {
+      const el = pick(ev, '[data-parcel]');
+      if (el) actions.onFocusParcel(Number(el.dataset.parcel));
+    });
+    refs['btn-export-csv'].addEventListener('click', () => actions.onExportCsv?.());
+    refs['btn-export-png'].addEventListener('click', () => actions.onExportPng?.());
     refs['btn-help'].addEventListener('click', () => this.openHelp());
     refs['day-slider'].addEventListener('input', () => actions.onDay(Number(refs['day-slider'].value)));
     refs['layer-list'].addEventListener('change', (ev) => {
@@ -134,6 +201,7 @@ export class UI {
     this.renderStats();
     this.renderAlarms();
     this.renderDetail();
+    this.renderTables();
   }
 
   setPlaying(on) {
@@ -323,6 +391,115 @@ export class UI {
   }
 
   // ==================== 提示与帮助 ====================
+  // ==================== 地图下方的表格区 ====================
+  /**
+   * 表格数据由 `main.js` 算好传进来 —— **UI 不做聚合**。
+   * 这样"表里的数"和"屏上的数"必然同源；两边各算一遍是这类界面最常见的对不上账。
+   */
+  setTables(tables) {
+    const sig = `${this.day}|${tables?.sig ?? ''}`;
+    if (this.lastTablesSig === sig) return;
+    this.lastTablesSig = sig;
+    this.tables = tables ?? {};
+    this.renderTables();
+  }
+
+  /** 主题下拉与当前值保持同步（主题也可能由 URL 参数决定） */
+  setThemeKey(key) {
+    this.themeKey = key;
+    if (this.refs['theme-sel']) this.refs['theme-sel'].value = key;
+  }
+
+  /** 一行单元格：`{text, num, mono, cls}` 或纯字符串 */
+  static cellsHtml(cells) {
+    return cells.map((c) => {
+      const o = typeof c === 'object' && c !== null ? c : { text: c };
+      const cls = [o.num ? 'num' : '', o.mono ? 'mono' : '', o.cls ?? ''].filter(Boolean).join(' ');
+      return `<td${cls ? ` class="${cls}"` : ''}>${o.text ?? ''}</td>`;
+    }).join('');
+  }
+
+  static tableHtml(cols, rows) {
+    const head = cols.map((c) => {
+      const cls = [c.num ? 'num' : '', c.mono ? 'mono' : ''].filter(Boolean).join(' ');
+      return `<th${cls ? ` class="${cls}"` : ''}>${c.label}</th>`;
+    }).join('');
+    const body = rows.map((r) => `<tr${r.cls ? ` class="${r.cls}"` : ''}>${UI.cellsHtml(r.cells)}</tr>`).join('');
+    return `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  renderTables() {
+    if (!this.refs['tb-body']) return;
+    for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.tab === this.activeTable);
+    }
+    const t = this.tables ?? {};
+    const d = this.day;
+    const R = this.model.region;
+    const nm = (v, n) => (v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(n));
+    let cols = [];
+    let rows = [];
+    let note = '';
+
+    if (this.activeTable === 'frame') {
+      cols = [{ label: '指标' }, { label: '当前值', num: true }, { label: '单位' },
+        { label: '阈值判定' }, { label: '近 7 日', num: true }, { label: '依据 / 口径' }];
+      rows = FRAME_ROWS.map(([label, unit, getV, dec, rule, ref]) => {
+        const v = getV(R, d);
+        const dv = v - getV(R, Math.max(0, d - 7));
+        const [cls, txt] = rule(v, this.th);
+        return {
+          cells: [label, { text: nm(v, dec), num: true }, unit,
+            { text: txt, cls: `tag ${cls}` },
+            { text: `${dv >= 0 ? '+' : ''}${nm(dv, dec)}`, num: true, cls: 'dim' },
+            { text: ref, cls: 'dim small' }],
+        };
+      });
+      note = `区域日值 · ${fmtDay(this.model.days[d])} · 逐日`;
+    } else if (this.activeTable === 'units') {
+      const list = t.units ?? [];
+      cols = [{ label: '单元编码', mono: true }, { label: '主导作物' }, { label: '面积 ha', num: true },
+        { label: '地块', num: true }, { label: '进度 %', num: true }, { label: '最高病级', num: true },
+        { label: '水分 %', num: true }, { label: '养分 %', num: true }, { label: '到收储点 min', num: true }];
+      rows = list.map((u) => ({
+        cls: u.disease >= 4 ? 'high' : (u.disease >= 3 ? 'mid' : ''),
+        cells: [{ text: u.code, mono: true }, u.crop || '—',
+          { text: nm(u.area, 1), num: true }, { text: u.n, num: true },
+          { text: nm(u.progress * 100, 1), num: true },
+          { text: u.disease, num: true, cls: u.disease >= 3 ? 'bad' : '' },
+          { text: nm(u.water * 100, 1), num: true }, { text: nm(u.fert * 100, 1), num: true },
+          { text: nm(u.tMin, 1), num: true }],
+      }));
+      note = `${list.length} 个经营单元（P2）· 面积加权 · ${fmtDay(this.model.days[d])}`;
+    } else if (this.activeTable === 'crops') {
+      const list = t.crops ?? [];
+      cols = [{ label: '作物' }, { label: '地块数', num: true }, { label: '面积 ha', num: true },
+        { label: '平均单产 t/ha', num: true }, { label: '总产 t', num: true },
+        { label: '单产口径' }, { label: '参考单产 t/ha', num: true }];
+      rows = list.map((c) => ({
+        cells: [c.name, { text: c.n, num: true }, { text: nm(c.area, 1), num: true },
+          { text: c.yieldHa > 0 ? nm(c.yieldHa, 1) : '—', num: true },
+          { text: c.yieldT > 0 ? nm(c.yieldT, 1) : '—', num: true },
+          { text: c.basis || '—', cls: 'dim' },
+          { text: c.ref ? nm(c.ref, 1) : '—', num: true, cls: 'dim' }],
+      }));
+      note = `按作物聚合（收成粒度到季）· ${list.length} 类`;
+    } else {
+      const list = this.alarmsFor(d);
+      cols = [{ label: '等级' }, { label: '事项' }, { label: '说明' }, { label: '涉及地块（点击定位）' }];
+      rows = list.length ? list.map((a) => ({
+        cls: a.level === 'high' ? 'high' : 'mid',
+        cells: [{ text: a.level === 'high' ? '严重' : '关注', cls: `tag ${a.level === 'high' ? 'bad' : 'warn'}` },
+          a.title, { text: a.note || '—', cls: 'dim' },
+          { text: a.items.map((it) => `<button class="mini" data-parcel="${it.i}">${it.text}</button>`).join(' '), cls: 'small' }],
+      })) : [{ cells: [{ text: '当日没有触发阈值的告警', cls: 'dim' }, '', '', ''] }];
+      note = `${list.length} 条 · ${fmtDay(this.model.days[d])}`;
+    }
+
+    this.refs['tb-note'].textContent = note;
+    this.setHtml('tb-body', UI.tableHtml(cols, rows));
+  }
+
   toast(text, kind = 'info') {
     const el = this.refs.toast;
     el.textContent = text;
@@ -367,6 +544,10 @@ export class UI {
       </ul>
       <h2>怎么用</h2>
       <ul>
+        <li><b>视觉</b>：右上角「视觉」下拉在三套政企配色间切换（A 政务深蓝 / B 科技亮蓝 / C 指挥大屏），
+          也可用 <code>?theme=tech</code> 直接指定；选择会被记住（URL 参数优先）；</li>
+        <li><b>地图下方的表格</b>：当前帧指标 / 经营单元 / 作物与收成 / 告警明细 四个页签，
+          右侧「导出 CSV / PNG」把当前这一帧导出（CSV 列名与离线表一致，PNG 自带标题与图例）；</li>
         <li>顶栏切指标、拖时间轴或按 ▶ 播放（空格也可）；</li>
         <li>左栏切图层与看色带图例；右栏是区域指标、当日告警（点条目可定位地块）与选中地块详情；</li>
         <li>点地块看它的农事与曲线：黄=生长进度、红=促病指数、蓝=水分、绿=养分。</li>
