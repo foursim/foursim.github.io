@@ -9,7 +9,7 @@
 import { simulate, levelOf, CROPS } from './agro.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
-import { initTheme, applyTheme, THEMES, cssVar } from './theme.js';
+import { cssVar, THEME } from './theme.js';
 import { VARIABLES, legendItems, fmtDay } from './geo.js';
 
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
@@ -31,7 +31,8 @@ function fatal(err) {
 }
 
 try {
-  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC] = await Promise.all([
+  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC,
+    soilFile, elevFile, villagesFC] = await Promise.all([
     loadJson('data/parcels.geojson'),
     loadJson('data/roads.geojson'),
     loadJson('data/poi.geojson'),
@@ -42,6 +43,9 @@ try {
     loadJson('data/units.geojson'),
     loadJson('data/grids.geojson'),
     loadJson('data/admin.geojson'),
+    loadJson('data/soil.json'),
+    loadJson('data/elevation.json'),
+    loadJson('data/villages.geojson'),
   ]);
 
   // 地图要素与模型输出按**下标对齐**（模型不关心几何，界面靠 i 索引二者）
@@ -54,6 +58,9 @@ try {
     weather: { days: weatherFile.days, vars: weatherFile.vars, source: 'nasa-power' },
     lat: weatherFile.metadata.lat,
     elevation: weatherFile.metadata.elevation_m,
+    // 真实土壤（SoilGrids）→ 土壤生产潜力；真实高程（Copernicus GLO-90）→ 地块级气温
+    soil: soilFile.parcels,
+    elevationM: elevFile.elevation_m,
   });
   model.meta.accessLevels = access.levels_min;
   model.meta.units = unitsJson.stats.units;
@@ -75,6 +82,10 @@ try {
     access_m: access.access_m[i],
     // 三层空间单元的归属（P1 地块 / P2 经营单元 / P4 统计网格）
     unit_id: unitsJson.parcel[i]?.unit_id ?? null,
+    // 真实外部数据（都是开放数据，见 tables/dim_source）
+    elevation_m: p.elevation_m,
+    tempOffsetC: p.temp_offset_c,
+    soil: soilFile.parcels[i] ?? null,
     grid_id: unitsJson.parcel[i]?.grid_id ?? null,
     series: {
       progress: p.series.map((s) => s.prog),
@@ -118,6 +129,9 @@ try {
       //（图例/告警/详情都是"几级"）。第一版把指数直接当等级 ⇒ 地图永远显示 1 级绿、告警永不触发。
       case 'disease': return levelOf(lerp(row.series.disease, day));
       case 'access': return row.t_min ?? 0; // 离线常量，与日期无关
+      // 地块级气温 = 区域日气温 + 真实高程差带来的偏移（直减率 -0.65 ℃/100 m）
+      case 'tempParcel': return model.region.T2M[day] + (row.tempOffsetC ?? 0);
+      case 'texture': return row.soil?.texture ?? null;
       case 'unit': return row.unit_id;
       case 'grid': return row.grid_id;
       case 'progress': case 'water': case 'fert':
@@ -200,6 +214,7 @@ try {
     }
     const unitProps = new Map(unitsFC.features.map((f) => [f.properties.unit_id, f.properties]));
     const unitRows = [...acc.entries()].map(([id, a]) => ({
+      id,
       code: unitCode(id),
       crop: unitProps.get(id)?.dominant_crop ?? '',
       area: a.area,
@@ -227,8 +242,8 @@ try {
       const y = r.yield_t_ha ?? 0;
       if (y > 0 && !r.fallow) { c.ySum += y * r.area_ha; c.yArea += r.area_ha; c.t += r.yield_t ?? y * r.area_ha; }
     }
-    const cropRows = [...cAcc.values()].map((c) => ({
-      name: c.name, n: c.n, area: c.area,
+    const cropRows = [...cAcc.entries()].map(([code, c]) => ({
+      code, name: c.name, n: c.n, area: c.area,
       yieldHa: c.yArea ? c.ySum / c.yArea : 0, yieldT: c.t, basis: c.basis, ref: c.ref,
     })).sort((x, y) => y.area - x.area);
 
@@ -347,9 +362,6 @@ try {
     ui.toast(`已导出地图（${drawn} 个图层；不含 DOM 标签）`, 'ok');
   }
 
-  // 主题要在建 UI/地图**之前**定下来（地图读 CSS 变量取色）
-  const themeKey0 = initTheme();
-
   const map = new AgriMap({
     el: $('map'),
     admin: adminFC,
@@ -359,6 +371,7 @@ try {
     isochrones,
     units: unitsFC,
     grids: gridsFC,
+    villages: villagesFC,
     zones: null, // 懒加载：见 onLayer('zones')
 
     rows,
@@ -400,22 +413,28 @@ try {
         map.focusParcel(row);
         ui.select(row);
       },
-      // 三套配色（临时版本）：只换 `data-theme`，地图吃不到 CSS 变量所以单独刷一次
-      onTheme: (key) => {
-        const k = applyTheme(key);
-        ui.setThemeKey(k);
-        map.setTheme();
-        ui.toast(`视觉：${THEMES.find((t) => t.key === k)?.name ?? k}`);
-      },
       onExportCsv: () => exportCsv(),
       onExportPng: () => exportPng(),
+      /**
+       * **表格 → 地图**：点"经营单元"一行 ⇒ 把该单元的成员地块全高亮并框进视野。
+       * 方向反过来（地图 → 表格）由选中地块驱动面板详情，两者共用同一份 `rows`，不会对不上号。
+       */
+      onHighlightUnit: (unitId) => {
+        const idx = rows.filter((r) => r.unit_id === unitId).map((r) => r.i);
+        const n = map.highlight(idx);
+        ui.toast(`${unitId}：${n} 个地块已高亮（图上蓝框）${n ? '' : ' —— 该单元没有地块？'}`, n ? 'ok' : 'warn');
+      },
+      onHighlightCrop: (cropCode) => {
+        const idx = rows.filter((r) => (r.fallow ? 'FALLOW' : (r.crop ?? 'UNKNOWN')) === cropCode).map((r) => r.i);
+        const n = map.highlight(idx);
+        ui.toast(`${cropCode}：${n} 个地块已高亮`, n ? 'ok' : 'warn');
+      },
     },
   });
 
   ui.setVariable(state.variable);
   ui.setSpeed(state.daysPerSec);
-  ui.setThemeKey(themeKey0);
-  map.setTheme(); // 首屏就按选定主题给 canvas 图层上色
+  map.setTheme(); // 首屏把 canvas 图层的颜色与 CSS 变量对齐一次（canvas 读不到 CSS 变量）
   // 默认落在**生长季中**：第 0 天是 7 月 1 日，冬作物还没播、青贮玉米刚起步，
   // 整张图会是一片"进度 0"，第一眼看不出这是个监测看板。
   const firstDay = model.days.indexOf('20250615');
@@ -436,7 +455,7 @@ try {
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
   globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson,
-    admin: adminFC, buildTables, exportCsv, exportPng, themeKey: themeKey0, ADMIN_CODE };
+    admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key };
 } catch (err) {
   fatal(err);
 }

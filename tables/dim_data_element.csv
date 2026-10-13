@@ -59,11 +59,14 @@ dim_parcel,disease_level_max,病害气象等级(最高),max disease level,病害
 dim_parcel,treated,是否药剂防治,fungicide treated,是否药剂防治,number,,0/1,1,M,model,1,
 dim_parcel,t_min_to_store,到收储点时间,travel time to collection point,真实路网 + Dijkstra,number,,0~60,min,M,derived,0,真实路网 + Dijkstra
 dim_parcel,access_m,下道距离,off-road access distance,盲区信号,number,,0~2000,m,M,derived,0,盲区信号
-dim_parcel,soil_quality_sim,土壤质量指数,soil quality index (simulated),模拟值,number,,0.5~1.5,1,M,soil-survey,0,模拟值
-dim_parcel,soil_texture,土壤质地,soil texture,留空：待接土壤普查/土壤图,text,,按土壤普查口径,,O,soil-survey,0,留空：待接土壤普查/土壤图
-dim_parcel,soil_ph,土壤 pH,soil pH,留空：待接土壤普查/土壤图,text,,3~10,pH,O,soil-survey,0,留空：待接土壤普查/土壤图
-dim_parcel,soil_organic_matter,有机质含量,soil organic matter,留空：待接土壤普查/土壤图,text,,0~100,g/kg,O,soil-survey,0,留空：待接土壤普查/土壤图
-dim_parcel,land_quality_grade,耕地质量等级,cultivated land quality grade,留空：待接 GB/T 33469 耕地质量等级,text,,1~10 等,等,O,soil-survey,0,留空：待接 GB/T 33469 耕地质量等级
+dim_parcel,soil_quality,土壤生产潜力指数,soil productivity index,由真实土壤属性推：有机碳 + pH(6.6 最佳) + 黏粒(25% 最佳)；**本项目经验式，不是 GB/T 33469 的耕地质量等级**,number,,0.5~1.5,1,M,derived,0,由真实土壤属性推：有机碳 + pH(6.6 最佳) + 黏粒(25% 最佳)；**本项目经验式，不是 GB/T 33469 的耕地质量等级**
+dim_parcel,soil_quality_source,土壤指数来源,soil index source,soilgrids=真实土壤推得；model=无土壤数据时的占位,text,,soilgrids/model,,M,derived,0,soilgrids=真实土壤推得；model=无土壤数据时的占位
+dim_parcel,soil_texture,土壤质地,soil texture,ISRIC SoilGrids v2.0；USDA 口径（与国内卡庆斯基制不可混用）,text,,USDA 质地三角,,M,soilgrids,0,ISRIC SoilGrids v2.0；USDA 口径（与国内卡庆斯基制不可混用）
+dim_parcel,soil_ph,土壤 pH,soil pH,ISRIC SoilGrids v2.0（0~30 cm 加权）,number,,3~10,pH,M,soilgrids,0,ISRIC SoilGrids v2.0（0~30 cm 加权）
+dim_parcel,soil_organic_matter,有机碳含量,soil organic carbon,SoilGrids 的 soc（有机**碳**，不是有机质；换算约 ×1.724）,number,,0~100,g/kg,M,soilgrids,0,SoilGrids 的 soc（有机**碳**，不是有机质；换算约 ×1.724）
+dim_parcel,elevation_m,高程,elevation,Copernicus GLO-90 DEM（Open-Meteo Elevation）,number,,0~3000,m,O,dem,0,Copernicus GLO-90 DEM（Open-Meteo Elevation）
+dim_parcel,temp_offset_c,气温偏移,temperature offset,直减率 -0.65 ℃/100 m ×（地块高程 − 气象站高程）,number,,-3~3,℃,O,derived,0,直减率 -0.65 ℃/100 m ×（地块高程 − 气象站高程）
+dim_parcel,land_quality_grade,耕地质量等级,cultivated land quality grade,**留空**：GB/T 33469 需 20+ 指标（地形/排灌/剖面等），本数据集只有土壤属性,text,,1~10 等,等,O,soil-survey,0,**留空**：GB/T 33469 需 20+ 指标（地形/排灌/剖面等），本数据集只有土壤属性
 dim_parcel,n_zones,管理分区数,number of management zones,管理分区数,number,,0~5,1,O,model,1,
 dim_parcel,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
 dim_parcel,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测

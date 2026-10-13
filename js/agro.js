@@ -195,7 +195,22 @@ export function normalizeWeather(W) {
  * 适种性由**积温**把关（见模块头第 2 条）：`histGdd` 是本地生育期积温，
  * 达不到 `gddNeed` 的作物不进入候选 —— 所以这个纬度/海拔上不会长出粒用玉米。
  */
-export function planParcels({ seed = 20261013, parcels, mix = DEFAULT_MIX, histGdd = {
+/**
+ * 由**真实土壤属性**（ISRIC SoilGrids：有机碳 / pH / 黏粒）推"土壤生产潜力指数"（0.5~1.5，1 = 中等）。
+ *
+ * ⚠️ 这是**本项目的经验式**，不是国家标准 —— 所以列名与说明里都**不许**写成"耕地质量等级"
+ * （那是 GB/T 33469 的一套完整指标体系，20+ 个指标，本数据集没有）。
+ * 口径：有机碳（养分基础，10 g/kg 起算）+ pH（6.6 附近最佳）+ 黏粒（25% 附近保水与通透平衡最好）。
+ */
+export function soilQualityFromSoil(s) {
+  if (!s || s.soc_g_kg == null || s.ph == null || s.clay_pct == null) return null;
+  const fSoc = Math.max(0, Math.min(1, (s.soc_g_kg - 10) / 40)) * 0.22;
+  const fPh = Math.max(0, 1 - Math.abs(s.ph - 6.6) / 2.4) * 0.12;
+  const fClay = Math.max(0, 1 - Math.abs(s.clay_pct - 25) / 35) * 0.08;
+  return Math.round(clamp(0.88 + fSoc + fPh + fClay, 0.5, 1.5) * 1000) / 1000;
+}
+
+export function planParcels({ seed = 20261013, parcels, mix = DEFAULT_MIX, soil = null, histGdd = {
   // 这几个数是**实测锚点**（NASA POWER 2024-07~2025-12 按各自生育期窗口算出来的）：
   WINTER_WHEAT: 2615, WINTER_BARLEY: 2500, WINTER_RAPESEED: 1674, SILAGE_MAIZE: 986, HOPS: 1750, MEADOW: 9999,
 }, yearFrom = 2023, yearTo = 2025, dataStart = '20240701', dataEnd = '20251231' } = {}) {
@@ -274,8 +289,14 @@ export function planParcels({ seed = 20261013, parcels, mix = DEFAULT_MIX, histG
       sowDay: sowDays[0] ?? null,
       sowDays,
       seasons, // [{sow, deadline}] 每季的播种日与收获截止日
-      // 地块固有差异（土壤质地/管理）——小扰动，让地图不是一片同色
-      soilQuality: Math.round(clamp(0.9 + rng.next() * 0.22, 0.8, 1.12) * 1000) / 1000,
+      /*
+       * 土壤生产潜力：**有真实土壤数据就用真实数据**（SoilGrids 的有机碳/pH/黏粒），
+       * 没有时才退回"小扰动"占位（这样"没有数据"和"有数据"在表里也分得清：
+       * `soil_quality_source` 列会写 model 还是 soilgrids）。
+       */
+      soilQuality: soilQualityFromSoil(soil?.[plan.length])
+        ?? Math.round(clamp(0.9 + rng.next() * 0.22, 0.8, 1.12) * 1000) / 1000,
+      soilQualitySource: soilQualityFromSoil(soil?.[plan.length]) != null ? 'soilgrids' : 'model',
       /**
        * 是否做了药剂防治（约 55% 的地块）——**不是装饰**：
        * 没有防治动作时，湿润气候 + 感病作物会让 60% 的地块同时进入 4~5 级，
@@ -295,7 +316,9 @@ export function planParcels({ seed = 20261013, parcels, mix = DEFAULT_MIX, histG
  * 返回的 `parcels[]` 里每块地带**抽样序列**（默认 7 天一个采样点），供时间轴播放与图表使用；
  * `region` 是全镇逐日的聚合序列（不抽样，用于顶部指标卡与曲线）。
  */
-export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAULT_MIX, start = '20240701', end = '20251231', lat = 48.615, elevation = 463, stepDays = 7, humidityBoost = 0, siteName = '未命名演示区', histGdd = {
+export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAULT_MIX, soil = null,
+  /** 逐地块高程（m，真实 DEM）。给了就按**气温直减率**推出地块级气温偏移 */
+  elevationM = null, start = '20240701', end = '20251231', lat = 48.615, elevation = 463, stepDays = 7, humidityBoost = 0, siteName = '未命名演示区', histGdd = {
   WINTER_WHEAT: 2615, WINTER_BARLEY: 2500, WINTER_RAPESEED: 1674, SILAGE_MAIZE: 986, HOPS: 1750, MEADOW: 9999,
 } } = {}) {
   const rng = new Rng(seed);
@@ -307,7 +330,7 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
   // 冬小麦却是上一年 10 月播的），漏了它就会整季没有作物。
   const yearFrom = Number(days[0].slice(0, 4)) - 1;
   const yearTo = Number(days[n - 1].slice(0, 4));
-  const plan = planParcels({ seed, parcels, mix, histGdd, yearFrom, yearTo, dataStart: days[0], dataEnd: days[n - 1] });
+  const plan = planParcels({ seed, parcels, mix, soil, histGdd, yearFrom, yearTo, dataStart: days[0], dataEnd: days[n - 1] });
 
   // 每块地的状态（**按季推进**：到了下一个播种日就重置，进入下一季）
   const S = plan.map((p) => {
@@ -539,7 +562,17 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
     region.sownHa[d] = sownToday;
   }
 
-  const parcelsOut = S.map((s) => ({
+  /**
+   * 地块级气温偏移：`-0.65 ℃/100 m ×（地块高程 − 气象站高程）`。
+   *
+   * 之前"地块级气温"一直没做，理由是"OSM 不给高程，硬编温度场就是造假"。**现在有真高程了**
+   * （Copernicus GLO-90，`tools/fetch-data.mjs elevation`），所以这不是编，是**推导**：
+   * 区域日气温仍是 NASA POWER 校准的那条序列，地块之间只差一个由真实高差决定的常数。
+   * ⚠️ 参考高程用**气象站高程**（区域序列就是那个站点的），不是地块中位数 —— 否则整片地会集体偏移。
+   */
+  const LAPSE = -0.0065; // ℃/m
+  const elevRef = elevationM ? elevation : elevation;
+  const parcelsOut = S.map((s, i) => ({
     id: s.p.id,
     area_ha: s.p.area_ha,
     landuse: s.p.landuse,
@@ -562,6 +595,8 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
       : 0,
     yield_t: Math.round(s.yieldSeasons.reduce((a, b) => a + b, 0) * s.p.area_ha * 10) / 10,
     tillage: s.tillage,
+    elevation_m: elevationM?.[i] ?? null,
+    temp_offset_c: elevationM?.[i] == null ? 0 : Math.round(LAPSE * (elevationM[i] - elevRef) * 1000) / 1000,
     series: s.series,
   }));
 
@@ -576,7 +611,8 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
     },
     days,
     weather: { source: W.source, vars: V },
-    plan: plan.map((p) => ({ id: p.id, crop: p.cropKey, sowDay: p.sowDay, fallow: p.fallow, soilQuality: p.soilQuality })),
+    plan: plan.map((p) => ({ id: p.id, crop: p.cropKey, sowDay: p.sowDay, fallow: p.fallow,
+      soilQuality: p.soilQuality, soilQualitySource: p.soilQualitySource })),
     parcels: parcelsOut,
     region,
     stats: {

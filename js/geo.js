@@ -88,6 +88,30 @@ export const VARIABLES = {
     stops: [[1, '#2f7d3a'], [3, '#5fa83c'], [6, '#c8b93a'], [9, '#dd8436'], [13, '#c0392b']],
     fmt: (v) => `${v.toFixed(1)} 分`,
   },
+  /**
+   * **地块级气温**：区域日气温 + 直减率 ×（地块高程 − 气象站高程）。
+   *
+   * 这是本轮"数据向真实靠近"最实质的一步：之前只有"区域一个圆 + 一个数"，
+   * 理由是"OSM 不给高程，硬编地块级温度场就是造假"。现在高程是**真实 DEM**
+   * （Copernicus GLO-90，`tools/fetch-data.mjs elevation`）⇒ 地块间的差异是**推导**出来的，不是编的。
+   */
+  tempParcel: {
+    label: '地块气温', spatial: true, type: 'seq', unit: '℃',
+    stops: [[4, '#2c3e90'], [12, '#4a7ec0'], [18, '#5fb37a'], [24, '#e0c050'], [30, '#d4544a']],
+    fmt: (v) => `${v.toFixed(1)} ℃`,
+  },
+  /** 土壤质地（USDA 口径，来自 ISRIC SoilGrids v2.0）；颜色只**区分质地**，不表示优劣 */
+  texture: {
+    label: '土壤质地', spatial: true, type: 'class', unit: '',
+    classes: [
+      ['loam', '壤土 loam', '#8a6f3a'], ['clay loam', '黏壤土 clay loam', '#7a5230'],
+      ['sandy loam', '砂壤土 sandy loam', '#c8a24a'], ['silt loam', '粉壤土 silt loam', '#a98a5a'],
+      ['clay', '黏土 clay', '#5f3f22'], ['sandy clay loam', '砂黏壤土 sandy clay loam', '#b0824a'],
+      ['silty clay loam', '粉黏壤土 silty clay loam', '#96683f'], ['sandy clay', '砂黏土 sandy clay', '#8f5a2a'],
+      ['silty clay', '粉黏土 silty clay', '#6b4a2a'], ['silt', '粉土 silt', '#d0b98a'],
+      ['sand', '砂土 sand', '#e0cfa0'], ['loamy sand', '壤砂土 loamy sand', '#d6bd86'],
+    ],
+  },
   yield: {
     label: '单产', spatial: true, type: 'seq', unit: 't/ha',
     stops: [[0, '#3a3f3a'], [5, '#5f8f3f'], [15, '#c8b93a'], [30, '#d97a36'], [50, '#e8e8d8']],
@@ -116,6 +140,8 @@ colorOf.access = ramp(VARIABLES.access.stops);
 colorOf.unit = (v) => categoricalColor(v ?? 'none');
 colorOf.grid = (v) => categoricalColor(v ?? 'none', 46, 48);
 colorOf.temp = ramp([[0, '#2c3e90'], [10, '#4a7ec0'], [16, '#5fb37a'], [22, '#e0c050'], [30, '#d4544a'], [38, '#7a1f1f']]);
+colorOf.tempParcel = ramp(VARIABLES.tempParcel.stops);
+colorOf.texture = (v) => VARIABLES.texture.classes.find(([k]) => k === v)?.[2] ?? '#8b8b8b';
 
 /** 阶标（作物等级/病害等级）与类标的图例项 */
 export function legendItems(varKey) {

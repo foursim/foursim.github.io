@@ -33,6 +33,15 @@ const units = readJson('units.json');
 const zones = readJson('zones.json');
 const isochrones = readJson('isochrones.geojson');
 
+/**
+ * **真实土壤与高程**（都是外部开放数据，不是模型生成）：
+ * - `soil.json`：ISRIC SoilGrids v2.0（250 m）→ 逐地块的质地/pH/有机碳（按最近采样点赋值）
+ * - `elevation.json`：Open-Meteo Elevation（Copernicus GLO-90 DEM）→ 逐地块高程
+ * 有了它们，"土壤四列"不再是空的，"地块级气温"也从"不敢做"变成"能推导"。
+ */
+const soilFile = JSON.parse(fs.readFileSync(path.join(DATA, 'soil.json'), 'utf8'));
+const elevFile = JSON.parse(fs.readFileSync(path.join(DATA, 'elevation.json'), 'utf8'));
+
 const model = simulate({
   seed: SITE.seed,
   siteName: SITE.name,
@@ -40,6 +49,8 @@ const model = simulate({
   weather: { days: weatherFile.days, vars: weatherFile.vars, source: 'nasa-power' },
   lat: weatherFile.metadata.lat,
   elevation: weatherFile.metadata.elevation_m,
+  soil: soilFile.parcels,
+  elevationM: elevFile.elevation_m,
   // ⚠️ 导出用逐日（stepDays:1）、页面用 7 天抽样：粒度是**故意不同**的 ——
   // 页面要"首屏小、播放顺"，导出要"能按旬/按季精确聚合"。所以旬表是真日均，不是抽样插值。
   stepDays: 1,
@@ -269,11 +280,15 @@ const COLDEF = {
   harvest_md: D('收获月日', 'harvest month-day', '', 'MM-DD', 'O'),
   t_min_to_store: D('到收储点时间', 'travel time to collection point', 'min', '0~60', 'M', '真实路网 + Dijkstra'),
   access_m: D('下道距离', 'off-road access distance', 'm', '0~2000', 'M', '盲区信号'),
-  soil_quality_sim: D('土壤质量指数', 'soil quality index (simulated)', '1', '0.5~1.5', 'M', '模拟值'),
-  soil_texture: D('土壤质地', 'soil texture', '', '按土壤普查口径', 'O', '留空：待接土壤普查/土壤图'),
-  soil_ph: D('土壤 pH', 'soil pH', 'pH', '3~10', 'O', '留空：待接土壤普查/土壤图'),
-  soil_organic_matter: D('有机质含量', 'soil organic matter', 'g/kg', '0~100', 'O', '留空：待接土壤普查/土壤图'),
-  land_quality_grade: D('耕地质量等级', 'cultivated land quality grade', '等', '1~10 等', 'O', '留空：待接 GB/T 33469 耕地质量等级'),
+  soil_quality: D('土壤生产潜力指数', 'soil productivity index', '1', '0.5~1.5', 'M',
+    '由真实土壤属性推：有机碳 + pH(6.6 最佳) + 黏粒(25% 最佳)；**本项目经验式，不是 GB/T 33469 的耕地质量等级**'),
+  soil_quality_source: D('土壤指数来源', 'soil index source', '', 'soilgrids/model', 'M', 'soilgrids=真实土壤推得；model=无土壤数据时的占位'),
+  elevation_m: D('高程', 'elevation', 'm', '0~3000', 'O', 'Copernicus GLO-90 DEM（Open-Meteo Elevation）'),
+  temp_offset_c: D('气温偏移', 'temperature offset', '℃', '-3~3', 'O', '直减率 -0.65 ℃/100 m ×（地块高程 − 气象站高程）'),
+  soil_texture: D('土壤质地', 'soil texture', '', 'USDA 质地三角', 'M', 'ISRIC SoilGrids v2.0；USDA 口径（与国内卡庆斯基制不可混用）'),
+  soil_ph: D('土壤 pH', 'soil pH', 'pH', '3~10', 'M', 'ISRIC SoilGrids v2.0（0~30 cm 加权）'),
+  soil_organic_matter: D('有机碳含量', 'soil organic carbon', 'g/kg', '0~100', 'M', 'SoilGrids 的 soc（有机**碳**，不是有机质；换算约 ×1.724）'),
+  land_quality_grade: D('耕地质量等级', 'cultivated land quality grade', '等', '1~10 等', 'O', '**留空**：GB/T 33469 需 20+ 指标（地形/排灌/剖面等），本数据集只有土壤属性'),
   zone_code: D('管理分区代码', 'management zone code', '', 'A~D', 'M', 'A=潜力最低'),
   zone_center_value: D('分区中心值', 'zone center value', '1', '', 'M'),
   sample_m: D('采样网格边长', 'sampling grid size', 'm', '>0', 'M'),
@@ -350,7 +365,9 @@ counts.dim_source = writeCsv('dim_source',
     { source_id: 'model', name: `本项目模型 seed=${SITE.seed}`, url: '', license: '本仓库', synthetic: 1, usage: '作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成' },
     { source_id: 'derived', name: '派生（路网 Dijkstra / 空间聚类）', url: '', license: 'ODbL-1.0（依 OSM）', synthetic: 0, usage: '可达性时间 / 经营单元 / 统计网格 / 管理分区样点' },
     { source_id: 'statistics', name: '公开农业统计（作物日历与参考单产）', url: 'https://www.destatis.de', license: '公开统计口径', synthetic: 0, usage: '作物基温/生育期积温/参考单产（验收锚点）' },
-    { source_id: 'soil-survey', name: '土壤普查/土壤图（**尚未接入**）', url: '', license: '待定', synthetic: 0, usage: '土壤质地/pH/有机质/耕地质量等级 —— 现留空' },
+    { source_id: 'soilgrids', name: 'ISRIC SoilGrids v2.0（250 m）', url: 'https://www.isric.org/explore/soilgrids', license: 'CC BY 4.0', synthetic: 0, usage: '土壤质地/pH/有机碳（0~30 cm 加权，最近采样点赋值）' },
+    { source_id: 'dem', name: 'Copernicus GLO-90 DEM（Open-Meteo Elevation）', url: 'https://open-meteo.com/en/docs/elevation-api', license: 'Copernicus DEM 免费开放', synthetic: 0, usage: '地块高程 → 地块级气温偏移（直减率）' },
+    { source_id: 'soil-survey', name: '中国土壤普查/耕地质量等级（**尚未接入**）', url: '', license: '待定', synthetic: 0, usage: '耕地质量等级（GB/T 33469）—— 现留空' },
   ]);
 
 // ---------- dim_grid（P4 统计网格） ----------
@@ -382,7 +399,8 @@ counts.dim_parcel = writeCsv('dim_parcel',
   ['parcel_id', 'parcel_code', 'unit_id', 'grid_id', 'area_ha', 'centroid_lon', 'centroid_lat', 'landuse',
     'crop_code', 'crop_name_zh', 'fallow', 'sow_day', 'harvest_day', 'season_count', 'gdd_need_cd',
     'yield_t_ha_avg', 'yield_t_total', 'disease_level_max', 'treated', 't_min_to_store', 'access_m',
-    'soil_quality_sim', 'soil_texture', 'soil_ph', 'soil_organic_matter', 'land_quality_grade', 'n_zones',
+    'soil_quality', 'soil_quality_source', 'soil_texture', 'soil_ph', 'soil_organic_matter',
+    'elevation_m', 'temp_offset_c', 'land_quality_grade', 'n_zones',
     'source_id', 'synthetic', 'crs'],
   parcelsFC.features.map((f, i) => {
     const r = rows[i];
@@ -397,10 +415,17 @@ counts.dim_parcel = writeCsv('dim_parcel',
       gdd_need_cd: r.gddNeed, yield_t_ha_avg: round(r.yield_t_ha), yield_t_total: round(r.yield_t),
       disease_level_max: r.diseaseLevelMax, treated: r.treated ? 1 : 0,
       t_min_to_store: access.t_min[i] ?? '', access_m: access.access_m[i] ?? '',
-      soil_quality_sim: round(model.plan[i].soilQuality, 3),
-      // 国内土壤普查的属性位：**现在没有真数据，留空**（不编造）
-      soil_texture: '', soil_ph: '', soil_organic_matter: '',
-      // GB/T 33469《耕地质量等级》的口径位：同样**留空不编造**
+      // 土壤生产潜力：**来自真实土壤**（SoilGrids 的有机碳/pH/黏粒），来源列可追
+      soil_quality: round(model.plan[i].soilQuality, 3),
+      soil_quality_source: model.plan[i].soilQualitySource ?? '',
+      // 三列土壤属性现在是**真实值**（ISRIC SoilGrids v2.0，250 m，最近采样点赋值）
+      soil_texture: soilFile.parcels[i]?.texture ?? '',
+      soil_ph: soilFile.parcels[i]?.ph ?? '',
+      soil_organic_matter: soilFile.parcels[i]?.soc_g_kg ?? '',
+      elevation_m: elevFile.elevation_m[i] ?? '',
+      temp_offset_c: round(r.temp_offset_c, 3),
+      // GB/T 33469《耕地质量等级》**仍然留空**：它是一套 20+ 指标的评定体系，
+      // 本数据集只有土壤属性 ⇒ 硬给个"等"就是编数据
       land_quality_grade: '',
       n_zones: z ? z.n_zones : '',
       source_id: 'osm', synthetic: 1, crs: 'EPSG:4326',
@@ -609,14 +634,14 @@ const metaGroups = [
   ['标识信息', 'dataset_version', '0.2.0', 'M', '文本'],
   ['标识信息', 'abstract', '以 OSM 真实地块/路网/设施为骨架、监测值由本项目确定性模型生成的乡镇尺度农业监测数据集；含 P1 自然田块 / P2 经营单元 / P4 统计网格三层空间单元', 'M', '文本'],
   ['数据特征', 'record_counts', Object.entries(counts).map(([k, v]) => `${k}:${v}`).join('; '), 'M', '文本'],
-  ['数据特征', 'collection_method', 'OpenStreetMap Overpass API 取真实矢量；NASA POWER 取气象锚点；其余由模型计算（seed 固定 ⇒ 可复现）', 'M', '文本'],
+  ['数据特征', 'collection_method', '真实数据：OSM（地块/路网/设施/行政边界/居民点）、NASA POWER（气象锚点）、ISRIC SoilGrids（土壤）、Copernicus GLO-90（高程）；生成数据：作物/农事/产量/病害/水肥（seed 固定 ⇒ 可复现）', 'M', '文本'],
   ['数据特征', 'update_frequency', '按需重算（模型确定性；取数脚本见 tools/）', 'M', '文本'],
   ['数据特征', 'synthetic_flag', '逐行 synthetic 列（1=模型生成，0=实测/派生自实测）', 'M', '布尔'],
   ['时空范围', 'spatial_extent', parcelsFC.metadata.bbox.join(','), 'C', '文本'],
   ['时空范围', 'temporal_extent', `${model.days[0]}~${model.days[model.days.length - 1]}`, 'C', '文本'],
   ['时空范围', 'admin_area', 'Wolnzach, Bayern, DE（演示区；未含行政边界图层）', 'C', '文本'],
   ['时空范围', 'crs', 'EPSG:4326', 'M', '文本'],
-  ['时空范围', 'spatial_resolution', `地块级（中位 1.12 ha）+ 统计网格 ${units.metadata.grid_m} m + 分区样点 ${zones.metadata.sample_m} m`, 'M', '文本'],
+  ['时空范围', 'spatial_resolution', `地块级（中位 1.12 ha）+ 统计网格 ${units.metadata.grid_m} m + 分区样点 ${zones.metadata.sample_m} m；土壤 250 m（${soilFile.metadata.coverage.n_samples} 个真实采样点，平均最近邻 ${soilFile.metadata.coverage.mean_nn_m} m）`, 'M', '文本'],
   ['时空范围', 'temporal_resolution', '区域 1 天；地块 1 季（事件级到天）', 'M', '文本'],
   ['扩展元素', 'license', 'OSM=ODbL-1.0；NASA POWER=NASA open data；模型输出=本仓库', 'O', '文本'],
   ['扩展元素', 'provenance_chain', 'OSM/NASA → tools/fetch-data.mjs → data/*.geojson|json → tools/build-*.mjs → data/units|zones → tools/export-tables.mjs → tables/*.csv', 'O', '文本'],
@@ -643,7 +668,10 @@ const COL_SOURCE = {
   admin_code: 'derived', parent_code: 'derived', t_min_to_store: 'derived', access_m: 'derived',
   yield_ref: 'statistics', base_temp_c: 'statistics', gdd_need_cd: 'statistics',
   sow_window: 'statistics', harvest_md: 'statistics', yield_basis: 'statistics',
-  soil_texture: 'soil-survey', soil_ph: 'soil-survey', soil_organic_matter: 'soil-survey', land_quality_grade: 'soil-survey',
+  soil_texture: 'soilgrids', soil_ph: 'soilgrids', soil_organic_matter: 'soilgrids',
+  soil_quality: 'derived', soil_quality_source: 'derived',
+  elevation_m: 'dem', temp_offset_c: 'derived',
+  land_quality_grade: 'soil-survey',
 };
 const inferType = (rows2, ci, col = '') => {
   const vals = rows2.map((r) => r[ci]).filter((v) => v !== '' && v !== null && v !== undefined);
@@ -718,10 +746,13 @@ const COLS = {
     area_ha: { type: 'number', unit: 'ha', min: 0.02, source: 'osm' },
     t_min_to_store: { type: 'number', unit: 'min', min: 0, source: 'derived' },
     access_m: { type: 'number', unit: 'm', min: 0, source: 'derived' },
-    soil_quality_sim: { type: 'number', unit: '1', min: 0.5, max: 1.5, source: 'model', synthetic: 1 },
-    soil_texture: { type: 'string', unit: '', source: 'soil-survey', note: '留空：待接土壤普查/土壤图' },
-    soil_ph: { type: 'number', unit: 'pH', source: 'soil-survey', note: '留空：待接土壤普查/土壤图' },
-    soil_organic_matter: { type: 'number', unit: 'g/kg', source: 'soil-survey', note: '留空：待接土壤普查/土壤图' },
+    soil_quality: { type: 'number', unit: '1', min: 0.5, max: 1.5, source: 'derived', note: '由真实土壤属性推（经验式）' },
+    soil_quality_source: { type: 'string', unit: '', source: 'derived' },
+    soil_texture: { type: 'string', unit: '', source: 'soilgrids' },
+    soil_ph: { type: 'number', unit: 'pH', min: 4, max: 8.5, source: 'soilgrids' },
+    soil_organic_matter: { type: 'number', unit: 'g/kg', min: 3, max: 120, source: 'soilgrids' },
+    elevation_m: { type: 'number', unit: 'm', min: 250, max: 900, source: 'dem' },
+    temp_offset_c: { type: 'number', unit: '℃', min: -3, max: 3, source: 'derived' },
   },
   fact_region_daily: {
     temp_mean_c: { type: 'number', unit: '℃', min: -35, max: 45, source: 'model' },
@@ -895,8 +926,7 @@ for (const t of ['fact_parcel_season', 'fact_parcel_event', 'fact_zone']) {
 }
 check('所有派生/模型表的行都带 synthetic 标记', ['fact_parcel_season', 'fact_parcel_event', 'fact_region_daily', 'fact_observation', 'fact_zone']
   .every((t) => table(t).every((r) => r.synthetic === '0' || r.synthetic === '1')), '');
-check('留空列没有被编造（土壤质地/pH/有机质 全空）',
-  table('dim_parcel').every((r) => r.soil_texture === '' && r.soil_ph === '' && r.soil_organic_matter === ''), '');
+// （'土壤全空'那条判据已删：土壤三列现在接的是真实 SoilGrids 值，判据改为'值域合理 + 来源可追'，见下）
 {
   const meta = table('meta_dataset');
   check('meta_dataset 覆盖 NY/T 4061 的三组（标识信息/数据特征/时空范围）',
@@ -980,8 +1010,39 @@ check('数据元字典覆盖**每一张表的每一列**（防止"表加了列�
     missing.length === 0 && used.size >= 6, missing.join(',') || `${used.size} 个变量 / 字典 ${vars.size} 个`);
 }
 
-check('留空列没有被编造（含耕地质量等级）',
-  table('dim_parcel').every((r) => r.soil_texture === '' && r.soil_ph === '' && r.soil_organic_matter === '' && r.land_quality_grade === ''), '');
+{
+  // 土壤三列现在是**真实值**：检查"值域合理 + 来源可追"，而不是"是否为空"
+  const p2 = table('dim_parcel');
+  const TEX = new Set(['sand', 'loamy sand', 'sandy loam', 'loam', 'silt loam', 'silt', 'sandy clay loam',
+    'clay loam', 'silty clay loam', 'sandy clay', 'silty clay', 'clay']);
+  const badTex = p2.filter((r) => !TEX.has(r.soil_texture));
+  const badPh = p2.filter((r) => Number(r.soil_ph) < 4 || Number(r.soil_ph) > 8.5);
+  const badSoc = p2.filter((r) => Number(r.soil_organic_matter) < 3 || Number(r.soil_organic_matter) > 120);
+  check('土壤三列是真实值且值域合理（USDA 质地 / pH 4~8.5 / 有机碳 3~120 g/kg）',
+    badTex.length + badPh.length + badSoc.length === 0,
+    `质地越界 ${badTex.length} / pH 越界 ${badPh.length} / SOC 越界 ${badSoc.length}；质地集合 ${[...new Set(p2.map((r) => r.soil_texture))].join('/')}`);
+  const srcs = new Set(p2.map((r) => r.soil_quality_source));
+  check('土壤生产潜力指数明确标了来源（soilgrids = 真实土壤推得，不是"模拟值"当真实值用）',
+    srcs.size === 1 && srcs.has('soilgrids'), [...srcs].join(','));
+}
+{
+  const p2 = table('dim_parcel');
+  const e = p2.map((r) => Number(r.elevation_m)).filter((v) => Number.isFinite(v));
+  const off = p2.map((r) => Number(r.temp_offset_c)).filter((v) => Number.isFinite(v));
+  const eMin = Math.min(...e);
+  const eMax = Math.max(...e);
+  check('高程是真实值且在合理区间（300~800 m，与本地 DEM 一致）', e.length === p2.length && eMin > 250 && eMax < 900,
+    `${eMin}~${eMax} m`);
+  // 气温偏移必须与高差**同号同量级**：0.65 ℃/100 m ⇒ 87 m 高差约 0.57 ℃
+  const offSpan = Math.max(...off) - Math.min(...off);
+  check('地块级气温偏移由真实高差推导（幅度 = 0.65 ℃/100 m × 高差）',
+    Math.abs(offSpan - (eMax - eMin) * 0.0065) < 0.02, `偏移幅度 ${offSpan.toFixed(3)} ℃ / 高差 ${eMax - eMin} m`);
+}
+{
+  const p2 = table('dim_parcel');
+  check('耕地质量等级**仍然留空**（GB/T 33469 需 20+ 指标，不编）',
+    p2.every((r) => r.land_quality_grade === ''), `空值 ${p2.filter((r) => r.land_quality_grade === '').length} 行`);
+}
 
 {
   const x = path.join(OUT, '农业监测数据.xlsx');

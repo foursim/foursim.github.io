@@ -26,12 +26,15 @@ const MAX_ZONES = Number(opt('max-zones', 3));
 const parcelsFC = JSON.parse(fs.readFileSync(path.join(OUT, 'parcels.geojson'), 'utf8'));
 const parcels = parcelsFC.features;
 const weatherFile = JSON.parse(fs.readFileSync(path.join(OUT, 'weather_daily.json'), 'utf8'));
+// ⚠️ 分区值要建立在**真实土壤**上（SoilGrids），否则所谓"管理分区"只是把随机数画成图
+const soilFile = JSON.parse(fs.readFileSync(path.join(OUT, 'soil.json'), 'utf8'));
 const model = simulate({
   seed: 20261013,
   parcels,
   weather: { days: weatherFile.days, vars: weatherFile.vars, source: 'nasa-power' },
   lat: weatherFile.metadata.lat,
   elevation: weatherFile.metadata.elevation_m,
+  soil: soilFile.parcels,
 });
 const plan = new Map(model.plan.map((p, i) => [i, p]));
 
@@ -155,4 +158,4 @@ fs.writeFileSync(path.join(OUT, 'zones.json'), JSON.stringify({
 
 const zc = summary.reduce((a, s) => a + s.n_zones, 0);
 console.log(`[分区] ${summary.length} 块地 / ${totalPts} 个样点 / 共 ${zc} 个分区（平均 ${(zc / summary.length).toFixed(2)} 区/块，${SAMPLE_M} m 网格）`);
-console.log(`[分区] 写出 data/zones.geojson 与 data/zones.json（⚠️ 演示：分区值基于模拟属性）`);
+console.log(`[分区] 写出 data/zones.geojson 与 data/zones.json（分区值基于真实土壤潜力 SoilGrids；分区边界按 25 m 网格聚类）`);

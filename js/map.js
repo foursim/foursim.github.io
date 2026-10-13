@@ -33,7 +33,7 @@ const roadTone = (t) => ({
 });
 
 export class AgriMap {
-  constructor({ el, parcels, roads, poi, isochrones, units, grids, zones, admin, rows, get, region, onSelect }) {
+  constructor({ el, parcels, roads, poi, isochrones, units, grids, zones, admin, villages, rows, get, region, onSelect }) {
     /** 主题色令牌（从 CSS 变量读；切主题时 `setTheme()` 重读） */
     this.token = mapTokens();
     this.rows = rows;
@@ -43,7 +43,9 @@ export class AgriMap {
     this.variable = 'progress';
     this.day = 0;
     this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true,
-      units: true, grids: false, zones: false, admin: true };
+      units: true, grids: false, zones: false, admin: true, villages: true };
+    /** 表格联动高亮：当前被高亮的地块 layer（下次高亮前要复原） */
+    this.highlighted = [];
 
     this.map = L.map(el, {
       zoomControl: true,
@@ -136,7 +138,27 @@ export class AgriMap {
     // P3 管理分区样点：**按需加载**（12000+ 个点约 2.3 MB，首屏不该背这个包）
     this.zoneLayer = null;
 
-    // 区域气温：**一个圆 + 数值**，不给地块编造地块级温差（见 geo.js 的说明）
+    /**
+     * **居民点**（真实地名：`place=village/hamlet/town`，见 `tools/fetch-data.mjs places`）。
+     *
+     * ⚠️ 这是**点位**不是村界：实测本镇在 OSM 里只有乡（8）与县（6）两级行政边界，
+     * 没有村级 admin_level=9/10 关系 —— 拿不存在的东西硬画就是编。点位真实、够用（"这是哪个村"）。
+     */
+    this.villageLayer = L.layerGroup(
+      (villages?.features ?? []).map((f) => {
+        const [lon, lat] = f.geometry.coordinates;
+        const big = f.properties.place === 'town' || f.properties.place === 'village';
+        return L.circleMarker([lat, lon], {
+          radius: big ? 4.5 : 3,
+          color: '#ffffff',
+          weight: 1.2,
+          fillColor: this.token.village,
+          fillOpacity: 0.9,
+        }).bindTooltip(`${f.properties.name}${f.properties.population ? ` · 人口 ${f.properties.population}` : ''}`, { direction: 'top' });
+      }),
+    ).addTo(this.map);
+
+    // 区域气温：**一个圆 + 数值**（地块级气温见 `tempParcel` 变量：由真实 DEM 推导）
     this.tempLayer = L.layerGroup().addTo(this.map);
     this.map.on('zoomend', () => this.drawTemp());
   }
@@ -230,6 +252,7 @@ export class AgriMap {
     else if (name === 'units') { if (on) this.unitLayer.addTo(this.map); else this.map.removeLayer(this.unitLayer); }
     else if (name === 'grids') { if (on) this.gridLayer.addTo(this.map); else this.map.removeLayer(this.gridLayer); }
     else if (name === 'admin') { if (on) this.adminLayer.addTo(this.map); else this.map.removeLayer(this.adminLayer); }
+    else if (name === 'villages') { if (on) this.villageLayer.addTo(this.map); else this.map.removeLayer(this.villageLayer); }
     else if (name === 'zones') {
       if (this.zoneLayer && on) this.zoneLayer.addTo(this.map);
       else if (this.zoneLayer && !on) this.map.removeLayer(this.zoneLayer);
@@ -274,6 +297,32 @@ export class AgriMap {
       }),
     });
     if (this.visible.zones) this.zoneLayer.addTo(this.map);
+  }
+
+  /**
+   * **高亮一组地块**（表格点击 → 图上显示）。
+   *
+   * 为什么要有这个方向：表格能按"单元/作物"聚合，而地图是按地块画的 —— 点一行表格如果图上没反应，
+   * 看的人就得自己去猜"这个单元在地图哪儿"。这里把该组地块**加粗描边 + 换成强调色**并框到视野里。
+   * 复原用 `resetStyle`（Leaflet 会按创建时的 style 回调重算），所以不会留下脏样式。
+   */
+  highlight(indices, { fit = true, maxFit = 400 } = {}) {
+    for (const l of this.highlighted) this.parcelLayer.resetStyle(l);
+    this.highlighted = [];
+    const layers = this.parcelLayer.getLayers();
+    for (const i of indices ?? []) {
+      const l = layers[i];
+      if (!l) continue;
+      l.setStyle({ weight: 2.6, color: this.token.parcelHover, opacity: 1, fillOpacity: 0.95 });
+      l.bringToFront?.();
+      this.highlighted.push(l);
+    }
+    this.highlightIdx = [...(indices ?? [])];
+    if (fit && this.highlighted.length && this.highlighted.length <= maxFit) {
+      const g = L.featureGroup(this.highlighted);
+      this.map.fitBounds(g.getBounds(), { padding: [60, 60], maxZoom: 16 });
+    }
+    return this.highlighted.length;
   }
 
   focusParcel(row) {

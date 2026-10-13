@@ -12,11 +12,11 @@
    "n_zones": 3,
    "n_points": 259,
    "zone_centers": [
-    0.142,
-    0.232,
-    0.331
+    0.375,
+    0.465,
+    0.564
    ],
-   "soil_quality": 0.997
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w239452348",
@@ -24,11 +24,11 @@
    "n_zones": 3,
    "n_points": 234,
    "zone_centers": [
-    0.244,
-    0.376,
-    0.515
+    0.554,
+    0.685,
+    0.825
    ],
-   "soil_quality": 0.97
+   "soil_quality": 1.139
   },
   {
    "parcel_id": "osm-w201081386",
@@ -36,11 +36,11 @@
    "n_zones": 3,
    "n_points": 221,
    "zone_centers": [
-    0.081,
-    0.16,
-    0.238
+    0.516,
+    0.595,
+    0.673
    ],
-   "soil_quality": 0.921
+   "soil_quality": 1.158
   },
   {
    "parcel_id": "osm-w254169944",
@@ -48,11 +48,11 @@
    "n_zones": 3,
    "n_points": 222,
    "zone_centers": [
-    0.21,
-    0.311,
-    0.475
+    0.333,
+    0.434,
+    0.598
    ],
-   "soil_quality": 1.07
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w107283387",
@@ -60,11 +60,11 @@
    "n_zones": 3,
    "n_points": 212,
    "zone_centers": [
-    -0.155,
-    0.003,
-    0.335
+    0.17,
+    0.327,
+    0.66
    ],
-   "soil_quality": 0.922
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w34690594",
@@ -72,11 +72,11 @@
    "n_zones": 3,
    "n_points": 183,
    "zone_centers": [
-    0.035,
-    0.145,
-    0.235
+    0.374,
+    0.484,
+    0.574
    ],
-   "soil_quality": 0.952
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w124549401",
@@ -84,11 +84,11 @@
    "n_zones": 3,
    "n_points": 186,
    "zone_centers": [
-    0.194,
-    0.257,
-    0.325
+    0.422,
+    0.484,
+    0.553
    ],
-   "soil_quality": 0.999
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w107479488",
@@ -96,11 +96,11 @@
    "n_zones": 3,
    "n_points": 180,
    "zone_centers": [
-    0.081,
-    0.183,
-    0.311
+    0.391,
+    0.493,
+    0.62
    ],
-   "soil_quality": 0.963
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w95420960",
@@ -108,11 +108,11 @@
    "n_zones": 3,
    "n_points": 175,
    "zone_centers": [
-    -0.048,
-    0.154,
-    0.298
+    0.32,
+    0.523,
+    0.666
    ],
-   "soil_quality": 0.935
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w107182889",
@@ -120,11 +120,11 @@
    "n_zones": 3,
    "n_points": 166,
    "zone_centers": [
-    0.05,
-    0.233,
-    0.363
+    0.326,
+    0.51,
+    0.64
    ],
-   "soil_quality": 0.98
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w203757445",
@@ -132,11 +132,11 @@
    "n_zones": 3,
    "n_points": 175,
    "zone_centers": [
-    0.329,
-    0.485,
-    0.602
+    0.51,
+    0.667,
+    0.783
    ],
-   "soil_quality": 1.032
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w62292552",
@@ -144,11 +144,11 @@
    "n_zones": 3,
    "n_points": 173,
    "zone_centers": [
-    0.449,
-    0.605,
-    0.723
+    0.497,
+    0.652,
+    0.771
    ],
-   "soil_quality": 1.119
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w238326505",
@@ -156,11 +156,11 @@
    "n_zones": 3,
    "n_points": 166,
    "zone_centers": [
-    0.37,
-    0.543,
-    0.659
+    0.438,
+    0.611,
+    0.727
    ],
-   "soil_quality": 1.098
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w118825309",
@@ -168,11 +168,11 @@
    "n_zones": 3,
    "n_points": 165,
    "zone_centers": [
-    0.088,
-    0.224,
-    0.413
+    0.471,
+    0.607,
+    0.796
    ],
-   "soil_quality": 0.923
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w1180907784",
@@ -180,11 +180,11 @@
    "n_zones": 3,
    "n_points": 158,
    "zone_centers": [
-    0.226,
-    0.33,
-    0.458
+    0.299,
+    0.403,
+    0.531
    ],
-   "soil_quality": 1.094
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w203757444",
@@ -192,11 +192,11 @@
    "n_zones": 3,
    "n_points": 149,
    "zone_centers": [
-    0.253,
-    0.364,
-    0.432
+    0.552,
+    0.663,
+    0.731
    ],
-   "soil_quality": 0.968
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w346882138",
@@ -204,11 +204,11 @@
    "n_zones": 3,
    "n_points": 130,
    "zone_centers": [
-    0.318,
-    0.386,
-    0.478
+    0.566,
+    0.633,
+    0.725
    ],
-   "soil_quality": 0.975
+   "soil_quality": 1.11
   },
   {
    "parcel_id": "osm-w47054568",
@@ -216,11 +216,11 @@
    "n_zones": 3,
    "n_points": 130,
    "zone_centers": [
-    -0.187,
-    -0.087,
-    0.045
+    0.262,
+    0.362,
+    0.494
    ],
-   "soil_quality": 0.908
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w107479498",
@@ -228,10 +228,10 @@
    "n_zones": 2,
    "n_points": 130,
    "zone_centers": [
-    0.111,
-    0.321
+    0.505,
+    0.716
    ],
-   "soil_quality": 0.92
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w239202017",
@@ -239,10 +239,10 @@
    "n_zones": 2,
    "n_points": 128,
    "zone_centers": [
-    -0.017,
-    0.127
+    0.273,
+    0.417
    ],
-   "soil_quality": 0.974
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w107479495",
@@ -250,10 +250,10 @@
    "n_zones": 2,
    "n_points": 131,
    "zone_centers": [
-    0.315,
-    0.432
+    0.47,
+    0.588
    ],
-   "soil_quality": 1.025
+   "soil_quality": 1.11
   },
   {
    "parcel_id": "osm-w239202018",
@@ -261,10 +261,10 @@
    "n_zones": 2,
    "n_points": 122,
    "zone_centers": [
-    0.205,
-    0.305
+    0.337,
+    0.437
    ],
-   "soil_quality": 1.058
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w47054569",
@@ -272,10 +272,10 @@
    "n_zones": 2,
    "n_points": 120,
    "zone_centers": [
-    0.016,
-    0.244
+    0.426,
+    0.655
    ],
-   "soil_quality": 0.919
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w259900167",
@@ -283,10 +283,10 @@
    "n_zones": 2,
    "n_points": 123,
    "zone_centers": [
-    0.117,
-    0.398
+    0.488,
+    0.768
    ],
-   "soil_quality": 0.931
+   "soil_quality": 1.133
   },
   {
    "parcel_id": "osm-w104002677",
@@ -294,10 +294,10 @@
    "n_zones": 2,
    "n_points": 114,
    "zone_centers": [
-    0.303,
-    0.455
+    0.503,
+    0.655
    ],
-   "soil_quality": 1.026
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w137206937",
@@ -305,10 +305,10 @@
    "n_zones": 2,
    "n_points": 98,
    "zone_centers": [
-    -0.005,
-    0.168
+    0.32,
+    0.493
    ],
-   "soil_quality": 0.963
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w203750984",
@@ -316,10 +316,10 @@
    "n_zones": 2,
    "n_points": 95,
    "zone_centers": [
-    0.108,
-    0.169
+    0.478,
+    0.539
    ],
-   "soil_quality": 0.936
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w240970240",
@@ -327,10 +327,10 @@
    "n_zones": 2,
    "n_points": 84,
    "zone_centers": [
-    0.109,
-    0.301
+    0.353,
+    0.545
    ],
-   "soil_quality": 0.992
+   "soil_quality": 1.125
   },
   {
    "parcel_id": "osm-w1077367699",
@@ -338,10 +338,10 @@
    "n_zones": 2,
    "n_points": 88,
    "zone_centers": [
-    0.683,
-    0.803
+    0.815,
+    0.935
    ],
-   "soil_quality": 1.075
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w107182886",
@@ -349,10 +349,10 @@
    "n_zones": 2,
    "n_points": 83,
    "zone_centers": [
-    -0.016,
-    0.249
+    0.305,
+    0.57
    ],
-   "soil_quality": 0.966
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w47054562",
@@ -360,10 +360,10 @@
    "n_zones": 2,
    "n_points": 87,
    "zone_centers": [
-    0.192,
-    0.24
+    0.332,
+    0.379
    ],
-   "soil_quality": 1.065
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w34690593",
@@ -371,10 +371,10 @@
    "n_zones": 2,
    "n_points": 83,
    "zone_centers": [
-    -0.113,
-    0.008
+    0.227,
+    0.347
    ],
-   "soil_quality": 0.945
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w34690601",
@@ -382,10 +382,10 @@
    "n_zones": 2,
    "n_points": 79,
    "zone_centers": [
-    0.181,
-    0.424
+    0.286,
+    0.528
    ],
-   "soil_quality": 1.073
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w125804952",
@@ -393,10 +393,10 @@
    "n_zones": 2,
    "n_points": 77,
    "zone_centers": [
-    0.216,
-    0.354
+    0.374,
+    0.512
    ],
-   "soil_quality": 1.066
+   "soil_quality": 1.152
   },
   {
    "parcel_id": "osm-w104974234",
@@ -404,10 +404,10 @@
    "n_zones": 2,
    "n_points": 80,
    "zone_centers": [
-    0.142,
-    0.304
+    0.302,
+    0.464
    ],
-   "soil_quality": 1.03
+   "soil_quality": 1.117
   },
   {
    "parcel_id": "osm-w531264966",
@@ -415,10 +415,10 @@
    "n_zones": 2,
    "n_points": 78,
    "zone_centers": [
-    0.246,
-    0.292
+    0.47,
+    0.516
    ],
-   "soil_quality": 1.014
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w238326504",
@@ -426,10 +426,10 @@
    "n_zones": 2,
    "n_points": 78,
    "zone_centers": [
-    0.475,
-    0.648
+    0.501,
+    0.673
    ],
-   "soil_quality": 1.114
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w137206939",
@@ -437,10 +437,10 @@
    "n_zones": 2,
    "n_points": 78,
    "zone_centers": [
-    -0.012,
-    0.138
+    0.445,
+    0.594
    ],
-   "soil_quality": 0.905
+   "soil_quality": 1.154
   },
   {
    "parcel_id": "osm-w534454911",
@@ -448,10 +448,10 @@
    "n_zones": 2,
    "n_points": 78,
    "zone_centers": [
-    0.19,
-    0.471
+    0.386,
+    0.667
    ],
-   "soil_quality": 1.019
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w260131578",
@@ -459,10 +459,10 @@
    "n_zones": 2,
    "n_points": 77,
    "zone_centers": [
-    0.457,
-    0.607
+    0.549,
+    0.698
    ],
-   "soil_quality": 1.097
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w144967701",
@@ -470,10 +470,10 @@
    "n_zones": 2,
    "n_points": 76,
    "zone_centers": [
-    0.291,
-    0.483
+    0.518,
+    0.71
    ],
-   "soil_quality": 0.999
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w239323750",
@@ -481,10 +481,10 @@
    "n_zones": 2,
    "n_points": 75,
    "zone_centers": [
-    0.185,
-    0.284
+    0.392,
+    0.491
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w62292550",
@@ -492,10 +492,10 @@
    "n_zones": 2,
    "n_points": 71,
    "zone_centers": [
-    0.731,
-    0.803
+    0.825,
+    0.896
    ],
-   "soil_quality": 1.094
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w239452346",
@@ -503,10 +503,10 @@
    "n_zones": 2,
    "n_points": 74,
    "zone_centers": [
-    0.111,
-    0.162
+    0.461,
+    0.512
    ],
-   "soil_quality": 0.935
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w125804954",
@@ -514,10 +514,10 @@
    "n_zones": 2,
    "n_points": 68,
    "zone_centers": [
-    0.264,
-    0.39
+    0.388,
+    0.514
    ],
-   "soil_quality": 1.084
+   "soil_quality": 1.152
   },
   {
    "parcel_id": "osm-w124537858",
@@ -525,10 +525,10 @@
    "n_zones": 2,
    "n_points": 64,
    "zone_centers": [
-    0.261,
-    0.399
+    0.424,
+    0.562
    ],
-   "soil_quality": 1.065
+   "soil_quality": 1.154
   },
   {
    "parcel_id": "osm-w259900163",
@@ -536,10 +536,10 @@
    "n_zones": 2,
    "n_points": 65,
    "zone_centers": [
-    0.286,
-    0.464
+    0.497,
+    0.675
    ],
-   "soil_quality": 1.018
+   "soil_quality": 1.133
   },
   {
    "parcel_id": "osm-w259900168",
@@ -547,10 +547,10 @@
    "n_zones": 2,
    "n_points": 63,
    "zone_centers": [
-    0.327,
-    0.45
+    0.373,
+    0.496
    ],
-   "soil_quality": 1.108
+   "soil_quality": 1.133
   },
   {
    "parcel_id": "osm-w125814443",
@@ -558,10 +558,10 @@
    "n_zones": 2,
    "n_points": 60,
    "zone_centers": [
-    0.308,
-    0.596
+    0.363,
+    0.651
    ],
-   "soil_quality": 1.108
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w62292561",
@@ -569,10 +569,10 @@
    "n_zones": 2,
    "n_points": 58,
    "zone_centers": [
-    0.732,
-    0.79
+    0.877,
+    0.935
    ],
-   "soil_quality": 1.081
+   "soil_quality": 1.16
   },
   {
    "parcel_id": "osm-w247017295",
@@ -580,10 +580,10 @@
    "n_zones": 2,
    "n_points": 59,
    "zone_centers": [
-    0.435,
-    0.504
+    0.47,
+    0.539
    ],
-   "soil_quality": 1.112
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w85508584",
@@ -591,10 +591,10 @@
    "n_zones": 2,
    "n_points": 60,
    "zone_centers": [
-    0.238,
-    0.409
+    0.449,
+    0.62
    ],
-   "soil_quality": 1.015
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w531266502",
@@ -602,10 +602,10 @@
    "n_zones": 2,
    "n_points": 61,
    "zone_centers": [
-    0.153,
-    0.191
+    0.519,
+    0.558
    ],
-   "soil_quality": 0.932
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w1449490530",
@@ -613,10 +613,10 @@
    "n_zones": 2,
    "n_points": 58,
    "zone_centers": [
-    0.047,
-    0.21
+    0.322,
+    0.485
    ],
-   "soil_quality": 0.992
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w1272109518",
@@ -624,10 +624,10 @@
    "n_zones": 2,
    "n_points": 55,
    "zone_centers": [
-    0.452,
-    0.486
+    0.504,
+    0.537
    ],
-   "soil_quality": 1.114
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w239574328",
@@ -635,10 +635,10 @@
    "n_zones": 2,
    "n_points": 57,
    "zone_centers": [
-    0.086,
-    0.194
+    0.356,
+    0.464
    ],
-   "soil_quality": 0.988
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w1176369911",
@@ -646,10 +646,10 @@
    "n_zones": 2,
    "n_points": 56,
    "zone_centers": [
-    0.471,
-    0.657
+    0.508,
+    0.694
    ],
-   "soil_quality": 1.111
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w1180908601",
@@ -657,10 +657,10 @@
    "n_zones": 2,
    "n_points": 55,
    "zone_centers": [
-    0.55,
-    0.598
+    0.605,
+    0.653
    ],
-   "soil_quality": 1.101
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w534320593",
@@ -668,10 +668,10 @@
    "n_zones": 2,
    "n_points": 56,
    "zone_centers": [
-    0.164,
-    0.208
+    0.329,
+    0.373
    ],
-   "soil_quality": 1.042
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w125133531",
@@ -679,10 +679,10 @@
    "n_zones": 2,
    "n_points": 55,
    "zone_centers": [
-    0.358,
-    0.472
+    0.396,
+    0.511
    ],
-   "soil_quality": 1.11
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w47054570",
@@ -690,10 +690,10 @@
    "n_zones": 2,
    "n_points": 56,
    "zone_centers": [
-    0.014,
-    0.089
+    0.24,
+    0.314
    ],
-   "soil_quality": 1.007
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w203757447",
@@ -701,10 +701,10 @@
    "n_zones": 2,
    "n_points": 56,
    "zone_centers": [
-    0.21,
-    0.388
+    0.531,
+    0.709
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w533471714",
@@ -712,10 +712,10 @@
    "n_zones": 2,
    "n_points": 55,
    "zone_centers": [
-    0.452,
-    0.613
+    0.538,
+    0.699
    ],
-   "soil_quality": 1.085
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w239574326",
@@ -723,10 +723,10 @@
    "n_zones": 2,
    "n_points": 54,
    "zone_centers": [
-    0.523,
-    0.615
+    0.651,
+    0.743
    ],
-   "soil_quality": 1.056
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w533472851",
@@ -734,10 +734,10 @@
    "n_zones": 2,
    "n_points": 53,
    "zone_centers": [
-    0.307,
-    0.395
+    0.454,
+    0.542
    ],
-   "soil_quality": 1.052
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w1180734737",
@@ -745,10 +745,10 @@
    "n_zones": 2,
    "n_points": 55,
    "zone_centers": [
-    0.258,
-    0.357
+    0.493,
+    0.591
    ],
-   "soil_quality": 1.019
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w94092317",
@@ -756,10 +756,10 @@
    "n_zones": 2,
    "n_points": 50,
    "zone_centers": [
-    0.102,
-    0.226
+    0.539,
+    0.662
    ],
-   "soil_quality": 0.904
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w533471717",
@@ -767,10 +767,10 @@
    "n_zones": 2,
    "n_points": 50,
    "zone_centers": [
-    0.145,
-    0.274
+    0.348,
+    0.478
    ],
-   "soil_quality": 1.021
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w104009968",
@@ -778,10 +778,10 @@
    "n_zones": 2,
    "n_points": 48,
    "zone_centers": [
-    0.037,
-    0.087
+    0.462,
+    0.512
    ],
-   "soil_quality": 0.91
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w107283399",
@@ -789,10 +789,10 @@
    "n_zones": 2,
    "n_points": 49,
    "zone_centers": [
-    0.219,
-    0.285
+    0.329,
+    0.395
    ],
-   "soil_quality": 1.039
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w107283391",
@@ -800,10 +800,10 @@
    "n_zones": 2,
    "n_points": 45,
    "zone_centers": [
-    0.381,
-    0.427
+    0.351,
+    0.398
    ],
-   "soil_quality": 1.115
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w103962260",
@@ -811,10 +811,10 @@
    "n_zones": 2,
    "n_points": 44,
    "zone_centers": [
-    0.188,
-    0.218
+    0.397,
+    0.427
    ],
-   "soil_quality": 1.028
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w125814435",
@@ -822,10 +822,10 @@
    "n_zones": 2,
    "n_points": 45,
    "zone_centers": [
-    0.282,
-    0.495
+    0.489,
+    0.703
    ],
-   "soil_quality": 1.025
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w1180906857",
@@ -833,10 +833,10 @@
    "n_zones": 2,
    "n_points": 46,
    "zone_centers": [
-    0.401,
-    0.506
+    0.467,
+    0.572
    ],
-   "soil_quality": 1.096
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w533606593",
@@ -844,10 +844,10 @@
    "n_zones": 2,
    "n_points": 46,
    "zone_centers": [
-    0.13,
-    0.171
+    0.378,
+    0.419
    ],
-   "soil_quality": 0.988
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w137206924",
@@ -855,10 +855,10 @@
    "n_zones": 2,
    "n_points": 42,
    "zone_centers": [
-    0.356,
-    0.435
+    0.65,
+    0.729
    ],
-   "soil_quality": 0.994
+   "soil_quality": 1.154
   },
   {
    "parcel_id": "osm-w534454913",
@@ -866,10 +866,10 @@
    "n_zones": 2,
    "n_points": 42,
    "zone_centers": [
-    0.009,
-    0.112
+    0.216,
+    0.319
    ],
-   "soil_quality": 1.013
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w533472852",
@@ -877,10 +877,10 @@
    "n_zones": 2,
    "n_points": 41,
    "zone_centers": [
-    0.208,
-    0.307
+    0.404,
+    0.503
    ],
-   "soil_quality": 1.035
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w144967702",
@@ -888,10 +888,10 @@
    "n_zones": 2,
    "n_points": 39,
    "zone_centers": [
-    0.184,
-    0.28
+    0.534,
+    0.63
    ],
-   "soil_quality": 0.932
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w94092330",
@@ -899,10 +899,10 @@
    "n_zones": 2,
    "n_points": 41,
    "zone_centers": [
-    0.147,
-    0.179
+    0.455,
+    0.487
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w531264972",
@@ -910,10 +910,10 @@
    "n_zones": 2,
    "n_points": 45,
    "zone_centers": [
-    0.14,
-    0.238
+    0.343,
+    0.441
    ],
-   "soil_quality": 1.014
+   "soil_quality": 1.125
   },
   {
    "parcel_id": "osm-w94092329",
@@ -921,10 +921,10 @@
    "n_zones": 2,
    "n_points": 41,
    "zone_centers": [
-    0.295,
-    0.365
+    0.478,
+    0.548
    ],
-   "soil_quality": 1.024
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w534446904",
@@ -932,10 +932,10 @@
    "n_zones": 2,
    "n_points": 40,
    "zone_centers": [
-    0.495,
-    0.57
+    0.607,
+    0.682
    ],
-   "soil_quality": 1.062
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264977",
@@ -943,10 +943,10 @@
    "n_zones": 2,
    "n_points": 41,
    "zone_centers": [
-    0.197,
-    0.336
+    0.443,
+    0.582
    ],
-   "soil_quality": 0.997
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w125814444",
@@ -954,10 +954,10 @@
    "n_zones": 2,
    "n_points": 39,
    "zone_centers": [
-    0.075,
-    0.254
+    0.509,
+    0.688
    ],
-   "soil_quality": 0.901
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w531264934",
@@ -965,10 +965,10 @@
    "n_zones": 2,
    "n_points": 39,
    "zone_centers": [
-    0.509,
-    0.605
+    0.655,
+    0.752
    ],
-   "soil_quality": 1.065
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w254169933",
@@ -976,10 +976,10 @@
    "n_zones": 2,
    "n_points": 38,
    "zone_centers": [
-    0.382,
-    0.459
+    0.558,
+    0.635
    ],
-   "soil_quality": 1.041
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w531264922",
@@ -987,10 +987,10 @@
    "n_zones": 2,
    "n_points": 39,
    "zone_centers": [
-    0.31,
-    0.442
+    0.365,
+    0.497
    ],
-   "soil_quality": 1.102
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w103960293",
@@ -998,10 +998,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.429,
-    0.574
+    0.673,
+    0.817
    ],
-   "soil_quality": 1.003
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534446895",
@@ -1009,10 +1009,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.268,
-    0.314
+    0.332,
+    0.378
    ],
-   "soil_quality": 1.088
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264974",
@@ -1020,10 +1020,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.288,
-    0.351
+    0.382,
+    0.445
    ],
-   "soil_quality": 1.077
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w251502445",
@@ -1031,10 +1031,10 @@
    "n_zones": 2,
    "n_points": 37,
    "zone_centers": [
-    0.342,
-    0.42
+    0.719,
+    0.798
    ],
-   "soil_quality": 0.939
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w105165397",
@@ -1042,10 +1042,10 @@
    "n_zones": 2,
    "n_points": 37,
    "zone_centers": [
-    -0.003,
-    0.155
+    0.412,
+    0.569
    ],
-   "soil_quality": 0.912
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w254169961",
@@ -1053,10 +1053,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    -0.21,
-    -0.156
+    0.208,
+    0.262
    ],
-   "soil_quality": 0.909
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w534451964",
@@ -1064,10 +1064,10 @@
    "n_zones": 2,
    "n_points": 37,
    "zone_centers": [
-    0.274,
-    0.376
+    0.479,
+    0.581
    ],
-   "soil_quality": 1.014
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w252254894",
@@ -1075,10 +1075,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.128,
-    0.155
+    0.459,
+    0.487
    ],
-   "soil_quality": 0.961
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w126367440",
@@ -1086,10 +1086,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.149,
-    0.223
+    0.558,
+    0.632
    ],
-   "soil_quality": 0.908
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w531266501",
@@ -1097,10 +1097,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.25,
-    0.298
+    0.451,
+    0.5
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w531264935",
@@ -1108,10 +1108,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    0.227,
-    0.303
+    0.629,
+    0.705
    ],
-   "soil_quality": 0.926
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w107182883",
@@ -1119,10 +1119,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    0.185,
-    0.463
+    0.402,
+    0.679
    ],
-   "soil_quality": 1.013
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w1180734738",
@@ -1130,10 +1130,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.299,
-    0.352
+    0.618,
+    0.671
    ],
-   "soil_quality": 0.973
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w1180907463",
@@ -1141,10 +1141,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    -0.02,
-    0.162
+    0.255,
+    0.437
    ],
-   "soil_quality": 0.984
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w534446889",
@@ -1152,10 +1152,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.459,
-    0.516
+    0.489,
+    0.546
    ],
-   "soil_quality": 1.107
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w107479477",
@@ -1163,10 +1163,10 @@
    "n_zones": 2,
    "n_points": 33,
    "zone_centers": [
-    0.279,
-    0.323
+    0.658,
+    0.702
    ],
-   "soil_quality": 0.928
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w104898037",
@@ -1174,10 +1174,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.308,
-    0.373
+    0.697,
+    0.762
    ],
-   "soil_quality": 0.912
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w34690597",
@@ -1185,10 +1185,10 @@
    "n_zones": 2,
    "n_points": 37,
    "zone_centers": [
-    0.799,
-    0.853
+    0.852,
+    0.906
    ],
-   "soil_quality": 1.107
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w136491875",
@@ -1196,10 +1196,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.017,
-    0.105
+    0.43,
+    0.517
    ],
-   "soil_quality": 0.92
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w125133534",
@@ -1207,10 +1207,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    -0.109,
-    -0.078
+    0.267,
+    0.297
    ],
-   "soil_quality": 0.926
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w534454906",
@@ -1218,10 +1218,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    0.457,
-    0.508
+    0.772,
+    0.824
    ],
-   "soil_quality": 0.938
+   "soil_quality": 1.11
   },
   {
    "parcel_id": "osm-w104972148",
@@ -1229,10 +1229,10 @@
    "n_zones": 2,
    "n_points": 33,
    "zone_centers": [
-    0.008,
-    0.294
+    0.409,
+    0.696
    ],
-   "soil_quality": 0.923
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w107958419",
@@ -1251,10 +1251,10 @@
    "n_zones": 2,
    "n_points": 34,
    "zone_centers": [
-    0.505,
-    0.552
+    0.62,
+    0.667
    ],
-   "soil_quality": 1.069
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534448929",
@@ -1262,10 +1262,10 @@
    "n_zones": 2,
    "n_points": 36,
    "zone_centers": [
-    0.784,
-    0.81
+    0.914,
+    0.94
    ],
-   "soil_quality": 1.065
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534446896",
@@ -1273,10 +1273,10 @@
    "n_zones": 2,
    "n_points": 35,
    "zone_centers": [
-    0.402,
-    0.477
+    0.44,
+    0.515
    ],
-   "soil_quality": 1.115
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534601359",
@@ -1284,10 +1284,10 @@
    "n_zones": 2,
    "n_points": 32,
    "zone_centers": [
-    0.305,
-    0.36
+    0.534,
+    0.589
    ],
-   "soil_quality": 0.999
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w125133532",
@@ -1295,10 +1295,10 @@
    "n_zones": 2,
    "n_points": 33,
    "zone_centers": [
-    0.332,
-    0.406
+    0.633,
+    0.707
    ],
-   "soil_quality": 0.974
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w531264919",
@@ -1306,10 +1306,10 @@
    "n_zones": 2,
    "n_points": 33,
    "zone_centers": [
-    0.126,
-    0.157
+    0.206,
+    0.237
    ],
-   "soil_quality": 1.09
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w103960294",
@@ -1317,10 +1317,10 @@
    "n_zones": 2,
    "n_points": 30,
    "zone_centers": [
-    0.329,
-    0.45
+    0.547,
+    0.669
    ],
-   "soil_quality": 1.017
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264915",
@@ -1328,10 +1328,10 @@
    "n_zones": 2,
    "n_points": 31,
    "zone_centers": [
-    0.492,
-    0.555
+    0.848,
+    0.911
    ],
-   "soil_quality": 0.949
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w534456366",
@@ -1339,10 +1339,10 @@
    "n_zones": 2,
    "n_points": 30,
    "zone_centers": [
-    0.393,
-    0.521
+    0.5,
+    0.627
    ],
-   "soil_quality": 1.084
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w104002690",
@@ -1350,10 +1350,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.035,
-    0.113
+    0.373,
+    0.45
    ],
-   "soil_quality": 0.915
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w107686266",
@@ -1361,10 +1361,10 @@
    "n_zones": 2,
    "n_points": 30,
    "zone_centers": [
-    0.25,
-    0.327
+    0.53,
+    0.608
    ],
-   "soil_quality": 0.994
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w531264965",
@@ -1372,10 +1372,10 @@
    "n_zones": 2,
    "n_points": 30,
    "zone_centers": [
-    0.408,
-    0.443
+    0.514,
+    0.549
    ],
-   "soil_quality": 1.077
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w68526120",
@@ -1383,10 +1383,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.434,
-    0.523
+    0.542,
+    0.631
    ],
-   "soil_quality": 1.084
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w47215575",
@@ -1394,10 +1394,10 @@
    "n_zones": 2,
    "n_points": 28,
    "zone_centers": [
-    0.471,
-    0.547
+    0.773,
+    0.85
    ],
-   "soil_quality": 0.995
+   "soil_quality": 1.16
   },
   {
    "parcel_id": "osm-w533471715",
@@ -1405,10 +1405,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.479,
-    0.543
+    0.688,
+    0.752
    ],
-   "soil_quality": 1.018
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w868132056",
@@ -1416,10 +1416,10 @@
    "n_zones": 2,
    "n_points": 30,
    "zone_centers": [
-    0.658,
-    0.709
+    0.825,
+    0.876
    ],
-   "soil_quality": 1.019
+   "soil_quality": 1.11
   },
   {
    "parcel_id": "osm-w533471716",
@@ -1427,10 +1427,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.684,
-    0.77
+    0.732,
+    0.818
    ],
-   "soil_quality": 1.106
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w201744199",
@@ -1438,10 +1438,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.385,
-    0.446
+    0.436,
+    0.497
    ],
-   "soil_quality": 1.103
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w531264941",
@@ -1449,10 +1449,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.27,
-    0.358
+    0.431,
+    0.519
    ],
-   "soil_quality": 1.07
+   "soil_quality": 1.158
   },
   {
    "parcel_id": "osm-w1180907268",
@@ -1460,10 +1460,10 @@
    "n_zones": 2,
    "n_points": 27,
    "zone_centers": [
-    0.301,
-    0.342
+    0.561,
+    0.603
    ],
-   "soil_quality": 0.99
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w531264970",
@@ -1471,10 +1471,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.03,
-    0.076
+    0.444,
+    0.491
    ],
-   "soil_quality": 0.912
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w251614778",
@@ -1482,10 +1482,10 @@
    "n_zones": 2,
    "n_points": 31,
    "zone_centers": [
-    0.029,
-    0.101
+    0.308,
+    0.38
    ],
-   "soil_quality": 0.989
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w94092328",
@@ -1493,10 +1493,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.339,
-    0.394
+    0.513,
+    0.568
    ],
-   "soil_quality": 1.029
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w254169963",
@@ -1504,10 +1504,10 @@
    "n_zones": 2,
    "n_points": 28,
    "zone_centers": [
-    0.528,
-    0.571
+    0.622,
+    0.664
    ],
-   "soil_quality": 1.085
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w201081394",
@@ -1515,10 +1515,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    0.43,
-    0.55
+    0.466,
+    0.587
    ],
-   "soil_quality": 1.119
+   "soil_quality": 1.139
   },
   {
    "parcel_id": "osm-w534448933",
@@ -1526,10 +1526,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    0.433,
-    0.504
+    0.634,
+    0.706
    ],
-   "soil_quality": 1.013
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w890956488",
@@ -1537,10 +1537,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    0.165,
-    0.244
+    0.424,
+    0.503
    ],
-   "soil_quality": 1.012
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w531264973",
@@ -1548,10 +1548,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.18,
-    0.291
+    0.469,
+    0.581
    ],
-   "soil_quality": 0.97
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w105165402",
@@ -1559,10 +1559,10 @@
    "n_zones": 2,
    "n_points": 29,
    "zone_centers": [
-    0.34,
-    0.412
+    0.664,
+    0.737
    ],
-   "soil_quality": 0.947
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w137206920",
@@ -1570,10 +1570,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    -0.016,
-    0.075
+    0.411,
+    0.502
    ],
-   "soil_quality": 0.907
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w534448932",
@@ -1581,10 +1581,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.362,
-    0.405
+    0.542,
+    0.584
    ],
-   "soil_quality": 1.025
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w533478510",
@@ -1592,10 +1592,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.003,
-    0.101
+    0.392,
+    0.49
    ],
-   "soil_quality": 0.925
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w534322274",
@@ -1603,10 +1603,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.452,
-    0.529
+    0.549,
+    0.626
    ],
-   "soil_quality": 1.094
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w534448934",
@@ -1614,10 +1614,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.043,
-    0.103
+    0.472,
+    0.532
    ],
-   "soil_quality": 0.901
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264946",
@@ -1625,10 +1625,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    -0.029,
-    0.02
+    0.347,
+    0.396
    ],
-   "soil_quality": 0.93
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w533478516",
@@ -1636,10 +1636,10 @@
    "n_zones": 2,
    "n_points": 27,
    "zone_centers": [
-    0.387,
-    0.488
+    0.572,
+    0.673
    ],
-   "soil_quality": 1.036
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-r19818875-0",
@@ -1647,10 +1647,10 @@
    "n_zones": 2,
    "n_points": 27,
    "zone_centers": [
-    0.392,
-    0.457
+    0.631,
+    0.695
    ],
-   "soil_quality": 1.008
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w534454912",
@@ -1658,10 +1658,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.029,
-    0.121
+    0.392,
+    0.484
    ],
-   "soil_quality": 0.928
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w531264927",
@@ -1669,10 +1669,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    0.175,
-    0.207
+    0.518,
+    0.55
    ],
-   "soil_quality": 0.958
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w1449490520",
@@ -1680,10 +1680,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.142,
-    0.264
+    0.513,
+    0.635
    ],
-   "soil_quality": 0.94
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w533472849",
@@ -1691,10 +1691,10 @@
    "n_zones": 2,
    "n_points": 24,
    "zone_centers": [
-    0.057,
-    0.157
+    0.426,
+    0.526
    ],
-   "soil_quality": 0.941
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w533472848",
@@ -1702,10 +1702,10 @@
    "n_zones": 2,
    "n_points": 25,
    "zone_centers": [
-    0.193,
-    0.26
+    0.504,
+    0.571
    ],
-   "soil_quality": 0.972
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w107479510",
@@ -1713,10 +1713,10 @@
    "n_zones": 2,
    "n_points": 26,
    "zone_centers": [
-    0.169,
-    0.267
+    0.425,
+    0.523
    ],
-   "soil_quality": 0.992
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w533471712",
@@ -1724,10 +1724,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.068,
-    0.125
+    0.301,
+    0.358
    ],
-   "soil_quality": 1.004
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w206696205",
@@ -1735,10 +1735,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.146,
-    0.204
+    0.373,
+    0.432
    ],
-   "soil_quality": 1.001
+   "soil_quality": 1.125
   },
   {
    "parcel_id": "osm-w124538638",
@@ -1746,10 +1746,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.523,
-    0.599
+    0.789,
+    0.865
    ],
-   "soil_quality": 0.998
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w531264984",
@@ -1757,10 +1757,10 @@
    "n_zones": 2,
    "n_points": 28,
    "zone_centers": [
-    0.299,
-    0.329
+    0.423,
+    0.454
    ],
-   "soil_quality": 1.062
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w533471724",
@@ -1768,10 +1768,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.103,
-    0.177
+    0.411,
+    0.485
    ],
-   "soil_quality": 0.969
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w239452343",
@@ -1779,10 +1779,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.246,
-    0.324
+    0.437,
+    0.514
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w203757446",
@@ -1790,10 +1790,10 @@
    "n_zones": 2,
    "n_points": 24,
    "zone_centers": [
-    0.317,
-    0.346
+    0.398,
+    0.427
    ],
-   "soil_quality": 1.092
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264921",
@@ -1801,10 +1801,10 @@
    "n_zones": 2,
    "n_points": 24,
    "zone_centers": [
-    -0.078,
-    -0.001
+    0.356,
+    0.433
    ],
-   "soil_quality": 0.9
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w252254895",
@@ -1812,10 +1812,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.781,
-    0.83
+    0.89,
+    0.938
    ],
-   "soil_quality": 1.095
+   "soil_quality": 1.154
   },
   {
    "parcel_id": "osm-w239574325",
@@ -1823,10 +1823,10 @@
    "n_zones": 2,
    "n_points": 24,
    "zone_centers": [
-    0.429,
-    0.457
+    0.557,
+    0.586
    ],
-   "soil_quality": 1.065
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264985",
@@ -1834,10 +1834,10 @@
    "n_zones": 2,
    "n_points": 24,
    "zone_centers": [
-    0.039,
-    0.161
+    0.288,
+    0.411
    ],
-   "soil_quality": 0.996
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w251614426",
@@ -1845,10 +1845,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.434,
-    0.592
+    0.498,
+    0.656
    ],
-   "soil_quality": 1.091
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w254169959",
@@ -1856,10 +1856,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    -0.196,
-    -0.144
+    0.209,
+    0.262
    ],
-   "soil_quality": 0.916
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w34047707",
@@ -1867,10 +1867,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.329,
-    0.378
+    0.51,
+    0.56
    ],
-   "soil_quality": 1.043
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w534446908",
@@ -1878,10 +1878,10 @@
    "n_zones": 2,
    "n_points": 21,
    "zone_centers": [
-    0.188,
-    0.242
+    0.538,
+    0.592
    ],
-   "soil_quality": 0.951
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w533472854",
@@ -1889,10 +1889,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.155,
-    0.185
+    0.507,
+    0.537
    ],
-   "soil_quality": 0.94
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534454916",
@@ -1900,10 +1900,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    -0.098,
-    -0.069
+    0.122,
+    0.151
    ],
-   "soil_quality": 0.979
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w1449490523",
@@ -1911,10 +1911,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.124,
-    0.182
+    0.503,
+    0.561
    ],
-   "soil_quality": 0.917
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w254169940",
@@ -1922,10 +1922,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.553,
-    0.581
+    0.634,
+    0.662
    ],
-   "soil_quality": 1.09
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w534454910",
@@ -1933,10 +1933,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.155,
-    0.194
+    0.125,
+    0.164
    ],
-   "soil_quality": 1.115
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w533471718",
@@ -1944,10 +1944,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.27,
-    0.336
+    0.347,
+    0.413
    ],
-   "soil_quality": 1.09
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w137206922",
@@ -1955,10 +1955,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.037,
-    0.06
+    0.202,
+    0.225
    ],
-   "soil_quality": 1.05
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w534456371",
@@ -1966,10 +1966,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.161,
-    0.203
+    0.397,
+    0.439
    ],
-   "soil_quality": 0.97
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w534599236",
@@ -1977,10 +1977,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    -0.125,
-    -0.037
+    0.282,
+    0.37
    ],
-   "soil_quality": 0.92
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w107479500",
@@ -1988,10 +1988,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.166,
-    0.218
+    0.424,
+    0.477
    ],
-   "soil_quality": 1.006
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w533478512",
@@ -1999,10 +1999,10 @@
    "n_zones": 2,
    "n_points": 21,
    "zone_centers": [
-    0.317,
-    0.394
+    0.385,
+    0.462
    ],
-   "soil_quality": 1.106
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w531264969",
@@ -2010,10 +2010,10 @@
    "n_zones": 2,
    "n_points": 22,
    "zone_centers": [
-    0.312,
-    0.371
+    0.496,
+    0.554
    ],
-   "soil_quality": 1.038
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w531264929",
@@ -2021,10 +2021,10 @@
    "n_zones": 2,
    "n_points": 21,
    "zone_centers": [
-    0.338,
-    0.387
+    0.457,
+    0.506
    ],
-   "soil_quality": 1.08
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w251614415",
@@ -2032,10 +2032,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.239,
-    0.395
+    0.635,
+    0.791
    ],
-   "soil_quality": 0.91
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w531264920",
@@ -2043,10 +2043,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.073,
-    0.116
+    0.485,
+    0.528
    ],
-   "soil_quality": 0.907
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534446909",
@@ -2054,10 +2054,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.219,
-    0.324
+    0.571,
+    0.676
    ],
-   "soil_quality": 0.943
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w534223294",
@@ -2065,10 +2065,10 @@
    "n_zones": 2,
    "n_points": 21,
    "zone_centers": [
-    0.062,
-    0.17
+    0.37,
+    0.478
    ],
-   "soil_quality": 0.965
+   "soil_quality": 1.133
   },
   {
    "parcel_id": "osm-w37106202",
@@ -2076,10 +2076,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.029,
-    0.074
+    0.282,
+    0.327
    ],
-   "soil_quality": 0.999
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w533472844",
@@ -2087,10 +2087,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.509,
-    0.553
+    0.588,
+    0.632
    ],
-   "soil_quality": 1.088
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w531266498",
@@ -2098,10 +2098,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.097,
-    0.136
+    0.317,
+    0.356
    ],
-   "soil_quality": 1.02
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w534448936",
@@ -2109,10 +2109,10 @@
    "n_zones": 2,
    "n_points": 20,
    "zone_centers": [
-    0.25,
-    0.313
+    0.443,
+    0.506
    ],
-   "soil_quality": 1.018
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264930",
@@ -2120,10 +2120,10 @@
    "n_zones": 2,
    "n_points": 23,
    "zone_centers": [
-    0.283,
-    0.347
+    0.407,
+    0.472
    ],
-   "soil_quality": 1.077
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w534451968",
@@ -2131,10 +2131,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.362,
-    0.447
+    0.566,
+    0.65
    ],
-   "soil_quality": 1.024
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w534446885",
@@ -2142,10 +2142,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.168,
-    0.221
+    0.577,
+    0.63
    ],
-   "soil_quality": 0.9
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w533480213",
@@ -2153,10 +2153,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.563,
-    0.587
+    0.675,
+    0.699
    ],
-   "soil_quality": 1.071
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w1449490485",
@@ -2164,10 +2164,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.733,
-    0.759
+    0.788,
+    0.814
    ],
-   "soil_quality": 1.112
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w104002681",
@@ -2175,10 +2175,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.52,
-    0.555
+    0.605,
+    0.639
    ],
-   "soil_quality": 1.077
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534601360",
@@ -2186,10 +2186,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    -0.038,
-    0.045
+    0.288,
+    0.371
    ],
-   "soil_quality": 0.964
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w531264964",
@@ -2197,10 +2197,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.492,
-    0.516
+    0.547,
+    0.571
    ],
-   "soil_quality": 1.105
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w203750980",
@@ -2208,10 +2208,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.31,
-    0.366
+    0.402,
+    0.457
    ],
-   "soil_quality": 1.086
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534451967",
@@ -2219,10 +2219,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.199,
-    0.263
+    0.339,
+    0.403
    ],
-   "soil_quality": 1.059
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264943",
@@ -2230,10 +2230,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.178,
-    0.241
+    0.309,
+    0.371
    ],
-   "soil_quality": 1.07
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w534446890",
@@ -2241,10 +2241,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.467,
-    0.527
+    0.625,
+    0.684
    ],
-   "soil_quality": 1.037
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534454908",
@@ -2252,10 +2252,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    -0.063,
-    -0.009
+    0.168,
+    0.222
    ],
-   "soil_quality": 0.973
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w531264931",
@@ -2263,10 +2263,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.215,
-    0.26
+    0.415,
+    0.46
    ],
-   "soil_quality": 1.036
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w533471713",
@@ -2274,10 +2274,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.212,
-    0.24
+    0.249,
+    0.277
    ],
-   "soil_quality": 1.111
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w531264928",
@@ -2285,10 +2285,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.215,
-    0.249
+    0.47,
+    0.503
    ],
-   "soil_quality": 1.006
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w201081392",
@@ -2296,10 +2296,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.462,
-    0.506
+    0.717,
+    0.761
    ],
-   "soil_quality": 1.014
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w534446892",
@@ -2307,10 +2307,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.272,
-    0.308
+    0.41,
+    0.445
    ],
-   "soil_quality": 1.048
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w136491873",
@@ -2318,10 +2318,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.113,
-    0.146
+    0.538,
+    0.572
    ],
-   "soil_quality": 0.913
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w239574336",
@@ -2329,10 +2329,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.043,
-    0.066
+    0.358,
+    0.381
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w534446893",
@@ -2340,10 +2340,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.308,
-    0.357
+    0.394,
+    0.443
    ],
-   "soil_quality": 1.076
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w254169934",
@@ -2351,10 +2351,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.542,
-    0.569
+    0.681,
+    0.708
    ],
-   "soil_quality": 1.058
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w534451962",
@@ -2362,10 +2362,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.256,
-    0.334
+    0.626,
+    0.705
    ],
-   "soil_quality": 0.933
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264916",
@@ -2373,10 +2373,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.22,
-    0.285
+    0.286,
+    0.351
    ],
-   "soil_quality": 1.098
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w534456369",
@@ -2384,10 +2384,10 @@
    "n_zones": 2,
    "n_points": 19,
    "zone_centers": [
-    0.499,
-    0.56
+    0.622,
+    0.683
    ],
-   "soil_quality": 1.075
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w531264978",
@@ -2395,10 +2395,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.097,
-    0.109
+    0.394,
+    0.406
    ],
-   "soil_quality": 0.974
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534599231",
@@ -2406,10 +2406,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.477,
-    0.498
+    0.714,
+    0.735
    ],
-   "soil_quality": 1.009
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w662067065",
@@ -2417,10 +2417,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.07,
-    0.124
+    0.428,
+    0.482
    ],
-   "soil_quality": 0.946
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w533471720",
@@ -2428,10 +2428,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.063,
-    0.092
+    0.263,
+    0.292
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w533478513",
@@ -2439,10 +2439,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    -0.11,
-    -0.07
+    0.178,
+    0.218
    ],
-   "soil_quality": 0.98
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w534446901",
@@ -2450,10 +2450,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.556,
-    0.571
+    0.606,
+    0.621
    ],
-   "soil_quality": 1.096
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w251614420",
@@ -2461,10 +2461,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.176,
-    0.294
+    0.504,
+    0.622
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w124536786",
@@ -2472,10 +2472,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.03,
-    0.142
+    0.307,
+    0.419
    ],
-   "soil_quality": 0.983
+   "soil_quality": 1.134
   },
   {
    "parcel_id": "osm-w534451965",
@@ -2483,10 +2483,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    -0.004,
-    0.062
+    0.339,
+    0.405
    ],
-   "soil_quality": 0.948
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264957",
@@ -2494,10 +2494,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.283,
-    0.382
+    0.382,
+    0.481
    ],
-   "soil_quality": 1.078
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w533472847",
@@ -2505,10 +2505,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.521,
-    0.564
+    0.64,
+    0.683
    ],
-   "soil_quality": 1.073
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w260131579",
@@ -2516,10 +2516,10 @@
    "n_zones": 2,
    "n_points": 17,
    "zone_centers": [
-    0.261,
-    0.311
+    0.539,
+    0.59
    ],
-   "soil_quality": 0.995
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w531264976",
@@ -2527,10 +2527,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.652,
-    0.693
+    0.726,
+    0.766
    ],
-   "soil_quality": 1.088
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w531264950",
@@ -2538,10 +2538,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.349,
-    0.466
+    0.431,
+    0.548
    ],
-   "soil_quality": 1.108
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w107283397",
@@ -2549,10 +2549,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    -0.167,
-    -0.132
+    0.256,
+    0.291
    ],
-   "soil_quality": 0.904
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w262065970",
@@ -2560,10 +2560,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.163,
-    0.213
+    0.262,
+    0.312
    ],
-   "soil_quality": 1.079
+   "soil_quality": 1.133
   },
   {
    "parcel_id": "osm-w103959476",
@@ -2571,10 +2571,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.423,
-    0.452
+    0.454,
+    0.483
    ],
-   "soil_quality": 1.119
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w136505640",
@@ -2582,10 +2582,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.199,
-    0.227
+    0.637,
+    0.665
    ],
-   "soil_quality": 0.906
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w203750987",
@@ -2593,10 +2593,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.305,
-    0.322
+    0.413,
+    0.43
    ],
-   "soil_quality": 1.079
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w104972129",
@@ -2604,10 +2604,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.366,
-    0.406
+    0.663,
+    0.703
    ],
-   "soil_quality": 0.98
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w531264962",
@@ -2615,10 +2615,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.203,
-    0.227
+    0.539,
+    0.563
    ],
-   "soil_quality": 0.943
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w531264933",
@@ -2626,10 +2626,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    0.31,
-    0.336
+    0.57,
+    0.597
    ],
-   "soil_quality": 1.003
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w533472853",
@@ -2637,10 +2637,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.166,
-    0.267
+    0.395,
+    0.496
    ],
-   "soil_quality": 1.007
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534601357",
@@ -2648,10 +2648,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.225,
-    0.25
+    0.549,
+    0.574
    ],
-   "soil_quality": 0.947
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w534446905",
@@ -2659,10 +2659,10 @@
    "n_zones": 2,
    "n_points": 16,
    "zone_centers": [
-    -0.029,
-    0.057
+    0.383,
+    0.47
    ],
-   "soil_quality": 0.905
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w534446913",
@@ -2670,10 +2670,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.157,
-    0.2
+    0.489,
+    0.532
    ],
-   "soil_quality": 0.942
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264925",
@@ -2681,10 +2681,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.528,
-    0.574
+    0.59,
+    0.636
    ],
-   "soil_quality": 1.098
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534449828",
@@ -2692,10 +2692,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    -0.102,
-    0.017
+    0.289,
+    0.408
    ],
-   "soil_quality": 0.923
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264963",
@@ -2703,10 +2703,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.167,
-    0.193
+    0.502,
+    0.528
    ],
-   "soil_quality": 0.943
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w34155861",
@@ -2714,10 +2714,10 @@
    "n_zones": 2,
    "n_points": 15,
    "zone_centers": [
-    0.576,
-    0.637
+    0.679,
+    0.739
    ],
-   "soil_quality": 1.081
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w533471719",
@@ -2725,10 +2725,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    -0.105,
-    -0.07
+    0.309,
+    0.345
    ],
-   "soil_quality": 0.906
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w531264961",
@@ -2736,10 +2736,10 @@
    "n_zones": 2,
    "n_points": 18,
    "zone_centers": [
-    0.247,
-    0.314
+    0.346,
+    0.413
    ],
-   "soil_quality": 1.081
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w534446886",
@@ -2747,10 +2747,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.252,
-    0.321
+    0.582,
+    0.651
    ],
-   "soil_quality": 0.943
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534449830",
@@ -2758,10 +2758,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    -0.03,
-    0.069
+    0.285,
+    0.384
    ],
-   "soil_quality": 0.964
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264967",
@@ -2769,10 +2769,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.065,
-    0.115
+    0.431,
+    0.481
    ],
-   "soil_quality": 0.938
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w534454914",
@@ -2780,10 +2780,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    -0.122,
-    -0.085
+    0.217,
+    0.254
    ],
-   "soil_quality": 0.932
+   "soil_quality": 1.117
   },
   {
    "parcel_id": "osm-w201081393",
@@ -2791,10 +2791,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.267,
-    0.315
+    0.556,
+    0.605
    ],
-   "soil_quality": 0.989
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w531264926",
@@ -2802,10 +2802,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.566,
-    0.597
+    0.645,
+    0.675
    ],
-   "soil_quality": 1.089
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534456367",
@@ -2813,10 +2813,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.117,
-    0.168
+    0.54,
+    0.591
    ],
-   "soil_quality": 0.911
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w88491174",
@@ -2824,10 +2824,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.109,
-    0.137
+    0.409,
+    0.438
    ],
-   "soil_quality": 0.978
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w534446899",
@@ -2835,10 +2835,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.417,
-    0.458
+    0.531,
+    0.571
    ],
-   "soil_quality": 1.061
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534601358",
@@ -2846,10 +2846,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.394,
-    0.427
+    0.548,
+    0.581
    ],
-   "soil_quality": 1.04
+   "soil_quality": 1.124
   },
   {
    "parcel_id": "osm-w125133537",
@@ -2857,10 +2857,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.571,
-    0.599
+    0.659,
+    0.687
    ],
-   "soil_quality": 1.09
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w531266497",
@@ -2868,10 +2868,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.15,
-    0.18
+    0.251,
+    0.281
    ],
-   "soil_quality": 1.085
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w534449829",
@@ -2879,10 +2879,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.11,
-    0.125
+    0.232,
+    0.248
    ],
-   "soil_quality": 1.074
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w200068029",
@@ -2890,10 +2890,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.214,
-    0.238
+    0.487,
+    0.511
    ],
-   "soil_quality": 0.95
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w124549398",
@@ -2901,10 +2901,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.012,
-    0.045
+    0.399,
+    0.432
    ],
-   "soil_quality": 0.92
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w34690592",
@@ -2912,10 +2912,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.145,
-    0.251
+    0.55,
+    0.656
    ],
-   "soil_quality": 0.922
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w531264975",
@@ -2923,10 +2923,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.561,
-    0.633
+    0.695,
+    0.767
    ],
-   "soil_quality": 1.055
+   "soil_quality": 1.128
   },
   {
    "parcel_id": "osm-w534454909",
@@ -2934,10 +2934,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.208,
-    0.258
+    0.266,
+    0.317
    ],
-   "soil_quality": 1.094
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w534599237",
@@ -2945,10 +2945,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.349,
-    0.38
+    0.532,
+    0.564
    ],
-   "soil_quality": 1.042
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w88491162",
@@ -2956,10 +2956,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.789,
-    0.837
+    0.881,
+    0.929
    ],
-   "soil_quality": 1.086
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w103959472",
@@ -2967,10 +2967,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    -0.009,
-    0.031
+    0.424,
+    0.464
    ],
-   "soil_quality": 0.9
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w533472850",
@@ -2978,10 +2978,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.402,
-    0.447
+    0.547,
+    0.592
    ],
-   "soil_quality": 1.063
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w533478514",
@@ -2989,10 +2989,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.35,
-    0.413
+    0.616,
+    0.679
    ],
-   "soil_quality": 0.992
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w534446894",
@@ -3000,10 +3000,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.189,
-    0.213
+    0.34,
+    0.363
    ],
-   "soil_quality": 1.041
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264955",
@@ -3011,10 +3011,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.082,
-    0.159
+    0.404,
+    0.482
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534446897",
@@ -3022,10 +3022,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.405,
-    0.467
+    0.614,
+    0.676
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534448937",
@@ -3033,10 +3033,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.171,
-    0.211
+    0.385,
+    0.425
    ],
-   "soil_quality": 1.006
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w251614424",
@@ -3044,10 +3044,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.354,
-    0.435
+    0.392,
+    0.473
    ],
-   "soil_quality": 1.114
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w533478511",
@@ -3055,10 +3055,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.332,
-    0.401
+    0.47,
+    0.538
    ],
-   "soil_quality": 1.083
+   "soil_quality": 1.158
   },
   {
    "parcel_id": "osm-w534599239",
@@ -3066,10 +3066,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.038,
-    0.125
+    0.366,
+    0.453
    ],
-   "soil_quality": 0.963
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w890956479",
@@ -3077,10 +3077,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.141,
-    0.209
+    0.527,
+    0.596
    ],
-   "soil_quality": 0.942
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w534446898",
@@ -3088,10 +3088,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.076,
-    0.121
+    0.373,
+    0.418
    ],
-   "soil_quality": 0.961
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w531264960",
@@ -3099,10 +3099,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.107,
-    0.127
+    0.342,
+    0.362
    ],
-   "soil_quality": 1.004
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534446910",
@@ -3110,10 +3110,10 @@
    "n_zones": 2,
    "n_points": 14,
    "zone_centers": [
-    0.657,
-    0.678
+    0.703,
+    0.724
    ],
-   "soil_quality": 1.098
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w104972007",
@@ -3121,10 +3121,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.142,
-    0.163
+    0.56,
+    0.581
    ],
-   "soil_quality": 0.914
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w534451963",
@@ -3132,10 +3132,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.267,
-    0.357
+    0.452,
+    0.542
    ],
-   "soil_quality": 1.034
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w251614414",
@@ -3143,10 +3143,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.256,
-    0.262
+    0.562,
+    0.568
    ],
-   "soil_quality": 0.959
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w534599227",
@@ -3154,10 +3154,10 @@
    "n_zones": 2,
    "n_points": 13,
    "zone_centers": [
-    0.424,
-    0.51
+    0.561,
+    0.647
    ],
-   "soil_quality": 1.056
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w534454918",
@@ -3165,10 +3165,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.035,
-    0.081
+    0.263,
+    0.308
    ],
-   "soil_quality": 0.975
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w534446914",
@@ -3176,10 +3176,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.316,
-    0.461
+    0.543,
+    0.689
    ],
-   "soil_quality": 1.011
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w531264939",
@@ -3187,10 +3187,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.438,
-    0.554
+    0.664,
+    0.78
    ],
-   "soil_quality": 1.02
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w104004216",
@@ -3198,10 +3198,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.607,
-    0.717
+    0.688,
+    0.798
    ],
-   "soil_quality": 1.116
+   "soil_quality": 1.16
   },
   {
    "parcel_id": "osm-w107479501",
@@ -3209,10 +3209,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.341,
-    0.393
+    0.508,
+    0.56
    ],
-   "soil_quality": 1.019
+   "soil_quality": 1.11
   },
   {
    "parcel_id": "osm-w107283398",
@@ -3220,10 +3220,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.11,
-    0.156
+    0.24,
+    0.286
    ],
-   "soil_quality": 1.028
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w94092320",
@@ -3231,10 +3231,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.005,
-    0.02
+    0.26,
+    0.275
    ],
-   "soil_quality": 1.003
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w534446907",
@@ -3242,10 +3242,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.358,
-    0.411
+    0.587,
+    0.64
    ],
-   "soil_quality": 1.01
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w254169953",
@@ -3253,10 +3253,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.379,
-    0.405
+    0.52,
+    0.546
    ],
-   "soil_quality": 1.059
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534599234",
@@ -3264,10 +3264,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.05,
-    0.187
+    0.382,
+    0.519
    ],
-   "soil_quality": 0.957
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w124536777",
@@ -3275,10 +3275,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.601,
-    0.677
+    0.795,
+    0.871
    ],
-   "soil_quality": 1.048
+   "soil_quality": 1.154
   },
   {
    "parcel_id": "osm-w534446911",
@@ -3286,10 +3286,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.483,
-    0.554
+    0.601,
+    0.671
    ],
-   "soil_quality": 1.059
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w1284614479",
@@ -3297,10 +3297,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    -0.018,
-    0.043
+    0.38,
+    0.441
    ],
-   "soil_quality": 0.925
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w531264953",
@@ -3308,10 +3308,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.332,
-    0.355
+    0.532,
+    0.555
    ],
-   "soil_quality": 1.023
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w136286010",
@@ -3319,10 +3319,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.28,
-    0.314
+    0.603,
+    0.636
    ],
-   "soil_quality": 0.956
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w531264979",
@@ -3330,10 +3330,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.229,
-    0.288
+    0.579,
+    0.638
    ],
-   "soil_quality": 0.935
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w534456370",
@@ -3341,10 +3341,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.424,
-    0.446
+    0.457,
+    0.479
    ],
-   "soil_quality": 1.113
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w533471722",
@@ -3352,10 +3352,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    -0.086,
-    -0.018
+    0.279,
+    0.347
    ],
-   "soil_quality": 0.941
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w94092313",
@@ -3363,10 +3363,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.402,
-    0.423
+    0.639,
+    0.659
    ],
-   "soil_quality": 1.013
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w531264917",
@@ -3374,10 +3374,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.064,
-    0.107
+    0.206,
+    0.248
    ],
-   "soil_quality": 1.063
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w534446902",
@@ -3385,10 +3385,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.261,
-    0.301
+    0.616,
+    0.657
    ],
-   "soil_quality": 0.929
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534451974",
@@ -3396,10 +3396,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.401,
-    0.42
+    0.567,
+    0.587
    ],
-   "soil_quality": 1.045
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264932",
@@ -3407,10 +3407,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.189,
-    0.205
+    0.579,
+    0.596
    ],
-   "soil_quality": 0.932
+   "soil_quality": 1.145
   },
   {
    "parcel_id": "osm-w533478515",
@@ -3418,10 +3418,10 @@
    "n_zones": 2,
    "n_points": 12,
    "zone_centers": [
-    0.364,
-    0.434
+    0.529,
+    0.599
    ],
-   "soil_quality": 1.047
+   "soil_quality": 1.137
   },
   {
    "parcel_id": "osm-w239323754",
@@ -3429,10 +3429,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.015,
-    0.067
+    0.362,
+    0.413
    ],
-   "soil_quality": 0.946
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w534446888",
@@ -3440,10 +3440,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.298,
-    0.366
+    0.551,
+    0.619
    ],
-   "soil_quality": 0.985
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534446900",
@@ -3451,10 +3451,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.372,
-    0.412
+    0.67,
+    0.711
    ],
-   "soil_quality": 0.96
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534449831",
@@ -3462,10 +3462,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    0.676,
-    0.719
+    0.856,
+    0.898
    ],
-   "soil_quality": 1.038
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w531264937",
@@ -3473,10 +3473,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.193,
-    0.219
+    0.38,
+    0.406
    ],
-   "soil_quality": 1.045
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w534446887",
@@ -3484,10 +3484,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.164,
-    0.191
+    0.445,
+    0.472
    ],
-   "soil_quality": 0.946
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w243152237",
@@ -3495,10 +3495,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.312,
-    0.354
+    0.531,
+    0.572
    ],
-   "soil_quality": 1.013
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w103962258",
@@ -3506,10 +3506,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    0.282,
-    0.325
+    0.425,
+    0.468
    ],
-   "soil_quality": 1.063
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w534456372",
@@ -3517,10 +3517,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.363,
-    0.385
+    0.34,
+    0.361
    ],
-   "soil_quality": 1.112
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w126367445",
@@ -3528,10 +3528,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    -0.008,
-    0.023
+    0.353,
+    0.384
    ],
-   "soil_quality": 0.955
+   "soil_quality": 1.152
   },
   {
    "parcel_id": "osm-w534324430",
@@ -3539,10 +3539,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.166,
-    0.187
+    0.419,
+    0.44
    ],
-   "soil_quality": 0.998
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w47045625",
@@ -3550,10 +3550,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    0.191,
-    0.23
+    0.262,
+    0.301
    ],
-   "soil_quality": 1.091
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w531264983",
@@ -3561,10 +3561,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.093,
-    0.126
+    0.384,
+    0.417
    ],
-   "soil_quality": 0.971
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w533472842",
@@ -3572,10 +3572,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.482,
-    0.507
+    0.658,
+    0.683
    ],
-   "soil_quality": 1.035
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w201081391",
@@ -3583,10 +3583,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    0.286,
-    0.357
+    0.575,
+    0.647
    ],
-   "soil_quality": 0.995
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w104002683",
@@ -3594,10 +3594,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.546,
-    0.577
+    0.588,
+    0.619
    ],
-   "soil_quality": 1.1
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w239202008",
@@ -3605,10 +3605,10 @@
    "n_zones": 2,
    "n_points": 11,
    "zone_centers": [
-    -0.032,
-    -0.012
+    0.329,
+    0.349
    ],
-   "soil_quality": 0.935
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w104004210",
@@ -3616,10 +3616,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.247,
-    0.368
+    0.669,
+    0.79
    ],
-   "soil_quality": 0.93
+   "soil_quality": 1.16
   },
   {
    "parcel_id": "osm-w125814422",
@@ -3627,10 +3627,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.462,
-    0.498
+    0.688,
+    0.724
    ],
-   "soil_quality": 1.015
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w533471721",
@@ -3638,10 +3638,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.388,
-    0.434
+    0.795,
+    0.841
    ],
-   "soil_quality": 0.921
+   "soil_quality": 1.143
   },
   {
    "parcel_id": "osm-w534448931",
@@ -3649,10 +3649,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    0.341,
-    0.394
+    0.414,
+    0.468
    ],
-   "soil_quality": 1.09
+   "soil_quality": 1.13
   },
   {
    "parcel_id": "osm-w534446906",
@@ -3660,10 +3660,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.555,
-    0.609
+    0.608,
+    0.662
    ],
-   "soil_quality": 1.106
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w1180908599",
@@ -3671,10 +3671,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.319,
-    0.37
+    0.651,
+    0.702
    ],
-   "soil_quality": 0.951
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w240970238",
@@ -3682,10 +3682,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.287,
-    0.333
+    0.422,
+    0.469
    ],
-   "soil_quality": 1.051
+   "soil_quality": 1.125
   },
   {
    "parcel_id": "osm-w533471723",
@@ -3693,10 +3693,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.438,
-    0.464
+    0.554,
+    0.58
    ],
-   "soil_quality": 1.097
+   "soil_quality": 1.16
   },
   {
    "parcel_id": "osm-w531264938",
@@ -3704,10 +3704,10 @@
    "n_zones": 2,
    "n_points": 10,
    "zone_centers": [
-    0.533,
-    0.613
+    0.608,
+    0.688
    ],
-   "soil_quality": 1.106
+   "soil_quality": 1.147
   },
   {
    "parcel_id": "osm-w531264918",
@@ -3715,10 +3715,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    -0.209,
-    -0.184
+    0.192,
+    0.217
    ],
-   "soil_quality": 0.921
+   "soil_quality": 1.14
   },
   {
    "parcel_id": "osm-w1284614480",
@@ -3726,10 +3726,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.186,
-    0.251
+    0.305,
+    0.371
    ],
-   "soil_quality": 1.07
+   "soil_quality": 1.135
   },
   {
    "parcel_id": "osm-w107283389",
@@ -3737,10 +3737,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.15,
-    0.191
+    0.291,
+    0.332
    ],
-   "soil_quality": 1.022
+   "soil_quality": 1.099
   },
   {
    "parcel_id": "osm-w1180906657",
@@ -3748,10 +3748,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.159,
-    0.205
+    0.583,
+    0.629
    ],
-   "soil_quality": 0.901
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w533471711",
@@ -3759,10 +3759,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    -0.09,
-    -0.074
+    0.247,
+    0.264
    ],
-   "soil_quality": 0.947
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w531264948",
@@ -3770,10 +3770,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.17,
-    0.264
+    0.573,
+    0.667
    ],
-   "soil_quality": 0.933
+   "soil_quality": 1.153
   },
   {
    "parcel_id": "osm-w531266499",
@@ -3781,10 +3781,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    -0.031,
-    -0.014
+    0.363,
+    0.381
    ],
-   "soil_quality": 0.917
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w1497667069",
@@ -3792,10 +3792,10 @@
    "n_zones": 2,
    "n_points": 9,
    "zone_centers": [
-    0.531,
-    0.587
+    0.78,
+    0.836
    ],
-   "soil_quality": 1
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534449827",
@@ -3803,10 +3803,10 @@
    "n_zones": 2,
    "n_points": 8,
    "zone_centers": [
-    0.211,
-    0.271
+    0.26,
+    0.32
    ],
-   "soil_quality": 1.114
+   "soil_quality": 1.141
   },
   {
    "parcel_id": "osm-w531266500",
@@ -3814,10 +3814,10 @@
    "n_zones": 2,
    "n_points": 5,
    "zone_centers": [
-    0.041,
-    0.058
+    0.389,
+    0.407
    ],
-   "soil_quality": 0.942
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w103959493",
@@ -3825,10 +3825,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.283,
-    0.325
+    0.488,
+    0.53
    ],
-   "soil_quality": 1.024
+   "soil_quality": 1.136
   },
   {
    "parcel_id": "osm-w534448935",
@@ -3836,10 +3836,10 @@
    "n_zones": 2,
    "n_points": 7,
    "zone_centers": [
-    0.44,
-    0.493
+    0.516,
+    0.568
    ],
-   "soil_quality": 1.082
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w103962256",
@@ -3847,10 +3847,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.134,
-    0.176
+    0.517,
+    0.559
    ],
-   "soil_quality": 0.933
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w124538637",
@@ -3858,10 +3858,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.322,
-    0.455
+    0.597,
+    0.73
    ],
-   "soil_quality": 0.982
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w124549399",
@@ -3869,10 +3869,10 @@
    "n_zones": 2,
    "n_points": 3,
    "zone_centers": [
-    0.036,
-    0.069
+    0.351,
+    0.384
    ],
-   "soil_quality": 0.959
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w104972130",
@@ -3880,10 +3880,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.179,
-    0.271
+    0.379,
+    0.471
    ],
-   "soil_quality": 1.029
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w107958416",
@@ -3891,10 +3891,10 @@
    "n_zones": 2,
    "n_points": 5,
    "zone_centers": [
-    0.193,
-    0.221
+    0.329,
+    0.357
    ],
-   "soil_quality": 1.043
+   "soil_quality": 1.117
   },
   {
    "parcel_id": "osm-w531264959",
@@ -3902,10 +3902,10 @@
    "n_zones": 2,
    "n_points": 5,
    "zone_centers": [
-    0.161,
-    0.17
+    0.331,
+    0.341
    ],
-   "soil_quality": 1.039
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w531264968",
@@ -3913,10 +3913,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.349,
-    0.362
+    0.479,
+    0.492
    ],
-   "soil_quality": 1.068
+   "soil_quality": 1.139
   },
   {
    "parcel_id": "osm-w534323187",
@@ -3924,10 +3924,10 @@
    "n_zones": 2,
    "n_points": 4,
    "zone_centers": [
-    0.29,
-    0.298
+    0.341,
+    0.349
    ],
-   "soil_quality": 1.104
+   "soil_quality": 1.132
   },
   {
    "parcel_id": "osm-w534601361",
@@ -3935,10 +3935,10 @@
    "n_zones": 2,
    "n_points": 6,
    "zone_centers": [
-    0.482,
-    0.523
+    0.666,
+    0.706
    ],
-   "soil_quality": 1.042
+   "soil_quality": 1.142
   },
   {
    "parcel_id": "osm-w534454915",
@@ -3946,10 +3946,10 @@
    "n_zones": 2,
    "n_points": 4,
    "zone_centers": [
-    0.043,
-    0.109
+    0.272,
+    0.338
    ],
-   "soil_quality": 0.992
+   "soil_quality": 1.117
   },
   {
    "parcel_id": "osm-w534456368",
@@ -3957,10 +3957,10 @@
    "n_zones": 2,
    "n_points": 5,
    "zone_centers": [
-    0.451,
-    0.474
+    0.579,
+    0.602
    ],
-   "soil_quality": 1.068
+   "soil_quality": 1.138
   },
   {
    "parcel_id": "osm-w534446891",
@@ -3968,10 +3968,10 @@
    "n_zones": 2,
    "n_points": 3,
    "zone_centers": [
-    0.261,
-    0.289
+    0.407,
+    0.436
    ],
-   "soil_quality": 1.043
+   "soil_quality": 1.123
   },
   {
    "parcel_id": "osm-w534599229",
@@ -3979,10 +3979,10 @@
    "n_zones": 2,
    "n_points": 2,
    "zone_centers": [
-    0.295,
-    0.316
+    0.584,
+    0.606
    ],
-   "soil_quality": 0.973
+   "soil_quality": 1.131
   },
   {
    "parcel_id": "osm-w534451970",
@@ -3990,10 +3990,10 @@
    "n_zones": 2,
    "n_points": 4,
    "zone_centers": [
-    0.226,
-    0.236
+    0.552,
+    0.562
    ],
-   "soil_quality": 0.948
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w534451971",
@@ -4001,10 +4001,10 @@
    "n_zones": 2,
    "n_points": 4,
    "zone_centers": [
-    0.272,
-    0.285
+    0.565,
+    0.578
    ],
-   "soil_quality": 0.966
+   "soil_quality": 1.126
   },
   {
    "parcel_id": "osm-w1449490531",
@@ -4012,10 +4012,10 @@
    "n_zones": 2,
    "n_points": 2,
    "zone_centers": [
-    0.541,
-    0.558
+    0.642,
+    0.659
    ],
-   "soil_quality": 1.083
+   "soil_quality": 1.138
   }
  ]
 }

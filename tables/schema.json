@@ -12,12 +12,12 @@
  "record_counts": {
   "dim_date": 549,
   "dim_crop": 9,
-  "dim_source": 7,
+  "dim_source": 9,
   "dim_grid": 217,
   "dim_unit": 62,
   "dim_parcel": 501,
-  "fact_parcel_season": 588,
-  "fact_parcel_event": 2161,
+  "fact_parcel_season": 586,
+  "fact_parcel_event": 2159,
   "fact_region_daily": 549,
   "fact_observation": 4392,
   "fact_zone": 744,
@@ -25,7 +25,7 @@
   "dim_variable": 16,
   "fact_unit_decade": 3348,
   "meta_dataset": 18,
-  "dim_data_element": 172
+  "dim_data_element": 175
  },
  "tables": {
   "dim_parcel": {
@@ -63,31 +63,51 @@
      "min": 0,
      "source": "derived"
     },
-    "soil_quality_sim": {
+    "soil_quality": {
      "type": "number",
      "unit": "1",
      "min": 0.5,
      "max": 1.5,
-     "source": "model",
-     "synthetic": 1
+     "source": "derived",
+     "note": "由真实土壤属性推（经验式）"
+    },
+    "soil_quality_source": {
+     "type": "string",
+     "unit": "",
+     "source": "derived"
     },
     "soil_texture": {
      "type": "string",
      "unit": "",
-     "source": "soil-survey",
-     "note": "留空：待接土壤普查/土壤图"
+     "source": "soilgrids"
     },
     "soil_ph": {
      "type": "number",
      "unit": "pH",
-     "source": "soil-survey",
-     "note": "留空：待接土壤普查/土壤图"
+     "min": 4,
+     "max": 8.5,
+     "source": "soilgrids"
     },
     "soil_organic_matter": {
      "type": "number",
      "unit": "g/kg",
-     "source": "soil-survey",
-     "note": "留空：待接土壤普查/土壤图"
+     "min": 3,
+     "max": 120,
+     "source": "soilgrids"
+    },
+    "elevation_m": {
+     "type": "number",
+     "unit": "m",
+     "min": 250,
+     "max": 900,
+     "source": "dem"
+    },
+    "temp_offset_c": {
+     "type": "number",
+     "unit": "℃",
+     "min": -3,
+     "max": 3,
+     "source": "derived"
     }
    }
   },

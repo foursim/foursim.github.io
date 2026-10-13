@@ -8,7 +8,7 @@
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf } from './geo.js';
-import { THEMES } from './theme.js';
+import { THEME } from './theme.js';
 import { sparkline, bars, colorbar } from './charts.js';
 
 const LAYERS = [
@@ -21,7 +21,8 @@ const LAYERS = [
   ['units', 'P2 经营单元'],
   ['grids', 'P4 统计网格'],
   ['zones', 'P3 管理分区样点'],
-  ['admin', '行政边界（村/县）'],
+  ['admin', '行政边界（乡/县）'],
+  ['villages', '居民点（真实地名）'],
 ];
 
 /** 地图下方表格区的页签（key / 标题） */
@@ -101,7 +102,7 @@ export class UI {
     const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-label', 'btn-play', 'speed-group',
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
-      'tb-tabs', 'tb-body', 'tb-note', 'theme-sel', 'btn-export-csv', 'btn-export-png'];
+      'tb-tabs', 'tb-body', 'tb-note', 'btn-export-csv', 'btn-export-png'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -124,10 +125,6 @@ export class UI {
     this.refs['speed-group'].innerHTML = [[1, '1×'], [4, '4×'], [12, '12×']]
       .map(([d, l]) => `<button class="mini" data-days="${d}">${l}</button>`).join('');
     this.refs['day-slider'].max = String(this.model.days.length - 1);
-    // 三套配色（临时版本）：选项文案带上各自定位，方便一边看一边比
-    this.refs['theme-sel'].innerHTML = THEMES
-      .map((t) => `<option value="${t.key}" title="${t.desc}">${t.name}</option>`).join('');
-    this.refs['theme-sel'].value = this.themeKey ?? 'gov';
     this.refs['tb-tabs'].innerHTML = TABLE_TABS
       .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
     this.refs.bottombar.innerHTML = this.footerText();
@@ -153,18 +150,26 @@ export class UI {
       if (b) actions.onSpeed(Number(b.dataset.days));
     });
     refs['btn-play'].addEventListener('click', () => actions.onTogglePlay());
-    // 主题切换：只改 `data-theme`（CSS 变量整套换），地图由 main 通知重刷
-    refs['theme-sel'].addEventListener('change', () => actions.onTheme?.(refs['theme-sel'].value));
     refs['tb-tabs'].addEventListener('click', (ev) => {
       const b = pick(ev, 'button[data-tab]');
       if (!b) return;
       this.activeTable = b.dataset.tab;
       this.renderTables();
     });
-    // 表格里点"涉及地块"→ 定位（与告警面板同一个行为）
+    /*
+     * **表格 → 地图**（反向联动）：点表格行 ⇒ 地图上高亮相关地块。
+     * - 告警明细：行内是具体地块按钮 ⇒ 定位到那一块；
+     * - 经营单元：点一行 ⇒ 高亮该单元的全部地块（并框进视野）；
+     * - 作物与收成：点一行 ⇒ 高亮该作物的全部地块。
+     * 事件委托挂在**常驻容器**上（表格每帧重写，绑在行上必然失效）。
+     */
     refs['tb-body'].addEventListener('click', (ev) => {
-      const el = pick(ev, '[data-parcel]');
-      if (el) actions.onFocusParcel(Number(el.dataset.parcel));
+      const parcel = pick(ev, '[data-parcel]');
+      if (parcel) { actions.onFocusParcel(Number(parcel.dataset.parcel)); return; }
+      const unit = pick(ev, '[data-unit]');
+      if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
+      const crop = pick(ev, '[data-crop]');
+      if (crop) actions.onHighlightCrop?.(crop.dataset.crop);
     });
     refs['btn-export-csv'].addEventListener('click', () => actions.onExportCsv?.());
     refs['btn-export-png'].addEventListener('click', () => actions.onExportPng?.());
@@ -372,6 +377,10 @@ export class UI {
         <span class="dim">单产/总产</span><b>${r.yields.length ? `${r.yield_t_ha} t/ha · ${r.yield_t} t` : '—'}</b>
         <span class="dim">到收储点</span><b>${r.t_min != null ? `${r.t_min.toFixed(1)} 分` : '—'} <span class="dim">/ 下道 ${r.access_m ?? '—'} m</span></b>
         <span class="dim">归属</span><b>${r.unit_id ?? '—'} <span class="dim">/ ${r.grid_id ?? '—'}</span></b>
+        <span class="dim">高程</span><b>${r.elevation_m != null ? `${r.elevation_m} m` : '—'}
+          <span class="dim">（气温 ${(r.tempOffsetC ?? 0) >= 0 ? '+' : ''}${(r.tempOffsetC ?? 0).toFixed(2)} ℃）</span></b>
+        <span class="dim">土壤</span><b>${r.soil?.texture ? `${r.soil.texture}` : '—'}
+          <span class="dim">pH ${r.soil?.ph ?? '—'} · 有机碳 ${r.soil?.soc_g_kg ?? '—'} g/kg</span></b>
       </div>
       <canvas id="det-chart"></canvas>
       <ol class="det-events">${events}</ol>`;
@@ -404,12 +413,6 @@ export class UI {
     this.renderTables();
   }
 
-  /** 主题下拉与当前值保持同步（主题也可能由 URL 参数决定） */
-  setThemeKey(key) {
-    this.themeKey = key;
-    if (this.refs['theme-sel']) this.refs['theme-sel'].value = key;
-  }
-
   /** 一行单元格：`{text, num, mono, cls}` 或纯字符串 */
   static cellsHtml(cells) {
     return cells.map((c) => {
@@ -424,7 +427,7 @@ export class UI {
       const cls = [c.num ? 'num' : '', c.mono ? 'mono' : ''].filter(Boolean).join(' ');
       return `<th${cls ? ` class="${cls}"` : ''}>${c.label}</th>`;
     }).join('');
-    const body = rows.map((r) => `<tr${r.cls ? ` class="${r.cls}"` : ''}>${UI.cellsHtml(r.cells)}</tr>`).join('');
+    const body = rows.map((r) => `<tr${r.cls ? ` class="${r.cls}"` : ''}${r.attrs ?? ''}>${UI.cellsHtml(r.cells)}</tr>`).join('');
     return `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   }
 
@@ -463,6 +466,7 @@ export class UI {
         { label: '水分 %', num: true }, { label: '养分 %', num: true }, { label: '到收储点 min', num: true }];
       rows = list.map((u) => ({
         cls: u.disease >= 4 ? 'high' : (u.disease >= 3 ? 'mid' : ''),
+        attrs: ` data-unit="${u.id}" title="点击：在图上高亮这个单元的地块"`,
         cells: [{ text: u.code, mono: true }, u.crop || '—',
           { text: nm(u.area, 1), num: true }, { text: u.n, num: true },
           { text: nm(u.progress * 100, 1), num: true },
@@ -470,20 +474,21 @@ export class UI {
           { text: nm(u.water * 100, 1), num: true }, { text: nm(u.fert * 100, 1), num: true },
           { text: nm(u.tMin, 1), num: true }],
       }));
-      note = `${list.length} 个经营单元（P2）· 面积加权 · ${fmtDay(this.model.days[d])}`;
+      note = `${list.length} 个经营单元（P2）· 面积加权 · 点一行可在图上高亮 · ${fmtDay(this.model.days[d])}`;
     } else if (this.activeTable === 'crops') {
       const list = t.crops ?? [];
       cols = [{ label: '作物' }, { label: '地块数', num: true }, { label: '面积 ha', num: true },
         { label: '平均单产 t/ha', num: true }, { label: '总产 t', num: true },
         { label: '单产口径' }, { label: '参考单产 t/ha', num: true }];
       rows = list.map((c) => ({
+        attrs: ` data-crop="${c.code}" title="点击：在图上高亮这种作物的地块"`,
         cells: [c.name, { text: c.n, num: true }, { text: nm(c.area, 1), num: true },
           { text: c.yieldHa > 0 ? nm(c.yieldHa, 1) : '—', num: true },
           { text: c.yieldT > 0 ? nm(c.yieldT, 1) : '—', num: true },
           { text: c.basis || '—', cls: 'dim' },
           { text: c.ref ? nm(c.ref, 1) : '—', num: true, cls: 'dim' }],
       }));
-      note = `按作物聚合（收成粒度到季）· ${list.length} 类`;
+      note = `按作物聚合（收成粒度到季）· 点一行可在图上高亮 · ${list.length} 类`;
     } else {
       const list = this.alarmsFor(d);
       cols = [{ label: '等级' }, { label: '事项' }, { label: '说明' }, { label: '涉及地块（点击定位）' }];

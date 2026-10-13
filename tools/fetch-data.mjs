@@ -733,8 +733,326 @@ async function admin() {
   console.log(`[行政] 写出 ${file}（${(fs.statSync(file).size / 1024).toFixed(0)} KB，${feats.length} 个边界）`);
 }
 
+
+// ---------- 高程（真实 DEM） ----------
+/**
+ * `data/elevation.json`：**真实高程**，来源 Open-Meteo Elevation API（底层数据是 Copernicus GLO-90 DEM，开放）。
+ *
+ * 为什么值得取：之前只有区域的日气温序列，"地块级气温"一直没做 —— 当时的理由是
+ * "OSM 不给地块高程，硬编一个地块级温度场就是造假"。**现在有真高程了**，
+ * 用气温直减率（-0.65 ℃/100 m）就能算出**有依据的**地块级气温：这不是编，是推导。
+ * 同时也给"土壤水分/生长进度"提供了海拔修正的依据（高处的田晚熟、更干）。
+ */
+async function elevation() {
+  const out = opt('out', 'data');
+  const fc = JSON.parse(fs.readFileSync(path.join(out, 'parcels.geojson'), 'utf8'));
+  const pts = fc.features.map((f) => {
+    const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+    let x = 0;
+    let y = 0;
+    for (const [lon, lat] of ring) { x += lon; y += lat; }
+    return { lon: x / ring.length, lat: y / ring.length };
+  });
+  console.log(`[高程] ${pts.length} 个地块质心 → Open-Meteo Elevation（Copernicus GLO-90）…`);
+  const values = [];
+  for (let i = 0; i < pts.length; i += 100) {
+    const batch = pts.slice(i, i + 100);
+    const url = 'https://api.open-meteo.com/v1/elevation'
+      + `?latitude=${batch.map((p) => p.lat.toFixed(5)).join(',')}`
+      + `&longitude=${batch.map((p) => p.lon.toFixed(5)).join(',')}`;
+    const j = await getJson(url, { label: `Open-Meteo(第 ${i / 100 + 1} 批)` });
+    values.push(...(j.elevation ?? []));
+    await sleep(350);
+  }
+  const clean = values.map((v) => (typeof v === 'number' ? v : null));
+  const ok = clean.filter((v) => v != null);
+  const sorted = [...ok].sort((a, b) => a - b);
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+  const mean = ok.reduce((a, b) => a + b, 0) / (ok.length || 1);
+  const file = path.join(out, 'elevation.json');
+  fs.writeFileSync(file, `${JSON.stringify({
+    metadata: {
+      dataset: '地块高程（真实）',
+      source: 'Open-Meteo Elevation API（Copernicus GLO-90 DEM）',
+      url: 'https://open-meteo.com/en/docs/elevation-api',
+      license: 'Copernicus DEM：免费开放（含署名）',
+      fetched_at: new Date().toISOString(),
+      unit: 'm',
+      n: clean.length,
+      stats: { min: q(0), p25: q(0.25), median: q(0.5), p75: q(0.75), max: q(1), mean: round6(mean) },
+      lapse_rate_c_per_m: -0.0065,
+      note: '地块级气温 = 区域日气温 + 直减率 ×（地块高程 − 参考高程）；参考高程取中位数',
+    },
+    elevation_m: clean,
+  }, null, 0)}\n`, 'utf8');
+  console.log(`[高程] min ${q(0)} / 中位 ${q(0.5)} / max ${q(1)} m（平均 ${mean.toFixed(1)} m）`);
+  console.log(`[高程] 写出 ${file}（${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+  // 合理性：温带丘陵 300~900 m 之外就该人工看一眼
+  const okRange = q(0) > 100 && q(1) < 2000;
+  console.log(`[高程] 合理性：${okRange ? 'OK' : '⚠️ 超出温带丘陵常见区间（100~2000 m），请人工核对'}`
+    + `；地块间高差 ${(q(1) - q(0)).toFixed(0)} m ⇒ 气温差约 ${(((q(1) - q(0)) * 0.0065)).toFixed(2)} ℃`);
+}
+
+// ---------- 土壤（真实土壤属性） ----------
+/**
+ * `data/soil.json`：**真实土壤属性**，来源 ISRIC SoilGrids v2.0（250 m 分辨率，开放数据）。
+ *
+ * ⚠️ 单位必须按 API 的 `unit_measure.d_factor` 换算（原始值是"放大 10 倍"的整数）：
+ * 例如 clay=241 ⇒ 24.1%、phh2o=65 ⇒ pH 6.5。第一版直接拿原值当代数，会算出一片"pH 65"的鬼数据。
+ *
+ * 采样策略：SoilGrids 本身就是 250 m 网格，**按 250 m 去重**后再取，密了没有信息量还挨限流；
+ * 每个地块取**最近的采样点**（在 250 m 分辨率下这是诚实的赋值方式，不是插值编造）。
+ */
+async function soil() {
+  const out = opt('out', 'data');
+  const stepM = Number(opt('step-m', 250));
+  const fc = JSON.parse(fs.readFileSync(path.join(out, 'parcels.geojson'), 'utf8'));
+  const pts = fc.features.map((f) => {
+    const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+    let x = 0;
+    let y = 0;
+    for (const [lon, lat] of ring) { x += lon; y += lat; }
+    return { lon: x / ring.length, lat: y / ring.length };
+  });
+  const grid = new Map();
+  for (const p of pts) {
+    const key = `${Math.round((p.lat * 111320) / stepM)}_${Math.round((p.lon * 111320 * Math.cos(rad(p.lat))) / stepM)}`;
+    if (!grid.has(key)) grid.set(key, p);
+  }
+  const samples = [...grid.values()];
+  console.log(`[土壤] ${pts.length} 地块 → 按 ${stepM} m 去重得 ${samples.length} 个采样点 → SoilGrids v2.0 …`);
+  const DEPTHS = ['0-5cm', '5-15cm', '15-30cm'];
+  const WEIGHT = { '0-5cm': 5, '5-15cm': 10, '15-30cm': 15 };
+  /*
+   * 有限并发（3）取数：214 个采样点串行要 7 分钟以上（实测超时），并发 3 + 短间隔约 1.5 分钟。
+   * 不无脑并发：SoilGrids 是公益服务，打太快会被限流（后面照样得等，还可能被拉黑）。
+   */
+  /*
+   * ⚠️ **可续跑**：每次取到就落盘（`data/_soil_samples.json`），下次执行跳过已取的。
+   * 为什么必须这么做：214 个点串行要 7 分钟以上，而这种长任务很容易被运行环境的
+   * 墙钟上限掐掉（实测两次都在 90~100 秒处被杀）—— 不落缓存就得每次从头再来，永远取不完。
+   */
+  const cacheFile = path.join(out, '_soil_samples.json');
+  const cache = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, 'utf8')) : {};
+  const keyOf = (p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+  const todo = samples.filter((p) => !cache[keyOf(p)]);
+  console.log(`[土壤] 采样点 ${samples.length} 个，已缓存 ${samples.length - todo.length} 个，本次取 ${todo.length} 个`);
+  /*
+   * `--min-samples`：取够这么多个真实采样点就装配。
+   * 为什么要这个闸：ISRIC 端是**串行限流**的（实测并发 3 与并发 8 的吞吐一样，约 0.25 点/秒），
+   * 214 个点要 15 分钟以上，而运行环境有墙钟上限。取够 `min-samples` 个真实点后
+   * **按最近邻赋值给地块**（而不是插值编造），并如实记录覆盖密度 —— 这是"真实但有限"的诚实做法。
+   */
+  const minSamples = Number(opt('min-samples', 0));
+  /*
+   * `--max-per-run`：**本轮最多取几个**，取够就装配退出（下一轮接着取）。
+   * 没有这个闸，循环会一直跑到 214 个点（10 分钟以上）才装配 —— 而墙钟上限先到，
+   * 结果就是"跑了很多次却一个文件都没产出"（我实测踩了两轮）。
+   */
+  const maxPerRun = Number(opt('max-per-run', 24));
+  const cacheAtStart = Object.keys(cache).length;
+  const rows = [];
+  const CONCURRENCY = Number(opt('concurrency', 3));
+  for (let base = 0; base < todo.length; base += CONCURRENCY) {
+    if (minSamples > 0 && Object.keys(cache).length >= minSamples) break;
+    if (Object.keys(cache).length - cacheAtStart >= maxPerRun) break;
+    const slice = todo.slice(base, base + CONCURRENCY);
+    const got = await Promise.all(slice.map(async (p, k) => {
+    const i = base + k;
+    const total = todo.length;
+    const url = 'https://rest.isric.org/soilgrids/v2.0/properties/query'
+      + `?lon=${p.lon.toFixed(5)}&lat=${p.lat.toFixed(5)}`
+      + '&property=clay&property=sand&property=silt&property=phh2o&property=soc'
+      + `&depth=${DEPTHS.join('&depth=')}&value=mean`;
+    try {
+      const j = await getJson(url, { label: `SoilGrids(${i + 1}/${total})` });
+      const get = (name) => {
+        const layer = (j.properties?.layers ?? []).find((l) => l.name === name);
+        if (!layer) return null;
+        const factor = layer.unit_measure?.d_factor ?? 1;
+        let num = 0;
+        let den = 0;
+        for (const d of layer.depths ?? []) {
+          const v = d.values?.mean;
+          if (typeof v !== 'number') continue;
+          const w = WEIGHT[d.label] ?? 1;
+          num += v * w;
+          den += w;
+        }
+        return den ? round6(num / den / factor) : null;
+      };
+      return {
+        lon: p.lon, lat: p.lat,
+        clay_pct: get('clay'), sand_pct: get('sand'), silt_pct: get('silt'),
+        ph: get('phh2o'), soc_g_kg: get('soc'),
+      };
+    } catch (err) {
+      console.log(`  ⚠️ 采样点 ${i + 1} 失败（${err.message}），跳过`);
+      return null;
+    }
+    }));
+    for (const r of got.filter(Boolean)) {
+      cache[keyOf({ lat: r.lat, lon: r.lon })] = r;
+      rows.push(r);
+    }
+    fs.writeFileSync(cacheFile, JSON.stringify(cache), 'utf8'); // 每批落盘 ⇒ 被掐也能续
+    console.log(`  … 缓存共 ${Object.keys(cache).length}/${samples.length}（本轮 +${Object.keys(cache).length - cacheAtStart}）`);
+    await sleep(200);
+  }
+  // 用缓存补齐（本次没取的从缓存里拿）
+  for (const p of samples) {
+    const c = cache[keyOf(p)];
+    if (c) rows.push(c);
+  }
+  if (rows.length < samples.length) {
+    console.log(`[土壤] ⚠️ 还差 ${samples.length - rows.length} 个采样点没取到 —— **再跑一次同样的命令会接着取**`);
+  }
+  // 就近赋值：每个地块取最近采样点（250 m 分辨率下合理，且不插值编造）
+  // ⚠️ 只用**属性齐全**的采样点：失败样本的属性是 null，拿它做最近邻会把地块的质地留空
+  const valid = rows.filter((r) => r.clay_pct != null && r.sand_pct != null && r.silt_pct != null);
+  if (valid.length < rows.length) console.log(`[土壤] ${rows.length - valid.length} 个样本属性不全，不参与就近赋值`);
+  const nearest = (p) => {
+    let best = null;
+    let bd = Infinity;
+    for (const r of valid) {
+      const d = (r.lat - p.lat) ** 2 + ((r.lon - p.lon) * Math.cos(rad(p.lat))) ** 2;
+      if (d < bd) { bd = d; best = r; }
+    }
+    return best;
+  };
+  const perParcel = pts.map((p) => {
+    const r = nearest(p);
+    return r ? {
+      clay_pct: r.clay_pct, sand_pct: r.sand_pct, silt_pct: r.silt_pct,
+      ph: r.ph, soc_g_kg: r.soc_g_kg, texture: textureClass(r.clay_pct, r.sand_pct, r.silt_pct),
+    } : null;
+  });
+  const stats = (key) => {
+    const a = perParcel.map((v) => v?.[key]).filter((v) => typeof v === 'number').sort((x, y) => x - y);
+    return a.length ? { min: a[0], p25: a[Math.floor(a.length * 0.25)], median: a[Math.floor(a.length * 0.5)], p75: a[Math.floor(a.length * 0.75)], max: a[a.length - 1] } : null;
+  };
+  const file = path.join(out, 'soil.json');
+  fs.writeFileSync(file, `${JSON.stringify({
+    metadata: {
+      dataset: '土壤属性（真实，按地块就近赋值）',
+      source: 'ISRIC SoilGrids v2.0（250 m）',
+      url: 'https://www.isric.org/explore/soilgrids',
+      license: 'CC BY 4.0（需署名）',
+      fetched_at: new Date().toISOString(),
+      depths_cm: '0-5 / 5-15 / 15-30（按厚度加权平均）',
+      step_m: stepM,
+      n_samples: rows.length,
+      n_parcels: perParcel.length,
+      properties: ['clay_pct', 'sand_pct', 'silt_pct', 'ph', 'soc_g_kg'],
+      texture_scheme: 'USDA 质地三角（SoilGrids 的粒度分级即 USDA 口径）；中国常用卡庆斯基制，两者不可混用',
+      stats: { clay_pct: stats('clay_pct'), ph: stats('ph'), soc_g_kg: stats('soc_g_kg') },
+      coverage: (() => {
+        // 采样点之间的平均最近邻距离（如实说明"多密"，而不是只说"真实"）
+        let sum = 0;
+        for (const a of rows) {
+          let bd = Infinity;
+          for (const b of rows) {
+            if (a === b) continue;
+            const d = Math.hypot((b.lat - a.lat) * 110540, (b.lon - a.lon) * 111320 * Math.cos(rad(a.lat)));
+            if (d < bd) bd = d;
+          }
+          sum += Number.isFinite(bd) ? bd : 0;
+        }
+        return { n_samples: rows.length, mean_nn_m: rows.length > 1 ? Math.round(sum / rows.length) : null };
+      })(),
+      note: '地块值 = 最近采样点（不插值）；pH 由 pH*10 换算，砂/粉/黏由 g/kg 换算为 %',
+    },
+    parcels: perParcel,
+    samples: rows,
+  }, null, 0)}\n`, 'utf8');
+  const st = JSON.parse(fs.readFileSync(file, 'utf8')).metadata.stats;
+  console.log(`[土壤] 黏粒 ${st.clay_pct?.median}% / pH ${st.ph?.median} / 有机碳 ${st.soc_g_kg?.median} g/kg（中位数）`);
+  console.log(`[土壤] 质地分布：${JSON.stringify(rows.reduce((a, r) => {
+    const k = textureClass(r.clay_pct, r.sand_pct, r.silt_pct);
+    a[k] = (a[k] ?? 0) + 1;
+    return a;
+  }, {}))}`);
+  console.log(`[土壤] 写出 ${file}（${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+}
+
+/**
+ * USDA 质地三角（按黏粒/砂粒/粉粒的百分比判定）。
+ * 用 USDA 而不是卡庆斯基制：SoilGrids 的粒度分级就是 USDA 口径，换制度会引入偏差；
+ * 表里 `texture_scheme` 明确标注，避免拿它跟国内的"轻壤土/中壤土"直接比。
+ */
+function textureClass(clay, sand, silt) {
+  if (clay == null || sand == null || silt == null) return '';
+  if (clay >= 40 && silt >= 40) return 'silty clay';
+  if (clay >= 40 && sand <= 45 && silt < 40) return 'clay';
+  if (clay >= 35 && sand > 45) return 'sandy clay';
+  if (clay >= 27 && clay < 40 && sand <= 45 && silt < 40) return 'clay loam';
+  if (clay >= 20 && clay < 35 && silt < 28 && sand > 45) return 'sandy clay loam';
+  if (clay >= 27 && clay < 40 && sand <= 20) return 'silty clay loam';
+  if (clay >= 20 && clay < 27 && silt >= 28 && sand <= 45) return 'loam';
+  if (silt >= 80 && clay < 12) return 'silt';
+  if (silt >= 50 && clay < 27) return 'silt loam';
+  if (clay >= 7 && clay < 20 && silt < 50 && sand > 52) return 'sandy loam';
+  if (silt < 50 && clay < 7 && sand > 43) return 'loamy sand';
+  if (silt < 50 && clay < 7) return 'sand';
+  return 'loam';
+}
+
+// ---------- 居民点（村级点位：真实地名） ----------
+/**
+ * `data/villages.geojson`：镇域内的**居民点点位**（`place=village/hamlet/town`，真实地名）。
+ *
+ * ⚠️ 为什么不是"村界"：实测这个镇在 OSM 里**只有乡（8）与县（6）两级行政边界**，
+ * 村级没有 `admin_level=9/10` 的关系 —— 拿不存在的东西硬画就是编。
+ * 居民点点位是真实存在的，用来做"看图上这是哪个村"完全够；要按村汇总得再做就近归属（Voronoi），
+ * 这一步我没有擅自加，先如实呈现点位。
+ */
+async function places() {
+  const out = opt('out', 'data');
+  const at = opt('at', '48.615,11.59');
+  const [lat, lon] = at.split(',').map(Number);
+  const town = opt('town', 'Wolnzach');
+  console.log(`[居民点] Overpass：${town} 行政区内 place=village/hamlet/town …`);
+  const q = `[out:json][timeout:55];
+area["name"="${town}"]["boundary"="administrative"]->.a;
+node(area.a)["place"~"^(village|hamlet|town|isolated_dwelling)$"];
+out center;`;
+  const raw = await overpass(q, `Overpass(places ${town})`);
+  const feats = (raw.elements ?? []).filter((e) => e.type === 'node' && e.lat != null).map((e) => ({
+    type: 'Feature',
+    properties: {
+      osm_id: `node/${e.id}`,
+      name: e.tags?.name ?? '',
+      place: e.tags?.place ?? '',
+      population: e.tags?.population ?? '',
+      source: 'OSM/Overpass',
+      license: 'ODbL-1.0',
+    },
+    geometry: { type: 'Point', coordinates: [round6(e.lon), round6(e.lat)] },
+  }));
+  const file = path.join(out, 'villages.geojson');
+  fs.writeFileSync(file, `${JSON.stringify({
+    type: 'FeatureCollection',
+    metadata: {
+      dataset: '居民点点位（真实地名）',
+      source: 'OpenStreetMap place=village/hamlet/town',
+      license: 'ODbL-1.0',
+      fetched_at: new Date().toISOString(),
+      town,
+      note: '村级**边界**在本镇不存在（OSM 只有 admin_level 6/8）⇒ 这里给真实居民点，不编造边界',
+      features: feats.length,
+    },
+    features: feats,
+  })}\n`, 'utf8');
+  const kinds = feats.reduce((a, f) => { const k = f.properties.place || '?'; a[k] = (a[k] ?? 0) + 1; return a; }, {});
+  console.log(`[居民点] ${feats.length} 个：${JSON.stringify(kinds)}；${feats.slice(0, 8).map((f) => f.properties.name).filter(Boolean).join('、')}`);
+  console.log(`[居民点] 写出 ${file}（${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+}
+
 if (cmd === 'parcels') await parcels();
 else if (cmd === 'admin') await admin();
+else if (cmd === 'places') await places();
+else if (cmd === 'elevation') await elevation();
+else if (cmd === 'soil') await soil();
 else if (cmd === 'weather') await weather();
 else if (cmd === 'roads') await roads();
 else if (cmd === 'poi') await poi();

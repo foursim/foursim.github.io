@@ -358,54 +358,39 @@ const mob = await ev(`({day:globalThis.__agri.state.day, play:globalThis.__agri.
 check('窄屏：播放按钮可点且真的在推进', mob.play === true, `到第 ${mob.day} 天`);
 
 
-// ===================== 10. 三套政企配色（临时版本，供选型） =====================
-console.log('\n=== 10. 三套配色 ===');
+// ===================== 10. 视觉：A 政务深蓝（已定稿） =====================
+console.log('\n=== 10. 视觉定稿 ===');
 await boot(1440, 900);
-const themes = await ev(`(()=>{
+const vis = await ev(`(()=>{
   const cv=(k)=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
-  const mapBg=()=>getComputedStyle(document.getElementById('map')).backgroundColor;
-  const out={};
-  for(const key of ['gov','tech','dark']){
-    document.documentElement.dataset.theme=key;
-    out[key]={brand:cv('--brand'), panel:cv('--panel'), mapBg:mapBg(), topbar:getComputedStyle(document.getElementById('topbar')).backgroundColor};
+  return {brand:cv('--brand'), topbar:cv('--topbar-bg'), topbarFg:cv('--topbar-fg'),
+    panel:cv('--panel'), fg:cv('--fg'),
+    mapBg:getComputedStyle(document.getElementById('map')).backgroundColor,
+    hasSel:!!document.getElementById('theme-sel'),
+    road:globalThis.__agri.map.token.roadMajor, admin:globalThis.__agri.map.token.adminLine,
+    htmlTheme:document.documentElement.dataset.theme ?? ''};})()`);
+// ⚠️ 要同时吃 `#rrggbb` 与 `rgb(r, g, b)`：CSS 变量给的是十六进制，而 getComputedStyle 给的是 rgb
+const lum = (c) => {
+  const t = String(c).trim();
+  let rgb = null;
+  if (t.startsWith('#')) {
+    const h = t.length === 4 ? t.slice(1).split('').map((x) => x + x).join('') : t.slice(1);
+    rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  } else {
+    rgb = (t.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
   }
-  document.documentElement.dataset.theme='gov';
-  return out;})()`);
-const distinct = new Set(Object.values(themes).map((t) => `${t.brand}|${t.panel}|${t.mapBg}`));
-check('三套配色的主色/面板/地图底色互不相同（真的换了，不是只改个名字）', distinct.size === 3,
-  Object.entries(themes).map(([k, v]) => `${k}:${v.brand}/${v.mapBg}`).join('  '));
-const lum = (c) => { const m = (c.match(/[\d.]+/g) ?? []).map(Number); return m.length >= 3 ? m[0] * 0.299 + m[1] * 0.587 + m[2] * 0.114 : 0; };
-check('A/B 两套确为"蓝白"（浅底，地图底色亮度 > 180）',
-  lum(themes.gov.mapBg) > 180 && lum(themes.tech.mapBg) > 180,
-  `gov ${Math.round(lum(themes.gov.mapBg))} / tech ${Math.round(lum(themes.tech.mapBg))} / dark ${Math.round(lum(themes.dark.mapBg))}`);
-
-// 走真实交互切一次：下拉 change → actions.onTheme → applyTheme + map.setTheme
-await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='gov';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-await sleep(200);
-const brandGov = await ev(`getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()`);
-await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='tech';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-await sleep(300);
-const switched = await ev(`({brand:getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(),
-  theme:document.documentElement.dataset.theme, saved:localStorage.getItem('agri-monitor-theme'),
-  anchor:getComputedStyle(document.querySelector('#topbar button')).backgroundColor})`);
-check('下拉切换真的生效（dataset.theme + CSS 变量 + 记住选择）',
-  switched.theme === 'tech' && switched.brand !== brandGov && switched.saved === 'tech',
-  `${brandGov} → ${switched.brand} / ${switched.theme} / 记忆 ${switched.saved}`);
-const tokenChanged = await ev(`(()=>{const a=globalThis.__agri;a.map.setTheme();
-  return {road:a.map.token.roadMajor, admin:a.map.token.adminLine};})()`);
-check('地图令牌随主题刷新（canvas 图层吃不到 CSS 变量，必须显式重刷）',
-  /^#|^rgb/.test(tokenChanged.road ?? '') && /^#|^rgb/.test(tokenChanged.admin ?? ''),
-  `road ${tokenChanged.road} / admin ${tokenChanged.admin}`);
-
-for (const [key, tag] of [['gov', 'A-政务深蓝'], ['tech', 'B-科技亮蓝'], ['dark', 'C-指挥大屏']]) {
-  await ev(`(()=>{const s=document.getElementById('theme-sel');s.value='${key}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  await sleep(350);
-  await shot(`theme-${tag}-1440x900`);
-}
-await boot(1440, 900, '&theme=tech');
-check('URL 参数 ?theme= 优先于记忆（甩个链接就能指定方案）',
-  await ev(`document.documentElement.dataset.theme`) === 'tech',
-  await ev(`document.documentElement.dataset.theme`));
+  return rgb.length === 3 && rgb.every((v) => Number.isFinite(v))
+    ? rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114 : -1;
+};
+check('A 政务深蓝：深蓝顶栏（白字）+ 白面板 + 浅底地图 —— 就是"蓝白"那一套',
+  vis.brand === '#1a4f8a' && vis.topbar === '#1a4f8a' && vis.panel === '#ffffff'
+    && lum(vis.panel) > 240 && lum(vis.mapBg) > 180 && lum(vis.fg) < 80,
+  `主色 ${vis.brand} / 顶栏 ${vis.topbar}（字 ${vis.topbarFg}）/ 面板 ${vis.panel} / 地图底 ${vis.mapBg}`);
+check('配色切换器与 data-theme 都已移除（定稿一套，不留临时入口/临时机制）',
+  vis.hasSel === false && vis.htmlTheme === '', `theme-sel ${vis.hasSel ? '还在' : '已移除'} / data-theme="${vis.htmlTheme}"`);
+check('地图令牌与 CSS 同源（canvas 读不到 CSS 变量，必须显式对齐）',
+  /^#/.test(vis.road ?? '') && vis.admin === '#1a4f8a', `road ${vis.road} / admin ${vis.admin}`);
+await shot('theme-A-政务深蓝-1440x900');
 
 // ===================== 11. 行政边界（真实数据） =====================
 console.log('\n=== 11. 行政边界 ===');
@@ -455,13 +440,13 @@ check('「作物与收成」按作物聚合且带「单产口径」列（不同�
   tb3.rows >= 5 && tb3.head.includes('单产口径'), `${tb3.rows} 行 / ${tb3.head.join(' | ')}`);
 // 先跳到有告警的那一天，再切到告警页签（否则表格里可能"当日无告警"，点不到地块）
 const zAlarmDay = await ev(`(()=>{const a=globalThis.__agri;
-  for(let d=0;d<a.model.days.length;d++){if(a.ui.alarmsFor(d).length){a.setDay(d);return d;}}
+  for(let d=0;d<a.model.days.length;d++){if(a.ui.alarmsFor(d).some(x=>x.items.length)){a.setDay(d);return d;}}
   return -1;})()`);
 await click('#tb-tabs button[data-tab="alarms"]');
 await sleep(250);
 const tb4 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
   return {rows:q('#tb-body .tbl tbody tr').length, btn:!!document.querySelector('#tb-body [data-parcel]')};})()`);
-check('「告警明细」在有告警的日子列出条目并给出可点地块', zAlarmDay >= 0 && tb4.rows >= 1 && tb4.btn,
+check('「告警明细」在有"含地块明细"的告警的日子列出条目并可点', zAlarmDay >= 0 && tb4.rows >= 1 && tb4.btn,
   `第 ${zAlarmDay} 天 / ${tb4.rows} 行`);
 const focus = await ev(`(()=>{const b=document.querySelector('#tb-body [data-parcel]');if(!b)return null;
   b.click();return {sel:globalThis.__agri.ui.selected?.i ?? null, want:Number(b.dataset.parcel)};})()`);
@@ -496,6 +481,66 @@ const png = await ev(`(async()=>{
   return captured ? {type:captured.type, kb:Math.round(captured.size/1024)} : null;})()`);
 check('导出 PNG：拿到 image/png 且体积合理（说明真的画上了地图与图例）',
   png && png.type === 'image/png' && png.kb > 15, png ? `${png.kb} KB` : '没捕获到 Blob');
+
+
+// ===================== 14. 真实数据（土壤 / 高程 / 居民点）与表格反向联动 =====================
+console.log('\n=== 14. 真实数据与表格联动 ===');
+await boot(1440, 900);
+const real = await ev(`(()=>{const a=globalThis.__agri;const day=a.state.day;
+  const temps=a.rows.map(r=>a.get(r,'tempParcel',day));
+  const tex={}; for(const r of a.rows){const t=r.soil?.texture||'(空)';tex[t]=(tex[t]||0)+1;}
+  const offsets=a.rows.map(r=>r.tempOffsetC??0);
+  const elev=a.rows.map(r=>r.elevation_m).filter(v=>v!=null);
+  return {regionTemp:a.model.region.T2M[day], tMin:Math.min(...temps), tMax:Math.max(...temps),
+    offMin:Math.min(...offsets), offMax:Math.max(...offsets), tex,
+    elevMin:Math.min(...elev), elevMax:Math.max(...elev),
+    qualitySources:[...new Set(a.model.plan.map(p=>p.soilQualitySource))],
+    villages:a.map.villageLayer.getLayers().length,
+    villageNames:a.map.villageLayer.getLayers().slice(0,3).map(l=>l.getTooltip()?.getContent()),
+    soilSample: a.rows.find(r=>r.soil)?.soil};})()`);
+check('地块气温是按**真实高程**推导的（同一天各地块不同，且幅度 = 0.65 ℃/100 m × 高差）',
+  real.tMax - real.tMin > 0.3 && Math.abs((real.tMax - real.tMin) - (real.elevMax - real.elevMin) * 0.0065) < 0.03,
+  `气温 ${real.tMin.toFixed(2)}~${real.tMax.toFixed(2)} ℃（区域 ${real.regionTemp.toFixed(2)}）· 高程 ${real.elevMin}~${real.elevMax} m`);
+check('土壤来自真实 SoilGrids（质地有值、模型也用的是真实土壤潜力）',
+  Object.keys(real.tex).filter((k) => k !== '(空)').length >= 1 && !real.tex['(空)']
+    && real.qualitySources.length === 1 && real.qualitySources[0] === 'soilgrids',
+  `${JSON.stringify(real.tex)} · 土壤潜力来源 ${real.qualitySources.join(',')} · 样例 ${JSON.stringify(real.soilSample)}`);
+check('居民点图层是真实地名（55 个点，来自 OSM place=*）',
+  real.villages >= 40 && real.villageNames.every((n) => typeof n === 'string' && n.length > 0),
+  `${real.villages} 个，例：${real.villageNames.join('、')}`);
+
+// 点"经营单元"表格行 ⇒ 图上高亮该单元的地块
+const hl = await ev(`(()=>{const a=globalThis.__agri;
+  const tr=document.querySelector('#tb-body tr[data-unit]')||(()=>{document.querySelector('#tb-tabs button[data-tab="units"]').click();return document.querySelector('#tb-body tr[data-unit]');})();
+  if(!tr) return {ok:false};
+  tr.click();
+  const id=tr.dataset.unit;
+  const want=a.rows.filter(r=>r.unit_id===id).length;
+  return {ok:true,id,want,got:a.map.highlightIdx.length,
+    allSame:a.map.highlightIdx.every(i=>a.rows[i].unit_id===id)};})()`);
+check('点「经营单元」一行 ⇒ 图上高亮该单元的全部地块（且高的就是那一组）',
+  hl.ok && hl.got === hl.want && hl.allSame && hl.got > 0, JSON.stringify(hl));
+
+// 点"作物与收成"表格行 ⇒ 图上高亮该作物的地块
+const hl2 = await ev(`(()=>{const a=globalThis.__agri;
+  document.querySelector('#tb-tabs button[data-tab="crops"]').click();
+  const tr=document.querySelector('#tb-body tr[data-crop]');
+  if(!tr) return {ok:false};
+  tr.click();
+  const code=tr.dataset.crop;
+  const want=a.rows.filter(r=>(r.fallow?'FALLOW':(r.crop??'UNKNOWN'))===code).length;
+  return {ok:true,code,want,got:a.map.highlightIdx.length,allSame:a.map.highlightIdx.every(i=>(a.rows[i].fallow?'FALLOW':(a.rows[i].crop??'UNKNOWN'))===code)};})()`);
+check('点「作物与收成」一行 ⇒ 图上高亮该作物的全部地块', hl2.ok && hl2.got === hl2.want && hl2.allSame && hl2.got > 0,
+  JSON.stringify(hl2));
+await shot('table-to-map-1440x900');
+
+// 详情面板要能看到真实土壤与高程
+await ev(`(()=>{const a=globalThis.__agri;a.ui.select(a.rows[7]);})()`);
+await sleep(200);
+const det = await ev(`document.getElementById('detail').textContent`);
+check('选中地块详情里能看到真实高程与土壤（质地/pH/有机碳）',
+  /高程/.test(det) && /土壤/.test(det) && /loam|clay|sand|silt/.test(det) && /g\/kg/.test(det),
+  det.replace(/\s+/g, ' ').slice(0, 120));
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

@@ -6,17 +6,14 @@
  * 每一行/列由浏览器自己分，**任何两件东西都不可能重叠**。
  * 窄屏则退化成"整页滚动 + 地图固定高度"，所有面板都能滚到，不存在"某块面板被藏起来"。
  *
- * ## 三套配色（临时版本，供选型）
- * **结构一份、颜色三份**：所有颜色都走变量，主题块只覆盖变量（`[data-theme="..."]`）。
- * 切主题只改 `document.documentElement.dataset.theme`（见 `js/theme.js`），组件结构一行不动。
- * - A `gov` ：白底 + 深蓝顶栏/表头（政务门户、监管平台）
- * - B `tech`：浅灰蓝底 + 亮蓝点缀、卡片化（政企 SaaS、数据中台）
- * - C `dark`：深蓝底 + 发光蓝（指挥中心大屏；**不是蓝白**，作为对照项）
- * 定下来之后删掉不用的两块即可。
+ * ## 配色：A 政务深蓝（**已定稿**）
+ * 白底 + 深蓝顶栏/表头 + 浅蓝表头与斑马纹，对比强、偏"政务门户 / 监管平台"的观感。
+ * 所有颜色都在 `:root` 里以变量声明 —— 换色只改这一处，组件结构一行不动。
+ * （此前做过 B 科技亮蓝、C 指挥大屏两套备选，用户选 A 后**已删除**，见 git 历史。）
  */
 
-/* ===================== A 政务深蓝（默认） ===================== */
-:root, [data-theme="gov"] {
+/* ===================== 定稿：A 政务深蓝 ===================== */
+:root {
   --bg: #e9eff7;
   --panel: #ffffff;
   --panel-2: #f4f8fc;
@@ -60,100 +57,6 @@
   --tbl-line: #e3ecf6;
   --shadow: 0 1px 3px rgba(16, 42, 74, 0.10);
   --radius: 6px;
-}
-
-/* ===================== B 科技亮蓝 ===================== */
-[data-theme="tech"] {
-  --bg: #f2f4f8;
-  --panel: #ffffff;
-  --panel-2: #f7f9fc;
-  --panel-3: #eef4ff;
-  --line: #e3e8f0;
-  --line-2: #eff3f8;
-  --fg: #1f2329;
-  --dim: #646a73;
-  --dim-2: #9096a0;
-  --brand: #1677ff;
-  --brand-2: #0d5fd6;
-  --brand-ink: #ffffff;
-  --brand-soft: #eef4ff;
-  --ok: #12a150;
-  --ok-soft: #eaf9f0;
-  --warn: #c08a00;
-  --warn-soft: #fff8e6;
-  --bad: #d92d20;
-  --bad-soft: #fef0ef;
-  --link: #1677ff;
-  --topbar-bg: #ffffff;
-  --topbar-fg: #1f2329;
-  --topbar-btn-bg: #ffffff;
-  --topbar-btn-line: #d8dfe8;
-  --map-bg: #f6f8fb;
-  --parcel-stroke: #3c4a5c;
-  --parcel-hover: #1677ff;
-  --road-major: #a3adb9;
-  --road-mid: #b2bbc7;
-  --road-minor: #c4ccd6;
-  --road-track: #d6dce4;
-  --poi-silo: #f0a020;
-  --poi-agrarian: #1677ff;
-  --poi-other: #86909c;
-  --admin-line: #1677ff;
-  --unit-line: #ffffff;
-  --grid-line: #8fc0ff;
-  --temp-tag-bg: rgba(255, 255, 255, 0.92);
-  --tbl-head: #eef4ff;
-  --tbl-alt: #fafbfd;
-  --tbl-line: #eef1f6;
-  --shadow: 0 2px 8px rgba(31, 35, 41, 0.08);
-  --radius: 8px;
-}
-
-/* ===================== C 指挥大屏（对照项） ===================== */
-[data-theme="dark"] {
-  --bg: #061428;
-  --panel: #0a1e38;
-  --panel-2: #0e2748;
-  --panel-3: #123055;
-  --line: rgba(90, 150, 220, 0.28);
-  --line-2: rgba(90, 150, 220, 0.16);
-  --fg: #e6f0fb;
-  --dim: #93b0cf;
-  --dim-2: #6f8cae;
-  --brand: #4da3ff;
-  --brand-2: #2f8bff;
-  --brand-ink: #04162e;
-  --brand-soft: rgba(77, 163, 255, 0.14);
-  --ok: #35d07f;
-  --ok-soft: rgba(53, 208, 127, 0.14);
-  --warn: #f0c040;
-  --warn-soft: rgba(240, 192, 64, 0.14);
-  --bad: #ff6b5e;
-  --bad-soft: rgba(255, 107, 94, 0.14);
-  --link: #7cc0ff;
-  --topbar-bg: #071a33;
-  --topbar-fg: #e6f0fb;
-  --topbar-btn-bg: rgba(77, 163, 255, 0.12);
-  --topbar-btn-line: rgba(77, 163, 255, 0.4);
-  --map-bg: #04101f;
-  --parcel-stroke: #0b2038;
-  --parcel-hover: #7cc0ff;
-  --road-major: #6d7f94;
-  --road-mid: #5c6d80;
-  --road-minor: #4b5a6c;
-  --road-track: #3d4a59;
-  --poi-silo: #f0c040;
-  --poi-agrarian: #4da3ff;
-  --poi-other: #7e93aa;
-  --admin-line: #7cc0ff;
-  --unit-line: #bcd8f5;
-  --grid-line: #3d7ab8;
-  --temp-tag-bg: rgba(7, 26, 51, 0.86);
-  --tbl-head: #0e2748;
-  --tbl-alt: rgba(77, 163, 255, 0.05);
-  --tbl-line: rgba(90, 150, 220, 0.2);
-  --shadow: 0 0 0 1px rgba(77, 163, 255, 0.12);
-  --radius: 4px;
 }
 
 * { box-sizing: border-box; }
@@ -307,6 +210,8 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 .tbl tbody tr:hover { background: var(--brand-soft); }
 .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl td.tag { font-weight: 600; }
+.tbl tbody tr[data-unit], .tbl tbody tr[data-crop] { cursor: pointer; }
+.tbl tbody tr[data-unit]:hover td, .tbl tbody tr[data-crop]:hover td { background: var(--brand-soft); }
 .tbl tr.high td { background: var(--bad-soft); }
 .tbl tr.mid td { background: var(--warn-soft); }
 .tbl td.mono, .tbl th.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
