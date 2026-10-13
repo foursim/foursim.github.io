@@ -1,0 +1,10 @@
+# 统一用 LF：这是一份"静态站点 + 判据脚本"的仓库，
+# 若在 Windows 上检出成 CRLF，CSV 的最后一个字段会带上 \\r（判据会假失败）。
+* text=auto eol=lf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.pmtiles binary

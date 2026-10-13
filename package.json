@@ -1,0 +1,25 @@
+{
+  "name": "agri-monitor",
+  "version": "0.2.0",
+  "private": true,
+  "description": "农业监测数据的 GIS 可视化（纯静态，GitHub Pages 可直接跑）：地块/路网/设施取自 OpenStreetMap，监测值由本项目模型生成，真实气象（NASA POWER）只作校准锚点。",
+  "type": "module",
+  "scripts": {
+    "test": "node tools/agro-smoke.mjs",
+    "test:agro": "node tools/agro-smoke.mjs",
+    "test:browser": "node tools/browser-check.mjs",
+    "data:all": "npm run data:parcels && npm run data:roads && npm run data:poi && npm run data:weather && npm run data:access && npm run data:units && npm run data:zones && npm run data:check && npm run export:tables",
+    "data:parcels": "node tools/fetch-data.mjs parcels --bbox 48.600,11.560,48.630,11.620 --out data",
+    "data:roads": "node tools/fetch-data.mjs roads --bbox 48.590,11.540,48.640,11.640 --out data",
+    "data:poi": "node tools/fetch-data.mjs poi --bbox 48.590,11.540,48.640,11.640 --out data",
+    "data:weather": "node tools/fetch-data.mjs weather --lat 48.615 --lon 11.590 --start 20240701 --end 20251231 --out data",
+    "data:access": "node tools/build-access.mjs --out data",
+    "data:units": "node tools/build-units.mjs --out data",
+    "data:zones": "node tools/build-zones.mjs --out data",
+    "export:tables": "node tools/export-tables.mjs --data data --out tables",
+    "data:check": "node tools/fetch-data.mjs check --out data",
+    "serve": "node tools/serve.mjs",
+    "serve:sub": "node tools/serve.mjs --prefix webtrade --port 8080",
+    "serve:lan": "node tools/serve.mjs --lan"
+  }
+}

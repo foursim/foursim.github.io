@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>农业监测 · GIS 可视化</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0e0c'/%3E%3Cpath d='M6 20l7-10 6 9 3-5 4 6z' fill='%235fa83c'/%3E%3Ccircle cx='24' cy='9' r='3' fill='%23e0c050'/%3E%3C/svg%3E">
+<!-- Leaflet 本地内置（vendor/leaflet）：运行时零外部请求，符合"纯静态 + GitHub Pages 子路径"的约束 -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">农业监测 <span id="site-name" class="dim"></span></div>
+    <div class="group time">
+      <button id="btn-play" title="播放/暂停（空格）">▶</button>
+      <input id="day-slider" type="range" min="0" max="0" value="0" aria-label="时间轴">
+      <span id="day-label" class="day"></span>
+      <span id="speed-group" class="speeds"></span>
+    </div>
+    <div class="group">
+      <button id="btn-help" title="数据来源与模型口径">说明</button>
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <aside id="panel-left" class="panel">
+    <section>
+      <h3>指标</h3>
+      <div id="var-group" class="btnrow wrap"></div>
+    </section>
+    <section>
+      <h3>图例 <small id="legend-title"></small></h3>
+      <div id="legend" class="body"></div>
+    </section>
+    <section>
+      <h3>图层</h3>
+      <div id="layer-list" class="selfbody"></div>
+    </section>
+  </aside>
+
+  <aside id="panel-right" class="panel">
+    <section>
+      <h3>区域概览</h3>
+      <!-- 内容必须包在滚动容器里：section 是可被 flex 压缩的，内容没有滚动容器就会画到节外（与下一节重叠） -->
+      <div id="overview" class="body">
+        <div id="stats" class="stats"></div>
+        <div id="cropbars" class="cropbars"></div>
+      </div>
+    </section>
+    <section>
+      <h3>告警 <small id="alarm-count"></small></h3>
+      <div id="alarms" class="body"></div>
+    </section>
+    <section>
+      <h3>选中地块</h3>
+      <div id="detail" class="body"></div>
+    </section>
+  </aside>
+
+  <footer id="bottombar"></footer>
+  <div id="toast"></div>
+  <div id="modal" class="hidden">
+    <div class="sheet">
+      <button id="modal-close" aria-label="关闭">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</div>
+<!-- Leaflet 用普通 script 先加载（模块里的地图代码依赖全局 L）；顺序不能颠倒 -->
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

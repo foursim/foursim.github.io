@@ -1,0 +1,10 @@
+crop_code,crop_name_zh,crop_name_en,hierarchy_l1,base_temp_c,gdd_need_cd,yield_ref,yield_uom,yield_basis,sow_window,harvest_md,disease_code
+WINTER_WHEAT,冬小麦,WINTER_WHEAT,cereal,0,2400,7.7,t/ha,籽粒,10-01~11-05,07-25,FHB
+WINTER_BARLEY,冬大麦,WINTER_BARLEY,cereal,0,2000,6.6,t/ha,籽粒,09-20~10-20,07-05,FHB
+WINTER_RAPESEED,冬油菜,WINTER_RAPESEED,cereal,5,1700,3.6,t/ha,籽粒,08-25~09-20,07-15,SCLEROTINIA
+SILAGE_MAIZE,青贮玉米,SILAGE_MAIZE,fodder,10,950,45,t/ha,鲜重,04-25~05-15,09-20,LEAF_BLIGHT
+HOPS,啤酒花,HOPS,industrial,5,1300,1.8,t/ha,干花,04-01~04-20,09-05,DOWNY_MILDEW
+MEADOW,牧草,MEADOW,grassland,5,0,9,t/ha,干草,,06-10,
+ORCHARD,果园,ORCHARD,cereal,5,0,12,t/ha,鲜果,,09-25,SCAB
+FALLOW,休耕,fallow,fallow,,,0,t/ha,,,,
+ORCHARD,果园,orchard,permanent,5,0,12,t/ha,鲜果,,09-25,SCAB

@@ -1,0 +1,189 @@
+{
+ "dataset": "Wolnzach 农业监测数据集",
+ "version": "0.2.0",
+ "crs": "EPSG:4326",
+ "conventions": {
+  "metadata": "NY/T 4061-2021《农业大数据核心元数据》：标识信息 / 数据特征 / 时空范围三组；扩展元素只增不改名",
+  "geospatial": "GB/T 19710（地理信息 元数据）：CRS / 空间分辨率 / 空间范围",
+  "observation": "OGC SensorThings API Observation 口径（thing_id / observed_property / phenomenon_time / result_value / result_uom）",
+  "crop_hierarchy": "作物字典含层级位（参照 EuroCrops 的作物码归一思路）",
+  "soil_fields": "土壤属性列位参照第三次全国土壤普查属性图规范；当前留空，待接真实土壤数据"
+ },
+ "record_counts": {
+  "dim_date": 549,
+  "dim_crop": 9,
+  "dim_source": 4,
+  "dim_grid": 217,
+  "dim_unit": 62,
+  "dim_parcel": 501,
+  "fact_parcel_season": 588,
+  "fact_parcel_event": 2161,
+  "fact_region_daily": 549,
+  "fact_observation": 4392,
+  "fact_zone": 744,
+  "meta_dataset": 18
+ },
+ "tables": {
+  "dim_parcel": {
+   "columns": {
+    "parcel_id": {
+     "type": "string",
+     "key": "PK",
+     "source": "osm"
+    },
+    "unit_id": {
+     "type": "string",
+     "key": "FK→dim_unit",
+     "source": "derived"
+    },
+    "grid_id": {
+     "type": "string",
+     "key": "FK→dim_grid",
+     "source": "derived"
+    },
+    "area_ha": {
+     "type": "number",
+     "unit": "ha",
+     "min": 0.02,
+     "source": "osm"
+    },
+    "t_min_to_store": {
+     "type": "number",
+     "unit": "min",
+     "min": 0,
+     "source": "derived"
+    },
+    "access_m": {
+     "type": "number",
+     "unit": "m",
+     "min": 0,
+     "source": "derived"
+    },
+    "soil_quality_sim": {
+     "type": "number",
+     "unit": "1",
+     "min": 0.5,
+     "max": 1.5,
+     "source": "model",
+     "synthetic": 1
+    },
+    "soil_texture": {
+     "type": "string",
+     "unit": "",
+     "source": "soil-survey",
+     "note": "留空：待接土壤普查/土壤图"
+    },
+    "soil_ph": {
+     "type": "number",
+     "unit": "pH",
+     "source": "soil-survey",
+     "note": "留空：待接土壤普查/土壤图"
+    },
+    "soil_organic_matter": {
+     "type": "number",
+     "unit": "g/kg",
+     "source": "soil-survey",
+     "note": "留空：待接土壤普查/土壤图"
+    }
+   }
+  },
+  "fact_region_daily": {
+   "columns": {
+    "temp_mean_c": {
+     "type": "number",
+     "unit": "℃",
+     "min": -35,
+     "max": 45,
+     "source": "model"
+    },
+    "humidity_pct": {
+     "type": "number",
+     "unit": "%",
+     "min": 0,
+     "max": 100,
+     "source": "model"
+    },
+    "precip_mm": {
+     "type": "number",
+     "unit": "mm",
+     "min": 0,
+     "source": "model"
+    },
+    "soil_wetness_root": {
+     "type": "number",
+     "unit": "1",
+     "min": 0,
+     "max": 1,
+     "source": "model"
+    },
+    "crop_progress": {
+     "type": "number",
+     "unit": "1",
+     "min": 0,
+     "max": 1,
+     "source": "model"
+    },
+    "disease_level_max": {
+     "type": "number",
+     "unit": "level",
+     "min": 1,
+     "max": 5,
+     "source": "model"
+    },
+    "water_index": {
+     "type": "number",
+     "unit": "1",
+     "min": 0,
+     "max": 1,
+     "source": "model"
+    },
+    "fertility_index": {
+     "type": "number",
+     "unit": "1",
+     "min": 0,
+     "max": 1,
+     "source": "model"
+    }
+   }
+  },
+  "fact_parcel_season": {
+   "columns": {
+    "yield_t_ha": {
+     "type": "number",
+     "unit": "t/ha",
+     "min": 0,
+     "source": "model",
+     "synthetic": 1
+    },
+    "yield_t": {
+     "type": "number",
+     "unit": "t",
+     "min": 0,
+     "source": "model",
+     "synthetic": 1
+    },
+    "gdd_need_cd": {
+     "type": "number",
+     "unit": "℃·d",
+     "min": 0,
+     "source": "model"
+    }
+   }
+  },
+  "fact_observation": {
+   "columns": {
+    "result_value": {
+     "type": "number",
+     "unit": "见 result_uom",
+     "source": "model"
+    },
+    "phenomenon_time": {
+     "type": "string",
+     "unit": "",
+     "format": "YYYYMMDD",
+     "source": "model"
+    }
+   }
+  }
+ }
+}

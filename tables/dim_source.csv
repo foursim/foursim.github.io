@@ -1,0 +1,5 @@
+source_id,name,url,license,synthetic,usage
+osm,OpenStreetMap (via Overpass API),https://www.openstreetmap.org,ODbL-1.0,0,地块几何 / 路网 / 农业设施点
+nasa-power,"NASA POWER (MERRA-2), community=AG",https://power.larc.nasa.gov,NASA open data,0,气象锚点（校准与验收用）
+model,本项目模型 seed=20261013,,本仓库,1,作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成
+derived,派生（路网 Dijkstra / 空间聚类）,,ODbL-1.0（依 OSM）,0,可达性时间 / 经营单元 / 统计网格 / 管理分区样点

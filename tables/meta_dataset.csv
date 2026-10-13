@@ -1,0 +1,19 @@
+metadata_group,element_name,element_value,obligation,data_type
+标识信息,dataset_name_zh,Wolnzach 乡镇农业监测数据集,M,文本
+标识信息,dataset_name_en,Wolnzach township agricultural monitoring dataset,M,文本
+标识信息,dataset_version,0.2.0,M,文本
+标识信息,abstract,以 OSM 真实地块/路网/设施为骨架、监测值由本项目确定性模型生成的乡镇尺度农业监测数据集；含 P1 自然田块 / P2 经营单元 / P4 统计网格三层空间单元,M,文本
+数据特征,record_counts,dim_date:549; dim_crop:9; dim_source:4; dim_grid:217; dim_unit:62; dim_parcel:501; fact_parcel_season:588; fact_parcel_event:2161; fact_region_daily:549; fact_observation:4392; fact_zone:744,M,文本
+数据特征,collection_method,OpenStreetMap Overpass API 取真实矢量；NASA POWER 取气象锚点；其余由模型计算（seed 固定 ⇒ 可复现）,M,文本
+数据特征,update_frequency,按需重算（模型确定性；取数脚本见 tools/）,M,文本
+数据特征,synthetic_flag,逐行 synthetic 列（1=模型生成，0=实测/派生自实测）,M,布尔
+时空范围,spatial_extent,"48.6,11.56,48.63,11.62",C,文本
+时空范围,temporal_extent,20240701~20251231,C,文本
+时空范围,admin_area,"Wolnzach, Bayern, DE（演示区；未含行政边界图层）",C,文本
+时空范围,crs,EPSG:4326,M,文本
+时空范围,spatial_resolution,地块级（中位 1.12 ha）+ 统计网格 250 m + 分区样点 25 m,M,文本
+时空范围,temporal_resolution,区域 1 天；地块 1 季（事件级到天）,M,文本
+扩展元素,license,OSM=ODbL-1.0；NASA POWER=NASA open data；模型输出=本仓库,O,文本
+扩展元素,provenance_chain,OSM/NASA → tools/fetch-data.mjs → data/*.geojson|json → tools/build-*.mjs → data/units|zones → tools/export-tables.mjs → tables/*.csv,O,文本
+扩展元素,isochrone_levels_min,3/4.5/6/7.5,O,文本
+扩展元素,model_seed,20261013,O,整数

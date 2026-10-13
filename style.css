@@ -1,0 +1,186 @@
+/*
+ * 深色主题 + **真布局**（grid），不再用"面板浮在地图上"的老办法。
+ *
+ * 老办法的代价（上个项目实测过）：面板的 top 要跟着会换行的顶栏走、max-height 要减掉底部条的
+ * 实测高度，而实测值永远滞后 ⇒ 面板会被压住、按钮点不到。改成 grid 之后这些都不存在了：
+ * 每一行/列由浏览器自己分，**任何两件东西都不可能重叠**。
+ * 窄屏则退化成"整页滚动 + 地图固定高度"，所有面板都能滚到，不存在"某块面板被藏起来"。
+ */
+:root {
+  --bg: #0b0e0c;
+  --panel: #11150f;
+  --panel-2: #161b13;
+  --line: rgba(120, 140, 125, 0.26);
+  --fg: #e6ebe6;
+  --dim: #93a296;
+  --ok: #4fd06a;
+  --warn: #e0c050;
+  --bad: #d4544a;
+  --link: #78c8ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
+body { overflow: hidden; }
+button { font: inherit; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button.on { background: #2b3a24; border-color: var(--ok); color: #dff5e2; }
+button.dim { opacity: 0.55; }
+.mini { padding: 3px 7px; font-size: 12px; }
+.big { padding: 6px 12px; }
+.dim { color: var(--dim); }
+.small { font-size: 11px; }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--bad); }
+.hint { color: var(--dim); margin: 4px 0; }
+code { background: #1c231b; padding: 1px 4px; border-radius: 4px; }
+
+/* ---------- 布局 ---------- */
+#app {
+  position: fixed; inset: 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 344px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1px;
+  background: var(--line);
+}
+#topbar { grid-area: 1 / 1 / 2 / -1; }
+#panel-left { grid-area: 2 / 1 / 3 / 2; }
+#map { grid-area: 2 / 2 / 3 / 3; position: relative; }
+#panel-right { grid-area: 2 / 3 / 3 / 4; }
+#bottombar { grid-area: 3 / 1 / 4 / -1; }
+
+/* ---------- 顶栏 ---------- */
+#topbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 7px 12px; background: var(--panel);
+}
+.brand { font-weight: 600; letter-spacing: 0.02em; }
+.brand .dim { font-weight: 400; }
+.group { display: flex; align-items: center; gap: 6px; }
+.group.time { flex: 1 1 320px; min-width: 240px; }
+#day-slider { flex: 1 1 160px; accent-color: var(--ok); min-width: 120px; }
+.day { font-variant-numeric: tabular-nums; color: var(--warn); min-width: 84px; }
+.speeds { display: flex; gap: 4px; }
+
+/* ---------- 面板 ---------- */
+/*
+ * 面板的分区策略（这是"内容重叠"这一类 bug 的结构性防线）：
+ * - `section` 一律 `overflow: hidden` ⇒ **任何情况下都不可能画到节外**；
+ * - 每节的内容都放进 `.body`（`overflow:auto` + `flex:1 1 auto`）⇒ 内容高于分到的空间时自己滚；
+ * - 但 section 仍可被 flex 压缩，所以给两节设了高度下限，最后一节吃剩余空间。
+ *
+ * 之前踩的坑（实测 1280×720）：区域概览被压到 270 px，而它的内容需要 348 px，
+ * `#cropbars` 直接画进了下面的告警节 —— 就是"文字叠在一起"那张截图。
+ */
+.panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.panel section { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--line); }
+/* 左栏是一堆矮块：整栏滚动、各节不许被压缩（压缩 + overflow:hidden = 控件被裁掉，那是更糟的 bug） */
+#panel-left { overflow-y: auto; }
+#panel-left section { flex: 0 0 auto; }
+/* 右栏要让三节分享高度：概览与告警可缩（有下限），详情吃剩余 */
+/*
+ * 高度分配：**向"选中地块详情"倾斜** —— 它才是可操作内容（曲线、农事事件、定位），
+ * 概览与告警是"扫一眼"的信息，给个上限、超出就自己滚。
+ * 720p 实测：概览 26vh + 告警 22vh ⇒ 详情能拿到 ~210 px（原来只有 90 px，曲线几乎看不见）。
+ */
+#panel-right section:nth-child(1) { flex: 0 1 auto; max-height: 26vh; min-height: 110px; }
+#panel-right section:nth-child(2) { flex: 0 1 auto; max-height: 22vh; min-height: 96px; }
+#panel-right section:last-child { border-bottom: none; flex: 1 1 auto; min-height: 150px; }
+#overview { max-height: 26vh; }
+#alarms { max-height: 22vh; }
+.panel h3 { margin: 0; padding: 8px 10px 6px; font-size: 12px; font-weight: 600; color: var(--dim);
+  letter-spacing: 0.04em; text-transform: none; }
+.panel h3 small { font-weight: 400; }
+.body { overflow: auto; min-height: 0; flex: 1 1 auto; padding: 0 10px 10px; }
+.selfbody { padding: 0 10px 10px; }
+.btnrow { display: flex; gap: 4px; }
+.btnrow.wrap { flex-wrap: wrap; padding: 0 10px 10px; }
+
+/* 图例 */
+.lg-row { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 1px 0; }
+.lg-row i { width: 14px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.4); }
+.cbar { height: 10px; border-radius: 3px; margin: 6px 0 2px; }
+.cbar-lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
+.lyr { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 0; cursor: pointer; }
+
+/* 指标卡 */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+.stat { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; line-height: 1.35;
+  border-bottom: 1px dotted rgba(120,140,125,0.18); padding: 1px 0; }
+.stat b { font-variant-numeric: tabular-nums; }
+.cropbars { padding: 6px 0 0; }
+.cropbars canvas { width: 100%; display: block; }
+
+/* 告警 */
+.alarm { border-left: 3px solid var(--line); padding: 5px 0 1px 8px; margin: 6px 0; }
+.alarm.high { border-color: var(--bad); }
+.alarm.mid { border-color: var(--warn); }
+.alarm-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.alarm-head b { font-weight: 600; }
+.alarm-items { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+/* 选中地块 */
+.det-head { display: flex; align-items: center; gap: 6px; padding: 2px 0 6px; }
+.det-head b { font-size: 14px; }
+.det-head button { margin-left: auto; }
+.det-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; }
+.det-grid b { font-variant-numeric: tabular-nums; }
+#det-chart { width: 100%; margin: 8px 0 4px; }
+.det-events { margin: 0; padding-left: 16px; font-size: 12px; }
+.det-events li { padding: 1px 0; }
+
+/* ---------- 地图 ---------- */
+#map { background: #080b08; }
+.leaflet-container { background: #080b08; font: inherit; }
+.leaflet-control-zoom a { background: var(--panel-2); color: var(--fg); border-color: var(--line); }
+.leaflet-control-zoom a:hover { background: #223022; }
+.tip { background: rgba(10,14,10,0.94); border: 1px solid var(--line); color: var(--fg);
+  box-shadow: none; font-size: 12px; }
+.tip::before { border-top-color: rgba(10,14,10,0.94); }
+.temp-tag { background: rgba(10,14,10,0.7); border: 1px solid var(--line); border-radius: 10px;
+  color: #eaf3e6; font-size: 12px; text-align: center; line-height: 18px; }
+
+/* ---------- 底部条 ---------- */
+#bottombar { background: var(--panel); color: var(--dim); font-size: 11.5px; padding: 5px 12px;
+  display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ---------- 提示 / 弹窗 ---------- */
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 54px; max-width: 70vw;
+  padding: 7px 12px; border-radius: 8px; background: #1b241a; border: 1px solid var(--line);
+  opacity: 0; transition: opacity 0.18s; pointer-events: none; z-index: 900; }
+#toast.show { opacity: 1; }
+#toast.warn { border-color: var(--warn); }
+#toast.ok { border-color: var(--ok); }
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 16px; }
+#modal.hidden { display: none; }
+.sheet { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  max-width: 620px; width: 100%; max-height: 84vh; overflow: auto; padding: 16px 18px; }
+.sheet h2 { font-size: 14px; margin: 14px 0 6px; color: var(--warn); }
+.sheet h2:first-child { margin-top: 0; }
+.sheet ul { margin: 4px 0; padding-left: 18px; }
+.sheet li { margin: 3px 0; }
+#modal-close { position: absolute; top: 8px; right: 10px; padding: 2px 8px; }
+.fatal { padding: 24px; max-width: 620px; }
+.fatal h2 { color: var(--bad); }
+
+/* ---------- 窄屏：整页滚动，地图固定高度，面板依次排在下面（都滚得到，不藏任何东西） ---------- */
+@media (max-width: 899px) {
+  body { overflow: auto; }
+  #app {
+    position: static; display: block; min-height: 100%;
+  }
+  #topbar { position: sticky; top: 0; z-index: 500; }
+  #map { height: 46vh; min-height: 260px; }
+  .panel, #panel-left, #panel-right { max-height: none; overflow: visible; }
+  .panel section, #panel-left section { flex: none; overflow: visible; }
+  .panel .body, #overview { max-height: none; overflow: visible; }
+  #panel-left, #panel-right { border-top: 1px solid var(--line); }
+  .stats { grid-template-columns: 1fr 1fr; }
+  /* 指头比鼠标粗：小按钮在窄屏撑到 30px 高 */
+  .mini { padding: 6px 9px; min-height: 30px; }
+  #toast { bottom: 12px; }
+}
