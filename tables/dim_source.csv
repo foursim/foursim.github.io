@@ -3,3 +3,5 @@ osm,OpenStreetMap (via Overpass API),https://www.openstreetmap.org,ODbL-1.0,0,�
 nasa-power,"NASA POWER (MERRA-2), community=AG",https://power.larc.nasa.gov,NASA open data,0,气象锚点（校准与验收用）
 model,本项目模型 seed=20261013,,本仓库,1,作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成
 derived,派生（路网 Dijkstra / 空间聚类）,,ODbL-1.0（依 OSM）,0,可达性时间 / 经营单元 / 统计网格 / 管理分区样点
+statistics,公开农业统计（作物日历与参考单产）,https://www.destatis.de,公开统计口径,0,作物基温/生育期积温/参考单产（验收锚点）
+soil-survey,土壤普查/土壤图（**尚未接入**）,,待定,0,土壤质地/pH/有机质/耕地质量等级 —— 现留空

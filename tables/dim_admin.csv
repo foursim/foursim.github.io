@@ -1,0 +1,2 @@
+admin_code,level,name,country,state,postal_code,scheme
+09186,Kreis,Landkreis Pfaffenhofen a.d.Ilm,DE,Bayern,85283,国内口径：行政区划码 + 图层码 + 顺序号（《农村土地承包经营权要素编码规则》）；本演示区在德国 ⇒ 前缀用 AGS 县级码 09186，Gemeinde 级码待官方登记补齐（不猜）

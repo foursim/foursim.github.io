@@ -1,0 +1,170 @@
+table_name,column_name,name_zh,name_en,definition,data_type,data_format,value_range,uom,obligation,source_id,synthetic,note
+dim_date,date_key,日期,date key,时间维主键,date,YYYYMMDD,YYYYMMDD,,M,model,1,时间维主键
+dim_date,year,年,year,年,number,,YYYY,,M,model,1,
+dim_date,month,月,month,月,number,,1~12,1,M,model,1,
+dim_date,day,日,day,日,number,,1~31,1,M,model,1,
+dim_date,doy,年内日序,day of year,年内日序,number,,1~366,1,M,model,1,
+dim_date,is_growing_season,是否生长季,in growing season,4~10 月,number,,0/1,1,M,model,1,4~10 月
+dim_crop,crop_code,作物代码,crop code,作物代码,text,,见 dim_crop,,M,model,1,
+dim_crop,crop_name_zh,作物中文名,crop name (zh),作物中文名,text,,,,M,model,1,
+dim_crop,crop_name_en,作物英文名,crop name (en),作物英文名,text,,,,O,model,1,
+dim_crop,hierarchy_l1,作物大类,crop hierarchy level 1,作物大类,text,,cereal/fodder/industrial/grassland/permanent/fallow,,M,model,1,
+dim_crop,base_temp_c,基温,base temperature,基温,number,,0~15,℃,M,statistics,0,
+dim_crop,gdd_need_cd,生育期积温需求,GDD requirement,生育期积温需求,number,,0~3000,℃·d,M,statistics,0,
+dim_crop,yield_ref,参考单产,reference yield,公开统计锚点,number,,0~60,t/ha,M,statistics,0,公开统计锚点
+dim_crop,yield_uom,单产单位,yield unit,单产单位,text,,t/ha,,M,model,1,
+dim_crop,yield_basis,单产口径,yield basis,不同作物不能直接比大小,text,,籽粒/鲜重/干花/干草/鲜果,,M,statistics,0,不同作物不能直接比大小
+dim_crop,sow_window,播种窗口,sowing window,播种窗口,text,,MM-DD~MM-DD,,O,statistics,0,
+dim_crop,harvest_md,收获月日,harvest month-day,收获月日,text,,MM-DD,,O,statistics,0,
+dim_crop,disease_code,病害代码,disease code,病害代码,text,,,,O,model,1,
+dim_source,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_source,name,名称,name,名称,text,,,,M,model,1,
+dim_source,url,来源地址,source URL,来源地址,text,,,,O,model,1,
+dim_source,license,许可,license,许可,text,,,,M,model,1,
+dim_source,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+dim_source,usage,用途,usage,用途,text,,,,O,model,1,
+dim_grid,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
+dim_grid,grid_code,统计网格编码,statistical grid code,统计网格编码,text,,,,M,derived,0,
+dim_grid,grid_m,网格边长,grid size,网格边长,number,,>0,m,M,model,1,
+dim_grid,n_parcels,地块数,number of parcels,地块数,number,,>0,1,M,model,1,
+dim_grid,crs,坐标参考系,coordinate reference system,坐标参考系,text,,EPSG:4326,,M,model,1,
+dim_grid,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_unit,unit_id,经营单元标识,management unit identifier,P2 连片作业片区,text,,,,M,derived,0,P2 连片作业片区
+dim_unit,unit_code,经营单元编码,management unit code,经营单元编码,text,,,,M,derived,0,
+dim_unit,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
+dim_unit,n_parcels,地块数,number of parcels,地块数,number,,>0,1,M,model,1,
+dim_unit,area_ha,面积,area,OSM 几何量算,number,,>0,ha,M,osm,0,OSM 几何量算
+dim_unit,dominant_crop,主导作物,dominant crop,单元内面积最大的作物,text,,,,O,model,1,单元内面积最大的作物
+dim_unit,crop_mix,作物构成,crop composition,作物构成,text,,,,O,model,1,
+dim_unit,fallow_ha,休耕面积,fallow area,休耕面积,number,,0~1000,ha,O,model,1,
+dim_unit,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_parcel,parcel_id,地块标识,parcel identifier,P1 自然田块主键（OSM way/relation 派生）,text,,,,M,osm,0,P1 自然田块主键（OSM way/relation 派生）
+dim_parcel,parcel_code,地块编码,parcel code,国内口径编码,text,,行政区划码-图层码-顺序号,,M,derived,0,国内口径编码
+dim_parcel,unit_id,经营单元标识,management unit identifier,P2 连片作业片区,text,,,,M,derived,0,P2 连片作业片区
+dim_parcel,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
+dim_parcel,area_ha,面积,area,OSM 几何量算,number,,>0,ha,M,osm,0,OSM 几何量算
+dim_parcel,centroid_lon,质心经度,centroid longitude,WGS84,number,,-180~180,°,M,osm,0,WGS84
+dim_parcel,centroid_lat,质心纬度,centroid latitude,WGS84,number,,-90~90,°,M,osm,0,WGS84
+dim_parcel,landuse,土地利用类型,land use type,OSM landuse,text,,farmland/meadow/orchard/vineyard,,M,osm,0,OSM landuse
+dim_parcel,crop_code,作物代码,crop code,作物代码,text,,见 dim_crop,,M,model,1,
+dim_parcel,crop_name_zh,作物中文名,crop name (zh),作物中文名,text,,,,M,model,1,
+dim_parcel,fallow,是否休耕,fallow flag,是否休耕,number,,0/1,1,M,model,1,
+dim_parcel,sow_day,播种日,sowing date,播种日,date,YYYYMMDD,YYYYMMDD,,C,model,1,
+dim_parcel,harvest_day,收获日,harvest date,收获日,date,YYYYMMDD,YYYYMMDD,,C,model,1,
+dim_parcel,season_count,季数,number of seasons,该地块在数据窗口内的作物季数（多年生为 0）,number,,0~10,1,M,model,1,该地块在数据窗口内的作物季数（多年生为 0）
+dim_parcel,gdd_need_cd,生育期积温需求,GDD requirement,生育期积温需求,number,,0~3000,℃·d,M,statistics,0,
+dim_parcel,yield_t_ha_avg,平均单产,mean yield per hectare,跨季取平均,number,,0~60,t/ha,O,model,1,跨季取平均
+dim_parcel,yield_t_total,总产(合计),total yield (sum),总产(合计),number,,0~5000,t,O,model,1,
+dim_parcel,disease_level_max,病害气象等级(最高),max disease level,病害气象等级(最高),number,,1~5,级,M,model,1,
+dim_parcel,treated,是否药剂防治,fungicide treated,是否药剂防治,number,,0/1,1,M,model,1,
+dim_parcel,t_min_to_store,到收储点时间,travel time to collection point,真实路网 + Dijkstra,number,,0~60,min,M,derived,0,真实路网 + Dijkstra
+dim_parcel,access_m,下道距离,off-road access distance,盲区信号,number,,0~2000,m,M,derived,0,盲区信号
+dim_parcel,soil_quality_sim,土壤质量指数,soil quality index (simulated),模拟值,number,,0.5~1.5,1,M,soil-survey,0,模拟值
+dim_parcel,soil_texture,土壤质地,soil texture,留空：待接土壤普查/土壤图,text,,按土壤普查口径,,O,soil-survey,0,留空：待接土壤普查/土壤图
+dim_parcel,soil_ph,土壤 pH,soil pH,留空：待接土壤普查/土壤图,text,,3~10,pH,O,soil-survey,0,留空：待接土壤普查/土壤图
+dim_parcel,soil_organic_matter,有机质含量,soil organic matter,留空：待接土壤普查/土壤图,text,,0~100,g/kg,O,soil-survey,0,留空：待接土壤普查/土壤图
+dim_parcel,land_quality_grade,耕地质量等级,cultivated land quality grade,留空：待接 GB/T 33469 耕地质量等级,text,,1~10 等,等,O,soil-survey,0,留空：待接 GB/T 33469 耕地质量等级
+dim_parcel,n_zones,管理分区数,number of management zones,管理分区数,number,,0~5,1,O,model,1,
+dim_parcel,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_parcel,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+dim_parcel,crs,坐标参考系,coordinate reference system,坐标参考系,text,,EPSG:4326,,M,model,1,
+fact_parcel_season,parcel_id,地块标识,parcel identifier,P1 自然田块主键（OSM way/relation 派生）,text,,,,M,osm,0,P1 自然田块主键（OSM way/relation 派生）
+fact_parcel_season,season_seq,季序号,season sequence,季序号,number,,1~10,1,M,model,1,
+fact_parcel_season,season_year,作物年度,crop year,收获所在年,number,,YYYY,,M,model,1,收获所在年
+fact_parcel_season,crop_code,作物代码,crop code,作物代码,text,,见 dim_crop,,M,model,1,
+fact_parcel_season,crop_name_zh,作物中文名,crop name (zh),作物中文名,text,,,,M,model,1,
+fact_parcel_season,sow_day,播种日,sowing date,播种日,date,YYYYMMDD,YYYYMMDD,,C,model,1,
+fact_parcel_season,harvest_deadline,收获截止日,harvest deadline,农事日历硬约束,date,YYYYMMDD,YYYYMMDD,,M,model,1,农事日历硬约束
+fact_parcel_season,harvest_day,收获日,harvest date,收获日,date,YYYYMMDD,YYYYMMDD,,C,model,1,
+fact_parcel_season,gdd_need_cd,生育期积温需求,GDD requirement,生育期积温需求,number,,0~3000,℃·d,M,statistics,0,
+fact_parcel_season,yield_t_ha,单产,yield per hectare,单产,number,,0~60,t/ha,C,model,1,
+fact_parcel_season,yield_t,总产,total yield,总产,number,,0~500,t,C,model,1,
+fact_parcel_season,disease_level_max,病害气象等级(最高),max disease level,病害气象等级(最高),number,,1~5,级,M,model,1,
+fact_parcel_season,treated,是否药剂防治,fungicide treated,是否药剂防治,number,,0/1,1,M,model,1,
+fact_parcel_season,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_parcel_season,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+fact_parcel_event,parcel_id,地块标识,parcel identifier,P1 自然田块主键（OSM way/relation 派生）,text,,,,M,osm,0,P1 自然田块主键（OSM way/relation 派生）
+fact_parcel_event,event_day,事件日期,event date,事件日期,date,YYYYMMDD,YYYYMMDD,,M,model,1,
+fact_parcel_event,event_type,农事事件类型,farm operation type,农事事件类型,text,,sow/fertilize/harvest,,M,model,1,
+fact_parcel_event,crop_code,作物代码,crop code,作物代码,text,,见 dim_crop,,M,model,1,
+fact_parcel_event,crop_name_zh,作物中文名,crop name (zh),作物中文名,text,,,,M,model,1,
+fact_parcel_event,yield_t_ha,单产,yield per hectare,单产,number,,0~60,t/ha,C,model,1,
+fact_parcel_event,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_parcel_event,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+fact_region_daily,date_key,日期,date key,时间维主键,date,YYYYMMDD,YYYYMMDD,,M,model,1,时间维主键
+fact_region_daily,temp_mean_c,平均气温,mean air temperature,平均气温,number,,-40~45,℃,M,model,1,
+fact_region_daily,humidity_pct,相对湿度,relative humidity,相对湿度,number,,0~100,%,M,model,1,
+fact_region_daily,precip_mm,降水量,precipitation,降水量,number,,0~120,mm,M,model,1,
+fact_region_daily,soil_wetness_root,根区土壤湿度,root-zone soil wetness,根区土壤湿度,number,,0~1,1,M,soil-survey,0,
+fact_region_daily,crop_progress,作物生长进度,crop growth progress,作物生长进度,number,,0~1,1,M,model,1,
+fact_region_daily,disease_level_max,病害气象等级(最高),max disease level,病害气象等级(最高),number,,1~5,级,M,model,1,
+fact_region_daily,water_index,水分保持指数,water retention index,水分保持指数,number,,0~1,1,M,model,1,
+fact_region_daily,fertility_index,养分保持指数,nutrient retention index,养分保持指数,number,,0~1,1,M,model,1,
+fact_region_daily,harvested_ha_today,当日收获面积,harvested area today,当日收获面积,number,,0~1000,ha,O,model,1,
+fact_region_daily,sown_ha_today,当日播种面积,sown area today,当日播种面积,number,,0~1000,ha,O,model,1,
+fact_region_daily,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_region_daily,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+fact_observation,thing_id,观测对象标识,thing identifier,OGC SensorThings：观测对象,text,,,,M,model,1,OGC SensorThings：观测对象
+fact_observation,spatial_level,空间层级,spatial level,空间层级,text,,region/unit/parcel,,M,model,1,
+fact_observation,spatial_id,空间单元标识,spatial unit identifier,空间单元标识,text,,,,M,model,1,
+fact_observation,variable_code,变量代码,variable code,变量代码,text,,见 dim_variable,,M,model,1,
+fact_observation,observed_property,观测属性,observed property,观测属性,text,,见 dim_variable,,M,model,1,
+fact_observation,phenomenon_time,观测时刻/日期,phenomenon time,观测时刻/日期,date,YYYYMMDD,YYYYMMDD,,M,model,1,
+fact_observation,result_value,观测值,result value,单位随行携带，见同行 result_uom,number,,见 dim_variable,见 result_uom,M,model,1,单位随行携带，见同行 result_uom
+fact_observation,result_uom,观测值单位,unit of measure,单位随行携带（长表的关键）,text,,,,M,model,1,单位随行携带（长表的关键）
+fact_observation,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_observation,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+fact_observation,quality_flag,质量标记,quality flag,空=未发现异常,text,,,,O,model,1,空=未发现异常
+fact_zone,parcel_id,地块标识,parcel identifier,P1 自然田块主键（OSM way/relation 派生）,text,,,,M,osm,0,P1 自然田块主键（OSM way/relation 派生）
+fact_zone,zone_code,管理分区代码,management zone code,A=潜力最低,text,,A~D,,M,model,1,A=潜力最低
+fact_zone,zone_center_value,分区中心值,zone center value,分区中心值,number,,,1,M,model,1,
+fact_zone,n_points_est,样点数(估),estimated sample count,样点数(估),number,,≥0,1,O,model,1,
+fact_zone,area_ha_est,面积(估),estimated area,面积(估),number,,≥0,ha,O,model,1,
+fact_zone,sample_m,采样网格边长,sampling grid size,采样网格边长,number,,>0,m,M,model,1,
+fact_zone,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_zone,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+dim_admin,admin_code,行政区划码,administrative code,中国用 GB/T 2260；本演示区用德国 AGS 县级码,text,,,,M,derived,0,中国用 GB/T 2260；本演示区用德国 AGS 县级码
+dim_admin,level,层级,level,层级,text,,Kreis/Gemeinde/县/乡/村,,M,model,1,
+dim_admin,name,名称,name,名称,text,,,,M,model,1,
+dim_admin,country,国家,country,国家,text,,ISO 3166-1,,M,model,1,
+dim_admin,state,州/省,state,州/省,text,,,,O,model,1,
+dim_admin,postal_code,邮政编码,postal code,邮政编码,text,,,,O,model,1,
+dim_admin,scheme,编码口径,coding scheme,编码口径,text,,,,M,model,1,
+dim_variable,variable_code,变量代码,variable code,变量代码,text,,见 dim_variable,,M,model,1,
+dim_variable,name_zh,中文名称,name in Chinese,中文名称,text,,,,M,model,1,
+dim_variable,name_en,英文名称,name in English,英文名称,text,,,,M,model,1,
+dim_variable,definition,定义,definition,定义,text,,,,M,model,1,
+dim_variable,data_type,数据类型,data type,数据类型,text,,文本/数值/日期/布尔,,M,model,1,
+dim_variable,value_range,值域,value range,值域,text,,,,O,model,1,
+dim_variable,uom,计量单位,unit of measure,计量单位,text,,,,O,model,1,
+dim_variable,spatial_level,空间层级,spatial level,空间层级,text,,region/unit/parcel,,M,model,1,
+dim_variable,temporal_grain,时间粒度,temporal grain,时间粒度,text,,1天/1季/静态,,M,model,1,
+dim_variable,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+dim_variable,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测
+dim_variable,alarm_rule,告警规则,alarm rule,告警规则,text,,,,O,model,1,
+dim_variable,standard_ref,依据,standard reference,依据,text,,,,O,model,1,
+fact_unit_decade,decade_key,旬标识,decade key,国内农业气象旬报口径：上旬/中旬/下旬,text,,YYYY-MM-D(旬序 1~3),,M,model,1,国内农业气象旬报口径：上旬/中旬/下旬
+fact_unit_decade,decade_seq,旬序号,decade sequence,窗口内的旬序号,number,,1~99,1,M,model,1,窗口内的旬序号
+fact_unit_decade,date_start,旬起始日,decade start date,旬起始日,date,YYYYMMDD,YYYYMMDD,,M,model,1,
+fact_unit_decade,date_end,旬结束日,decade end date,旬结束日,date,YYYYMMDD,YYYYMMDD,,M,model,1,
+fact_unit_decade,days,旬内天数,days in decade,上旬/中旬 10 天，下旬 8~11 天,number,,1~11,1,M,model,1,上旬/中旬 10 天，下旬 8~11 天
+fact_unit_decade,unit_id,经营单元标识,management unit identifier,P2 连片作业片区,text,,,,M,derived,0,P2 连片作业片区
+fact_unit_decade,unit_code,经营单元编码,management unit code,经营单元编码,text,,,,M,derived,0,
+fact_unit_decade,grid_id,统计网格标识,statistical grid identifier,P4 250 m 规则网格,text,,,,M,derived,0,P4 250 m 规则网格
+fact_unit_decade,dominant_crop,主导作物,dominant crop,单元内面积最大的作物,text,,,,O,model,1,单元内面积最大的作物
+fact_unit_decade,area_ha,面积,area,OSM 几何量算,number,,>0,ha,M,osm,0,OSM 几何量算
+fact_unit_decade,n_parcels,地块数,number of parcels,地块数,number,,>0,1,M,model,1,
+fact_unit_decade,temp_mean_c,平均气温,mean air temperature,平均气温,number,,-40~45,℃,M,model,1,
+fact_unit_decade,precip_sum_mm,旬降水量,decade precipitation sum,旬降水量,number,,0~600,mm,M,model,1,
+fact_unit_decade,soil_wetness_mean,旬均根区土壤湿度,mean root-zone soil wetness,旬均根区土壤湿度,number,,0~1,1,M,soil-survey,0,
+fact_unit_decade,progress_mean,旬均生长进度,mean crop progress,旬均生长进度,number,,0~1,1,M,model,1,
+fact_unit_decade,progress_p10,生长进度 p10,crop progress 10th percentile,看单元内进度离散,number,,0~1,1,O,model,1,看单元内进度离散
+fact_unit_decade,progress_p90,生长进度 p90,crop progress 90th percentile,生长进度 p90,number,,0~1,1,O,model,1,
+fact_unit_decade,disease_level_max,病害气象等级(最高),max disease level,病害气象等级(最高),number,,1~5,级,M,model,1,
+fact_unit_decade,disease_parcels_ge3,病害≥3级地块数,parcels with disease level ≥3,病害≥3级地块数,number,,0~1000,1,M,model,1,
+fact_unit_decade,water_index_mean,旬均水分保持指数,mean water retention index,旬均水分保持指数,number,,0~1,1,M,model,1,
+fact_unit_decade,fertility_index_mean,旬均养分保持指数,mean nutrient retention index,旬均养分保持指数,number,,0~1,1,M,model,1,
+fact_unit_decade,harvested_ha,收获面积,harvested area,收获面积,number,,0~1000,ha,O,model,1,
+fact_unit_decade,sown_ha,播种面积,sown area,播种面积,number,,0~1000,ha,O,model,1,
+fact_unit_decade,source_id,数据源标识,source identifier,外键,text,,见 dim_source,,M,model,1,外键
+fact_unit_decade,synthetic,是否模拟,synthetic flag,1=程序生成，0=实测或派生自实测,number,,0/1,1,M,model,1,1=程序生成，0=实测或派生自实测

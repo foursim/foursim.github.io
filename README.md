@@ -30,8 +30,10 @@ tools/fetch-data.mjs  取数与**数据合理性校验**（parcels / roads / poi
 tools/build-access.mjs 可达性分析（离线）：路网建图 + 多源 Dijkstra + 等时圈
 tools/build-units.mjs  三层空间单元：P2 经营单元（连片作业片区）+ P4 统计网格（250 m）
 tools/build-zones.mjs  P3 管理分区（**演示**）：25 m 网格采样 + k-means
-tools/export-tables.mjs 导出维度/事实/元数据表（CSV + schema.json + 数据字典），并跑导出判据
-tables/                12 张表（dim_* / fact_* / meta_dataset）+ schema.json + 数据字典.md
+tools/export-tables.mjs 导出维度/事实/元数据表（CSV + Excel + schema.json + 数据元字典），并跑 24 条导出判据
+tools/xlsx.mjs         极简 XLSX 写出器（**零依赖**：ZIP + 最小 XML；用 openpyxl 反向验证过）
+tables/                **16 张表**（dim_* 维度 / fact_* 事实 / meta_dataset）+ schema.json + 数据字典.md
+tables/农业监测数据.xlsx  同一批表的 Excel 合集（一张表一个 sheet，冻结首行 + 筛选 + 列宽自适应，0.82 MB）
 data/access.json      501 块地的"到收储点"分钟数与下道距离（11 KB）
 data/isochrones.geojson 等时圈等值线（3 / 4.5 / 6 / 7.5 分钟）
 data/units.json|units.geojson  P2 经营单元 62 个（含"地块→单元/网格"归属）
@@ -95,6 +97,38 @@ npm run serve:lan       # 再打印局域网地址，手机同网段可直接打
 5. **生长进度** = 积温累积 / 该作物需求；**水肥保持** = 根区湿度 × 地块土壤质量，与"基肥 − 吸收 − 淋失"。
 6. **告警阈值按本地区分位数定**（水分 p15/p85、生长期气温 p2/p98、日降水 p97、病害 ≥3 级）。
    绝对阈值换个地区立刻失效：本区根区湿度只有 0.61~0.80、生长期日均温最高 25.7 ℃。
+
+## 多维度数据模型（星型：dim_* 维度 · fact_* 事实 · meta_* 元数据）
+
+**三条主线**（看一眼就知道怎么连表）：
+
+```
+空间：dim_admin ─→ dim_grid(P4 250m) ─→ dim_unit(P2 经营单元) ─→ dim_parcel(P1 田块)
+时间：dim_date(日) ─┬─ fact_region_daily      区域×日（宽表）
+                   ├─ fact_observation        区域×日×变量（长表，OGC 观测口径）
+                   └─ fact_unit_decade        单元×旬×多变量（国内农业气象旬报：上旬/中旬/下旬）
+变量：dim_variable（代码/单位/值域/告警规则/依据）⇒ 长表只需 variable_code 一列，**加变量不用改表**
+事件：dim_parcel × dim_date → fact_parcel_event（播种/施肥/收获）
+收成：dim_parcel × dim_crop × 作物年度 → fact_parcel_season（单产/总产/病害峰值，粒度放宽）
+```
+
+**字段口径对着国内权威规范落**（不是自己拍的）：
+
+| 规范 | 落成什么 |
+|---|---|
+| **NY/T 4061-2021《农业大数据核心元数据》** | `meta_dataset` 按标识信息/数据特征/时空范围三组（带 M/O/C 必选标记） |
+| **NY/T 4997-2025《农业资源数据元》** | `dim_data_element`：**每张表每一列一条数据元**（中文名/英文名/定义/数据类型/数据格式/值域/计量单位/来源） |
+| **GB/T 19710 地理信息 元数据** | CRS / 空间分辨率 / 空间范围 |
+| **《农村土地承包经营权要素编码规则》** | 编码结构 = **行政区划码 + 图层码 + 顺序号**（`09186-P-000001`；换到中国只换前缀，表结构不动） |
+| **第三次全国土壤普查属性规范 + GB/T 33469 耕地质量等级** | `soil_texture/soil_ph/soil_organic_matter/land_quality_grade` 列位（**留空，不编造**） |
+| **OGC SensorThings API** | 观测长表口径：`thing_id / spatial_level / spatial_id / variable_code / phenomenon_time / result_value / result_uom` |
+
+**为什么"多维度"真的好用**：同一份数据可以是宽表（`fact_region_daily`，直接看）也可以是长表
+（`fact_observation`/`fact_unit_decade`，直接透视），而 `dim_data_element` 保证**任何一列都能查到
+它是什么、什么单位、值域多少、来自哪、是不是模拟值** —— 表能不能被人读懂，全靠这一张字典。
+
+Excel 版在 `tables/农业监测数据.xlsx`：16 个工作表、冻结首行、自动筛选、列宽自适应。
+透视示例：行放 `decade_key`、列放 `unit_id`、值放 `progress_mean`，就能看出各单元的进度差异。
 
 ## 三层空间单元（P1 自然田块 / P2 经营单元 / P4 统计网格）
 
@@ -169,7 +203,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 要么自备 PMTiles（几十 MB，GitHub Pages 的 Range 支持还得实测）；③ 这个页面要看的是地块上的值，
 底图只会抢注意力。图层结构已经预留，将来要加一层 `L.tileLayer` 即可。
 
-## 判据（模型 38 + 真浏览器 43 + 数据 25 + 导出 15 = **121 条**）
+## 判据（模型 38 + 真浏览器 43 + 数据 25 + 导出 24 = **130 条**）
 
 模型判据里刻意放了**能失败**的断言，例如：
 - 把湿度压掉 40 个百分点 ⇒ 病害必须**完全不出现**（钉住"病害由温湿驱动"）；
@@ -178,6 +212,11 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 - 生成气象 vs 实测：月均温相关 r > 0.85、年均温偏差 < 2 ℃、年降水与 RH 水平可比；
 - 区域聚合指数恒在 [0,1]（分子分母必须统计同一批地块）；
 - 同种子逐位可复现。
+
+导出侧（`npm run export:tables`）另有 9 条多维度/元数据判据：**数据元字典覆盖每一张表的每一列**
+（表加列而字典没跟上就报错）、每张表都有中文说明、数据元的 source_id 是合法外键、数值型数据元都带计量单位、
+三层编码唯一且结构合规、**旬表是完整的多维网格**（每单元×每旬一行）、长表变量都在变量字典里、
+留空列没有被编造（含耕地质量等级）、Excel 工作簿体积合理。
 
 数据侧（`npm run data:check`）另有可达性判据：每块地都有可达时间、量纲合理（0~120 分钟）、
 中位落在乡镇尺度、"下道距离" p90 < 1 km、**没有被判成"不可达"的地块**（假不可达说明路网碎片没处理干净）、
@@ -212,7 +251,12 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 16. **CSV 解析没去掉 `\r`** ⇒ 若仓库检出成 CRLF，`synthetic === '1'` 会假失败（已加 `.gitattributes` 统一 LF + 解析去 `\r`）；
 17. **首屏背了 2.4 MB 的分区样点**（12000+ 个点）⇒ 改成**按需加载**（打开图层才拉），
     并加判据"加载前图层不存在、打开后要素数正确"；
-18. **`meta_dataset` 静默写成空表**：`writeCsv` 期望对象而我传了数组，所有单元格为空且不报错
+18. **`fact_observation` 少了两个维度**（只有"变量×时间"，没有空间层级）⇒ 加 `spatial_level/spatial_id/variable_code`，
+    这才叫三维齐全，也才能把地块级/单元级观测并进同一张长表；
+19. **编码列被推断成数字**：`09186` 若按数字写进 Excel，**前导零会被吃掉**（`09186`→`9186`），
+    `P-000001` 之类的顺序号同理 ⇒ 编码/标识列一律判为文本，并加判据 + 用 openpyxl 反向验证读回值；
+20. **导出与页面的时间粒度不同**（导出逐日、页面 7 天抽样）⇒ 必须写清楚：旬表是真日均，不是抽样插值；
+21. **`meta_dataset` 静默写成空表**：`writeCsv` 期望对象而我传了数组，所有单元格为空且不报错
     ⇒ 加"每个元素都有名有值"判据才抓到。
 
 ## 部署（GitHub Pages 项目站）
