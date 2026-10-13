@@ -552,6 +552,8 @@ try {
       onVariable: (key) => { state.variable = key; map.setVariable(key); ui.setVariable(key); },
       onDay: (d) => { state.playing = false; ui.setPlaying(false); setDay(d); },
       onTogglePlay: () => { state.playing = !state.playing; ui.setPlaying(state.playing); },
+      /** 暂停（打开数据视图时调用：数字自己在跳的表格没法读） */
+      onPause: () => { state.playing = false; ui.setPlaying(false); },
       onSpeed: (d) => { state.daysPerSec = d; ui.setSpeed(d); },
       onLayer: async (name, on) => {
         // 分区样点按需加载：12000+ 点约 2.3 MB，不该压在首屏

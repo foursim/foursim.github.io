@@ -95,6 +95,11 @@ export class UI {
     // 默认落在「重点问题」：速览的第一眼应该是**结论**，而不是一堆原始读数
     this.activeTable = 'focus';
     this.lastTablesSig = '';
+    /** 数据抽屉的状态（打开 / 页签 / 筛选 / 排序） */
+    this.drawerOpen = false;
+    this.drawerTab = 'focus';
+    this.drawerFilter = '';
+    this.drawerSort = null;
     this.refs = {};
     this.lastHtml = {};
     this.cacheDom();
@@ -110,7 +115,9 @@ export class UI {
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
       'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-tb-expand',
-      'tablebar', 'btn-export-csv', 'btn-export-png'];
+      'tablebar', 'btn-export-csv', 'btn-export-png',
+      'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-filter',
+      'btn-drawer', 'btn-drawer-top', 'btn-dw-csv'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -134,6 +141,8 @@ export class UI {
       .map(([d, l]) => `<button class="mini" data-days="${d}">${l}</button>`).join('');
     this.refs['day-slider'].max = String(this.model.days.length - 1);
     this.refs['tb-tabs'].innerHTML = TABLE_TABS
+      .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
+    this.refs['dw-tabs'].innerHTML = TABLE_TABS
       .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
     this.refs.bottombar.innerHTML = this.footerText();
   }
@@ -192,6 +201,48 @@ export class UI {
       refs['btn-tb-expand'].textContent = on ? '收起表格' : '展开表格';
       refs['btn-tb-expand'].classList.toggle('on', on);
     });
+    // ---- 数据抽屉（全行 + 筛选 + 排序）----
+    for (const id of ['btn-drawer', 'btn-drawer-top']) {
+      refs[id].addEventListener('click', () => {
+        // 打开时**暂停播放**：数字自己在跳的表格没法读（与"透视要冻结时点"同一个道理）
+        actions.onPause?.();
+        this.openDrawer();
+      });
+    }
+    refs['drawer-close'].addEventListener('click', () => this.closeDrawer());
+    refs['drawer-mask'].addEventListener('click', () => this.closeDrawer());
+    refs['btn-dw-csv'].addEventListener('click', () => actions.onExportCsv?.());
+    refs['dw-tabs'].addEventListener('click', (ev) => {
+      const b = pick(ev, 'button[data-tab]');
+      if (!b) return;
+      if (this.drawerTab !== b.dataset.tab) actions.onClearHighlight?.({ silent: true });
+      this.drawerTab = b.dataset.tab;
+      this.renderDrawer();
+    });
+    refs['dw-filter'].addEventListener('input', () => {
+      this.drawerFilter = refs['dw-filter'].value;
+      this.renderDrawer();
+    });
+    refs['dw-body'].addEventListener('click', (ev) => {
+      // 列头：切换排序（首次点击按降序 —— 这类表关心的是最严重的那几块）
+      const th = pick(ev, 'th.sortable');
+      if (th) {
+        const col = Number(th.dataset.col);
+        const st = this.drawerSort;
+        this.drawerSort = { col, dir: st && st.col === col ? -st.dir : -1 };
+        this.renderDrawer();
+        return;
+      }
+      // 行内联动与底部条**同一套**：地块定位 / 单元·作物·问题高亮
+      const parcel = pick(ev, '[data-parcel]');
+      if (parcel) { actions.onFocusParcel(Number(parcel.dataset.parcel)); return; }
+      const unit = pick(ev, '[data-unit]');
+      if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
+      const crop = pick(ev, '[data-crop]');
+      if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
+      const q = pick(ev, '[data-question]');
+      if (q) actions.onQuestion?.(q.dataset.question);
+    });
     refs['btn-export-csv'].addEventListener('click', () => actions.onExportCsv?.());
     refs['btn-export-png'].addEventListener('click', () => actions.onExportPng?.());
     refs['btn-help'].addEventListener('click', () => this.openHelp());
@@ -213,7 +264,8 @@ export class UI {
     refs['modal-close'].addEventListener('click', () => this.closeHelp());
     refs.modal.addEventListener('click', (ev) => { if (ev.target === refs.modal) this.closeHelp(); });
     globalThis.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape') this.closeHelp();
+      // Esc：先关最上层（抽屉盖在帮助之上），否则按了会觉得没反应
+      if (ev.key === 'Escape') { if (this.drawerOpen) this.closeDrawer(); else this.closeHelp(); }
       else if (ev.key === ' ') { ev.preventDefault(); actions.onTogglePlay(); }
     });
   }
@@ -228,6 +280,7 @@ export class UI {
     this.renderAlarms();
     this.renderDetail();
     this.renderTables();
+    this.renderDrawer();
   }
 
   setPlaying(on) {
@@ -475,11 +528,13 @@ export class UI {
     return `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   }
 
-  renderTables() {
-    if (!this.refs['tb-body']) return;
-    for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
-      b.classList.toggle('on', b.dataset.tab === this.activeTable);
-    }
+  /**
+   * **一份表格逻辑，两处渲染**：底部条（扫一眼）与数据抽屉（全行/筛选/排序）共用这个方法。
+   *
+   * 六张表的取数分支只写一遍 —— 否则"底部条说 33 块、抽屉说 38 块"这种账对不上迟早发生
+   * （这个项目里已经用同样的理由统一过"阈值/编码/来源"）。
+   */
+  buildTable(key) {
     const t = this.tables ?? {};
     const d = this.day;
     const R = this.model.region;
@@ -488,7 +543,7 @@ export class UI {
     let rows = [];
     let note = '';
 
-    if (this.activeTable === 'focus') {
+    if (key === 'focus') {
       const list = t.questions ?? [];
       cols = [{ label: '问题' }, { label: '命中', num: true }, { label: '面积 ha', num: true },
         { label: '最严重 / 摘要' }, { label: '口径（可核对）' }];
@@ -499,7 +554,7 @@ export class UI {
           { text: q.top || '—', cls: 'small wrap' }, { text: q.desc, cls: 'dim small wrap' }],
       }));
       note = `${list.length} 个问题 · 点一行在图上高亮命中地块 · ${fmtDay(this.model.days[d])}`;
-    } else if (this.activeTable === 'frame') {
+    } else if (key === 'frame') {
       cols = [{ label: '指标' }, { label: '当前值', num: true }, { label: '单位' },
         { label: '阈值判定' }, { label: '近 7 日', num: true }, { label: '依据 / 口径' }];
       rows = FRAME_ROWS.map(([label, unit, getV, dec, rule, ref]) => {
@@ -514,7 +569,7 @@ export class UI {
         };
       });
       note = `区域日值 · ${fmtDay(this.model.days[d])} · 逐日`;
-    } else if (this.activeTable === 'units') {
+    } else if (key === 'units') {
       const list = t.units ?? [];
       cols = [{ label: '单元编码', mono: true }, { label: '主导作物' }, { label: '面积 ha', num: true },
         { label: '地块', num: true }, { label: '进度 %', num: true }, { label: '最高病级', num: true },
@@ -530,7 +585,7 @@ export class UI {
           { text: nm(u.tMin, 1), num: true }],
       }));
       note = `${list.length} 个经营单元（P2）· 面积加权 · 点一行可在图上高亮 · ${fmtDay(this.model.days[d])}`;
-    } else if (this.activeTable === 'crops') {
+    } else if (key === 'crops') {
       const list = t.crops ?? [];
       cols = [{ label: '作物' }, { label: '地块数', num: true }, { label: '面积 ha', num: true },
         { label: '平均单产 t/ha', num: true }, { label: '总产 t', num: true },
@@ -544,7 +599,7 @@ export class UI {
           { text: c.ref ? nm(c.ref, 1) : '—', num: true, cls: 'dim' }],
       }));
       note = `按作物聚合（收成粒度到季）· 点一行可在图上高亮 · ${list.length} 类`;
-    } else if (this.activeTable === 'scenario') {
+    } else if (key === 'scenario') {
       const sc = this.scenario;
       if (!sc) {
         cols = [{ label: '情景推演' }];
@@ -583,9 +638,83 @@ export class UI {
       note = `${list.length} 条 · ${fmtDay(this.model.days[d])}`;
     }
 
+    return { cols, rows, note };
+  }
+
+
+  renderTables() {
+    if (!this.refs['tb-body']) return;
+    for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.tab === this.activeTable);
+    }
+    const { cols, rows, note } = this.buildTable(this.activeTable);
     // **行数透明**：132px 里只露 5 行时，用户必须知道"还有多少没看到"（否则会以为看到的就是全部）
     this.refs['tb-note'].textContent = `${note}${note ? ' · ' : ''}共 ${rows.length} 行`;
     this.setHtml('tb-body', UI.tableHtml(cols, rows));
+  }
+
+  // ==================== 数据抽屉（全行 + 筛选 + 排序） ====================
+  /** 单元格的"可比较值"（数字优先，其次字符串）——筛选与排序都用它 */
+  static cellValue(c) {
+    const o = typeof c === 'object' && c !== null ? c : { text: c };
+    const t = String(o.text ?? '');
+    const num = Number(t.replace(/[,%\s]/g, ''));
+    return Number.isFinite(num) && t.trim() !== '' ? num : t;
+  }
+
+  /** 打开/关闭抽屉；`key` 指定页签 */
+  openDrawer(key) {
+    if (key) this.drawerTab = key;
+    this.drawerOpen = true;
+    for (const el of [this.refs.drawer, this.refs['drawer-mask']]) el?.classList?.remove?.('hidden');
+    this.renderDrawer();
+    // 焦点移到关闭按钮：Esc 与键盘可达（与帮助弹窗同一套习惯）
+    try { this.refs['drawer-close']?.focus?.(); } catch { /* 桩环境无 focus */ }
+  }
+
+  closeDrawer() {
+    this.drawerOpen = false;
+    for (const el of [this.refs.drawer, this.refs['drawer-mask']]) el?.classList?.add?.('hidden');
+  }
+
+  /** 抽屉里的页签/筛选/排序状态变化后重画 */
+  renderDrawer() {
+    if (!this.drawerOpen || !this.refs['dw-body']) return;
+    for (const b of this.refs['dw-tabs'].querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.tab === this.drawerTab);
+    }
+    const { cols, rows, note } = this.buildTable(this.drawerTab);
+    // 筛选：任一列文本包含关键字（大小写不敏感）
+    const kw = String(this.drawerFilter ?? '').trim().toLowerCase();
+    let out = rows;
+    if (kw) {
+      out = rows.filter((r) => r.cells.some((c) => {
+        const o = typeof c === 'object' && c !== null ? c : { text: c };
+        return String(o.text ?? '').toLowerCase().includes(kw);
+      }));
+    }
+    // 排序：点列头切换 升/降（数字按数值比，文本按字典序）
+    const st = this.drawerSort;
+    if (st) out = [...out].sort((a, b) => {
+      const x = UI.cellValue(a.cells[st.col]);
+      const y = UI.cellValue(b.cells[st.col]);
+      const cmp = (typeof x === 'number' && typeof y === 'number') ? x - y : String(x).localeCompare(String(y));
+      return st.dir * cmp;
+    });
+    const head = cols.map((c, i) => {
+      const cls = [c.num ? 'num' : '', c.mono ? 'mono' : ''].filter(Boolean).join(' ');
+      const arrow = st && st.col === i ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
+      return `<th class="${cls} sortable" data-col="${i}" title="点击按此列排序">${c.label}${arrow}</th>`;
+    }).join('');
+    this.refs['dw-body'].innerHTML = `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>`
+      + out.map((r) => `<tr${r.cls ? ` class="${r.cls}"` : ''}${r.attrs ?? ''}>${UI.cellsHtml(r.cells)}</tr>`).join('')
+      + `</tbody></table>${out.length ? '' : '<p class="hint" style="padding:8px 10px">没有匹配的行（试试清空关键字）</p>'}`;
+    const dw = this.refs['dw-note'];
+    if (dw) {
+      dw.textContent = `${note} · 共 ${rows.length} 行`
+        + (out.length !== rows.length ? ` · 筛选后 ${out.length} 行` : '')
+        + ' · 点列头排序 · 点行在图上高亮';
+    }
   }
 
   toast(text, kind = 'info') {

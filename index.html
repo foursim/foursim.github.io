@@ -20,6 +20,7 @@
       <span id="speed-group" class="speeds"></span>
     </div>
     <div class="group right">
+      <button id="btn-drawer-top" title="打开数据视图（全行表格 + 筛选 + 排序）">数据视图</button>
       <button id="btn-help" title="数据来源与模型口径">说明</button>
     </div>
   </header>
@@ -33,6 +34,7 @@
       <div class="tb-actions">
         <span id="hl-note" class="tb-note"></span>
         <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开表格</button>
+        <button id="btn-drawer" class="mini" title="打开数据视图：全行表格 + 筛选 + 排序（左侧地图仍可见）">数据视图</button>
         <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">取消高亮</button>
         <span id="tb-note" class="tb-note"></span>
         <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
@@ -74,6 +76,27 @@
       <h3>选中地块</h3>
       <div id="detail" class="body"></div>
     </section>
+  </aside>
+
+  <!--
+    数据抽屉（全行表格 + 筛选 + 排序）。
+    为什么是"右侧抽屉"而不是全屏或顶部切页签：这页最值钱的是**表↔图联动**，
+    抽屉只占右边约 62%，**左侧地图仍可见** ⇒ 点一行表格能立刻在图上看到高亮；
+    全屏/切页签都会把这张联动切断（要来回切视图才知道高亮了什么）。
+    关闭入口三个：× / 点遮罩 / Esc（与帮助弹窗同一套习惯）。
+  -->
+  <div id="drawer-mask" class="hidden"></div>
+  <aside id="drawer" class="hidden">
+    <div class="dw-head">
+      <div class="dw-title">数据视图 <span id="dw-note"></span></div>
+      <div class="dw-tools">
+        <input id="dw-filter" type="search" placeholder="筛选关键字…" aria-label="筛选">
+        <button id="btn-dw-csv" class="mini" title="导出当前帧地块数据（CSV）">导出 CSV</button>
+        <button id="drawer-close" class="mini" aria-label="关闭数据视图">×</button>
+      </div>
+    </div>
+    <div id="dw-tabs" class="dw-tabs"></div>
+    <div id="dw-body" class="dw-body"></div>
   </aside>
 
   <footer id="bottombar"></footer>

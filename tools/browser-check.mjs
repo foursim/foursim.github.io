@@ -286,11 +286,13 @@ const AUDIT = `(()=>{
     if(!/(auto|scroll)/.test(cs.overflowY)&&!/(auto|scroll)/.test(cs.overflowX))continue;
     if((/(auto|scroll)/.test(cs.overflowY)&&p.scrollHeight>p.clientHeight+1)||(/(auto|scroll)/.test(cs.overflowX)&&p.scrollWidth>p.clientWidth+1))return p.id||p.className||p.tagName;}return null;};
   const out={total:0,zero:[],covered:[],scrollOnly:[],unreachable:[]};
-  const modal=document.getElementById('modal');
-  const inClosedModal=(el)=>modal && modal.classList.contains('hidden') && modal.contains(el);
+  // 整块隐藏的容器（关掉的弹窗 / 关掉的数据抽屉）里的控件尺寸为 0 是**预期**的，不是可达性问题。
+  // ⚠️ 写成通用规则而不是"特判某个弹窗"：每加一个浮层就改一次判据，迟早会漏（漏了就是假失败，
+  // 假失败多了判据就没人信了）。
+  const inHiddenBox=(el)=>{for(let p=el;p;p=p.parentElement){const cs=getComputedStyle(p);
+    if(cs.display==='none'||cs.visibility==='hidden')return true;}return false;};
   for(const el of document.querySelectorAll('button, input, select, label')){
-    // 关掉的弹窗里的控件尺寸为 0 是**预期**（不是可达性问题）——不参与审计
-    if(inClosedModal(el)) continue;
+    if(inHiddenBox(el)) continue;
     out.total++;
     const b=el.getBoundingClientRect();
     if(b.width<1||b.height<1){out.zero.push(nm(el));continue;}
@@ -716,6 +718,81 @@ const qzOverflow = await ev(`(()=>{const b=document.getElementById('tb-body');
 check('「重点问题」表不产生横向滚动（长口径文本换行显示）',
   qzOverflow.over <= 2, `内容 ${qzOverflow.sw}px / 可视 ${qzOverflow.cw}px（溢出 ${qzOverflow.over}px）`);
 await shot('focus-questions-1440x900');
+
+
+// ===================== 18. 数据抽屉（全行 + 筛选 + 排序，可叉掉） =====================
+console.log('\n=== 18. 数据抽屉 ===');
+await boot(1440, 900);
+await ev(`globalThis.__agri.state.playing = true`);
+const s18Open = await ev(`(()=>{const a=globalThis.__agri;
+  document.getElementById('btn-drawer').click();
+  const d=document.getElementById('drawer').getBoundingClientRect();
+  const mask=document.getElementById('drawer-mask');
+  // 地图是否仍可交互：取地图里"不在抽屉下面"的一点做命中测试
+  const mp=document.getElementById('map').getBoundingClientRect();
+  const px=Math.round(mp.left+40), py=Math.round(mp.top+40);
+  const hit=document.elementFromPoint(px,py);
+  return {w:Math.round(d.width), vw:innerWidth, ratio:+(d.width/innerWidth).toFixed(2),
+    visible:!document.getElementById('drawer').classList.contains('hidden'),
+    maskVisible:!mask.classList.contains('hidden'),
+    mapHit:!!(hit&&hit.closest&&hit.closest('#map')), playing:a.state.playing,
+    tabs:document.querySelectorAll('#dw-tabs button').length};})()`);
+check('「数据视图」打开右侧抽屉：占屏约 62%、遮罩出现、**左侧地图仍可交互**',
+  s18Open.visible && s18Open.maskVisible && s18Open.ratio > 0.5 && s18Open.ratio < 0.75 && s18Open.mapHit,
+  `宽 ${s18Open.w}px（${Math.round(s18Open.ratio * 100)}%）· 地图命中测试 ${s18Open.mapHit ? '通过' : '被挡住'}`);
+check('打开抽屉自动暂停播放（数字自己在跳的表格没法读）', s18Open.playing === false, `playing=${s18Open.playing}`);
+const s18Full = await ev(`(()=>{const a=globalThis.__agri;
+  document.querySelector('#dw-tabs button[data-tab="units"]').click();
+  document.querySelector('#tb-tabs button[data-tab="units"]').click(); // 底部条切到同一页签再比，否则是拿"重点问题 4 行"比"单元 62 行"
+  const rows=document.querySelectorAll('#dw-body .tbl tbody tr').length;
+  const note=document.getElementById('dw-note').textContent;
+  const stripRows=document.querySelectorAll('#tb-body .tbl tbody tr').length;
+  return {rows, note, stripRows, head:document.querySelectorAll('#dw-body .tbl thead th').length};})()`);
+check('抽屉里能看**全行**（62 个单元全在；底部条同一份数据但只有 132px 高）',
+  s18Full.rows === 62 && s18Full.stripRows === 62 && /共 62 行/.test(s18Full.note),
+  `抽屉 ${s18Full.rows} 行 × ${s18Full.head} 列 · 底部条同数据 ${s18Full.stripRows} 行`);
+const s18Filter = await ev(`(()=>{
+  const f=document.getElementById('dw-filter'); f.value='U-000'; // ⚠️ 编码是 '09186162-U-0001'：写 'U0001' 匹配不到（中间有连字符）
+  f.dispatchEvent(new Event('input',{bubbles:true}));
+  const rows=[...document.querySelectorAll('#dw-body .tbl tbody tr')];
+  const texts=rows.map(tr=>tr.textContent);
+  return {n:rows.length, allMatch:texts.every(t=>t.includes('U-000')), note:document.getElementById('dw-note').textContent};})()`);
+check('关键字筛选：只剩匹配行，且条数写在标题里（"筛选后 N 行"）',
+  s18Filter.n > 0 && s18Filter.n < 62 && s18Filter.allMatch && /筛选后 \d+ 行/.test(s18Filter.note),
+  `${s18Filter.n} 行，全部含 U-000 · ${s18Filter.note}`);
+const s18Sort = await ev(`(()=>{
+  const f=document.getElementById('dw-filter'); f.value='';
+  f.dispatchEvent(new Event('input',{bubbles:true}));
+  // ⚠️ 每次重画都会换掉 thead/tbody：必须**重新查询**列头，点旧节点等于没点（判据踩过一次）
+  document.querySelector('#dw-body .tbl thead th.sortable').click();
+  const v1=[...document.querySelectorAll('#dw-body .tbl tbody tr')].map(tr=>tr.children[0].textContent.trim());
+  document.querySelector('#dw-body .tbl thead th.sortable').click();
+  const v2=[...document.querySelectorAll('#dw-body .tbl tbody tr')].map(tr=>tr.children[0].textContent.trim());
+  return {desc:v1[0], descLast:v1[v1.length-1], asc:v2[0], ascLast:v2[v2.length-1],
+    arrow:!!document.querySelector('#dw-body .tbl thead th.sortable').textContent.match(/[▲▼]/)};})()`);
+check('点列头排序：第一次降序、再点升序（箭头提示方向）',
+  s18Sort.desc > s18Sort.descLast && s18Sort.asc < s18Sort.ascLast && s18Sort.desc !== s18Sort.asc && s18Sort.arrow,
+  `降序首行 ${s18Sort.desc} → 升序首行 ${s18Sort.asc}（首列编码按字典序）`);
+const s18Link = await ev(`(()=>{const a=globalThis.__agri;
+  const tr=document.querySelector('#dw-body tr[data-unit]');
+  const id=tr.dataset.unit;
+  tr.click();
+  return {id, want:a.rows.filter(r=>r.unit_id===id).length, got:a.map.highlightIdx.length,
+    all:a.map.highlightIdx.every(i=>a.rows[i].unit_id===id)};})()`);
+check('抽屉里点一行 ⇒ 图上高亮该组地块（联动在抽屉里同样成立 —— 这正是选抽屉而不是全屏的理由）',
+  s18Link.got === s18Link.want && s18Link.all && s18Link.got > 0, `${s18Link.id}：命中 ${s18Link.want} → 高亮 ${s18Link.got} 块`);
+await shot('drawer-1440x900');
+// 三个关闭入口
+const s18Closes = await ev(`(()=>{const a=globalThis.__agri;const vis=()=>!document.getElementById('drawer').classList.contains('hidden');
+  const r={};
+  document.getElementById('drawer-close').click(); r.x=vis();
+  a.ui.openDrawer(); document.getElementById('drawer-mask').click(); r.mask=vis();
+  a.ui.openDrawer();
+  globalThis.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+  r.esc=vis();
+  return r;})()`);
+check('三个关闭入口都能叉掉抽屉（× / 点遮罩 / Esc）——"随时可以叉掉"',
+  s18Closes.x === false && s18Closes.mask === false && s18Closes.esc === false, JSON.stringify(s18Closes));
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
