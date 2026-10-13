@@ -158,7 +158,7 @@ console.log('\n=== 2c. 三层空间单元（P1 地块 / P2 经营单元 / P4 统
 const lu = await ev(`(()=>{const a=globalThis.__agri;return {
   parcels:a.units.parcel.length, units:a.units.stats.units, grids:a.units.stats.grids,
   unitLayers:a.map.unitLayer.getLayers().length, gridLayers:a.map.gridLayer.getLayers().length,
-  zoneLayers:a.map.zoneLayer.getLayers().length,
+  zoneLayers:a.map.zoneLayer ? a.map.zoneLayer.getLayers().length : 0,
   everyMapped:a.rows.every(r=>!!r.unit_id && !!r.grid_id),
   unitAreaP50:a.units.stats.unit_area_ha.p50, unitAreaMax:a.units.stats.unit_area_ha.max};})()`);
 check('每个地块都挂到了 P2 单元与 P4 网格（外键完整）', lu.everyMapped && lu.parcels === 501,
@@ -166,8 +166,21 @@ check('每个地块都挂到了 P2 单元与 P4 网格（外键完整）', lu.ev
 check('P2 单元数落在"可管理"量级（20~120），面积上限生效',
   lu.units >= 20 && lu.units <= 120 && lu.unitAreaMax <= 30.01,
   `${lu.units} 个，面积中位 ${lu.unitAreaP50} / 最大 ${lu.unitAreaMax} ha`);
-check('三个新图层的要素数与数据一致', lu.unitLayers === lu.units && lu.gridLayers === lu.grids && lu.zoneLayers > 1000,
-  `单元 ${lu.unitLayers} / 网格 ${lu.gridLayers} / 分区样点 ${lu.zoneLayers}`);
+check('P2/P4 图层的要素数与数据一致', lu.unitLayers === lu.units && lu.gridLayers === lu.grids,
+  `单元 ${lu.unitLayers} / 网格 ${lu.gridLayers}`);
+// 分区样点是**按需加载**的：打开图层后才去拉数据（首屏不背 2 MB）
+{
+  const before = await ev(`!!globalThis.__agri.map.zoneLayer`);
+  await ev(`(()=>{const cb=document.querySelector('input[data-layer="zones"]');cb.checked=true;cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  let n = 0;
+  for (let i = 0; i < 40; i++) {
+    n = await ev(`globalThis.__agri.map.zoneLayer ? globalThis.__agri.map.zoneLayer.getLayers().length : 0`);
+    if (n > 0) break;
+    await sleep(150);
+  }
+  check('P3 分区样点按需加载：打开图层后才加载，且要素数正确（>10000）',
+    before === false && n > 10000, `加载前 ${before}，加载后 ${n} 个样点`);
+}
 for (const [key, label] of [['unit', '经营单元'], ['grid', '统计网格']]) {
   await click(`button[data-var="${key}"]`);
   const st = await ev(`(()=>{const a=globalThis.__agri;const l=a.map.parcelLayer.getLayers()[0];

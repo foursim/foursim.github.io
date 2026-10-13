@@ -47,7 +47,7 @@ tools/browser-check.mjs 真浏览器验收（32 条，CDP 真实鼠标；找不�
 npm run data:all        # 取数 + 分层 + 分区 + 合理性校验 + 导出表格（一条命令跑完）
                         #   = parcels → roads → poi → weather → access → units → zones → check → export:tables
 npm test                # 模型判据 38 条
-npm run test:browser    # 真浏览器验收 42 条（Chrome/Edge，找不到浏览器时自动跳过）
+npm run test:browser    # 真浏览器验收 43 条（Chrome/Edge，找不到浏览器时自动跳过）
 npm run export:tables   # 单独重跑表格导出（含 15 条导出判据，失败即非 0 退出）
 
 npm run serve           # 启动静态服务器 → 打开 http://localhost:8080/
@@ -106,7 +106,7 @@ npm run serve:lan       # 再打印局域网地址，手机同网段可直接打
 | **P1 自然田块** | OSM 真实可见田块边界（`data/parcels.geojson`） | **501 块** / 990 ha / 中位 1.12 ha | 逐块作业与监测 |
 | **P2 经营单元** | **空间连片的作业片区**（地块间距 ≤30 m、面积上限 30 ha，贪心合并） | **62 个** / 面积中位 19.7 ha / 最大 30 ha | 轮作计划、作业编组、管理口径 |
 | **P4 统计网格** | 250 m 规则网格（按经纬度取整编码，可复现；思路同 OGC API – DGGS） | **217 格** | 汇总上报 |
-| P3 管理分区（**演示**） | 25 m 网格采样 + 一维 k-means 分 2~3 区（方法同精准农业的 management zone） | 363 块地 / **12833 样点** / 744 区 | 变量施肥/灌溉的处方图雏形 |
+| P3 管理分区（**演示**） | 25 m 网格采样 + 一维 k-means 分 2~3 区（方法同精准农业的 management zone）；`data/zones.geojson` 2.4 MB ⇒ **按需加载**（打开图层才拉） | 363 块地 / **12833 样点** / 744 区 | 变量施肥/灌溉的处方图雏形 |
 
 两条被数据打回来的设计决定（都写进注释了）：
 
@@ -169,7 +169,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 要么自备 PMTiles（几十 MB，GitHub Pages 的 Range 支持还得实测）；③ 这个页面要看的是地块上的值，
 底图只会抢注意力。图层结构已经预留，将来要加一层 `L.tileLayer` 即可。
 
-## 判据（模型 38 + 真浏览器 42 + 数据 25 + 导出 15 = **120 条**）
+## 判据（模型 38 + 真浏览器 43 + 数据 25 + 导出 15 = **121 条**）
 
 模型判据里刻意放了**能失败**的断言，例如：
 - 把湿度压掉 40 个百分点 ⇒ 病害必须**完全不出现**（钉住"病害由温湿驱动"）；
@@ -210,7 +210,9 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 14. **邻接判定用"顶点到顶点"** ⇒ 把真实相邻的地块判成几十米远（T 型接头 + 抽稀），聚合候选对从上千掉到 199；
 15. **把"同作物"当经营单元的约束** ⇒ 501 块只合出 351 个单元（随机作物下相邻同作物概率仅 ~1/7）；
 16. **CSV 解析没去掉 `\r`** ⇒ 若仓库检出成 CRLF，`synthetic === '1'` 会假失败（已加 `.gitattributes` 统一 LF + 解析去 `\r`）；
-17. **`meta_dataset` 静默写成空表**：`writeCsv` 期望对象而我传了数组，所有单元格为空且不报错
+17. **首屏背了 2.4 MB 的分区样点**（12000+ 个点）⇒ 改成**按需加载**（打开图层才拉），
+    并加判据"加载前图层不存在、打开后要素数正确"；
+18. **`meta_dataset` 静默写成空表**：`writeCsv` 期望对象而我传了数组，所有单元格为空且不报错
     ⇒ 加"每个元素都有名有值"判据才抓到。
 
 ## 部署（GitHub Pages 项目站）

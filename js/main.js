@@ -29,7 +29,7 @@ function fatal(err) {
 }
 
 try {
-  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, zonesFC] = await Promise.all([
+  const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC] = await Promise.all([
     loadJson('data/parcels.geojson'),
     loadJson('data/roads.geojson'),
     loadJson('data/poi.geojson'),
@@ -39,7 +39,6 @@ try {
     loadJson('data/units.json'),
     loadJson('data/units.geojson'),
     loadJson('data/grids.geojson'),
-    loadJson('data/zones.geojson'),
   ]);
 
   // 地图要素与模型输出按**下标对齐**（模型不关心几何，界面靠 i 索引二者）
@@ -161,7 +160,8 @@ try {
     isochrones,
     units: unitsFC,
     grids: gridsFC,
-    zones: zonesFC,
+    zones: null, // 懒加载：见 onLayer('zones')
+
     rows,
     get,
     region,
@@ -182,7 +182,18 @@ try {
       onDay: (d) => { state.playing = false; ui.setPlaying(false); setDay(d); },
       onTogglePlay: () => { state.playing = !state.playing; ui.setPlaying(state.playing); },
       onSpeed: (d) => { state.daysPerSec = d; ui.setSpeed(d); },
-      onLayer: (name, on) => map.setLayerVisible(name, on),
+      onLayer: async (name, on) => {
+        // 分区样点按需加载：12000+ 点约 2.3 MB，不该压在首屏
+        if (name === 'zones' && on && !map.zoneLayer) {
+          ui.toast('正在加载分区样点（约 2 MB）…');
+          try {
+            map.setZones(await loadJson('data/zones.geojson'));
+          } catch (err) {
+            ui.toast(`分区数据加载失败：${err.message}`, 'warn');
+          }
+        }
+        map.setLayerVisible(name, on);
+      },
       onFocusParcel: (i) => {
         const row = rows[i];
         if (!row) return;

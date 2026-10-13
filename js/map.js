@@ -104,14 +104,8 @@ export class AgriMap {
       interactive: false,
       style: () => ({ color: '#9fd0c8', weight: 1, opacity: 0.5, fill: false, dashArray: '2 6' }),
     });
-    /** P3 管理分区样点（演示：25 m 网格采样 + 聚类，颜色 = 分区类 A/B/C/D） */
-    const ZC = { A: '#2f7d3a', B: '#c8b93a', C: '#dd8436', D: '#c0392b' };
-    this.zoneLayer = L.geoJSON(zones, {
-      interactive: false,
-      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-        radius: 2.4, stroke: false, fillColor: ZC[f.properties.zone] ?? '#888', fillOpacity: 0.85,
-      }),
-    });
+    // P3 管理分区样点：**按需加载**（12000+ 个点约 2.3 MB，首屏不该背这个包）
+    this.zoneLayer = null;
 
     // 区域气温：**一个圆 + 数值**，不给地块编造地块级温差（见 geo.js 的说明）
     this.tempLayer = L.layerGroup().addTo(this.map);
@@ -171,7 +165,10 @@ export class AgriMap {
     else if (name === 'iso') { if (on) this.isoLayer.addTo(this.map); else this.map.removeLayer(this.isoLayer); }
     else if (name === 'units') { if (on) this.unitLayer.addTo(this.map); else this.map.removeLayer(this.unitLayer); }
     else if (name === 'grids') { if (on) this.gridLayer.addTo(this.map); else this.map.removeLayer(this.gridLayer); }
-    else if (name === 'zones') { if (on) this.zoneLayer.addTo(this.map); else this.map.removeLayer(this.zoneLayer); }
+    else if (name === 'zones') {
+      if (this.zoneLayer && on) this.zoneLayer.addTo(this.map);
+      else if (this.zoneLayer && !on) this.map.removeLayer(this.zoneLayer);
+    }
     else this.refresh();
     if (name === 'temp' && on) this.drawTemp();
   }
@@ -200,6 +197,18 @@ export class AgriMap {
       interactive: false,
       icon: L.divIcon({ className: 'temp-tag', html: `${this.region.temp.toFixed(1)}℃`, iconSize: [64, 20] }),
     }).addTo(this.tempLayer);
+  }
+
+  /** 懒加载：分区样点图层拿到数据后再建（main 里在打开图层时调用） */
+  setZones(fc) {
+    const ZC = { A: '#2f7d3a', B: '#c8b93a', C: '#dd8436', D: '#c0392b' };
+    this.zoneLayer = L.geoJSON(fc, {
+      interactive: false,
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 2.4, stroke: false, fillColor: ZC[f.properties.zone] ?? '#888', fillOpacity: 0.85,
+      }),
+    });
+    if (this.visible.zones) this.zoneLayer.addTo(this.map);
   }
 
   focusParcel(row) {
