@@ -33,9 +33,9 @@
       <div id="tb-tabs" class="tb-tabs"></div>
       <div class="tb-actions">
         <span id="hl-note" class="tb-note"></span>
-        <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开表格</button>
+        <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开</button>
         <button id="btn-drawer" class="mini" title="打开数据视图：全行表格 + 筛选 + 排序（左侧地图仍可见）">数据视图</button>
-        <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">取消高亮</button>
+        <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">清除高亮</button>
         <span id="tb-note" class="tb-note"></span>
         <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
         <button id="btn-export-png" class="mini" title="导出地图 PNG（含标题、日期与图例）">导出 PNG</button>
@@ -88,15 +88,18 @@
   <div id="drawer-mask" class="hidden"></div>
   <aside id="drawer" class="hidden">
     <div class="dw-head">
-      <div class="dw-title">数据视图 <span id="dw-note"></span></div>
+      <div class="dw-title">数据视图 <span id="dw-count"></span></div>
       <div class="dw-tools">
         <input id="dw-filter" type="search" placeholder="筛选关键字…" aria-label="筛选">
-        <button id="btn-dw-csv" class="mini" title="导出当前帧地块数据（CSV）">导出 CSV</button>
+        <button id="btn-dw-export" class="mini" title="导出当前视图（含筛选与排序后的行）">导出结果</button>
+        <button id="btn-dw-csv" class="mini" title="导出当前帧全部地块数据（CSV）">导出地块</button>
         <button id="drawer-close" class="mini" aria-label="关闭数据视图">×</button>
       </div>
     </div>
     <div id="dw-tabs" class="dw-tabs"></div>
     <div id="dw-body" class="dw-body"></div>
+    <!-- 交互提示放页脚：标题栏里的长文案会换行并把筛选框挤窄（那是"细节"阶段要修的第一条） -->
+    <div class="dw-foot"><span id="dw-note"></span></div>
   </aside>
 
   <footer id="bottombar"></footer>

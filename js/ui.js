@@ -116,8 +116,8 @@ export class UI {
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
       'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-tb-expand',
       'tablebar', 'btn-export-csv', 'btn-export-png',
-      'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-filter',
-      'btn-drawer', 'btn-drawer-top', 'btn-dw-csv'];
+      'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
+      'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -198,7 +198,7 @@ export class UI {
     // 展开/收起表格区：小屏上"读数据"与"看地图"分时复用同一块屏幕（不是把表格叠得更高）
     refs['btn-tb-expand'].addEventListener('click', () => {
       const on = refs.tablebar.classList.toggle('expanded');
-      refs['btn-tb-expand'].textContent = on ? '收起表格' : '展开表格';
+      refs['btn-tb-expand'].textContent = on ? '收起' : '展开';
       refs['btn-tb-expand'].classList.toggle('on', on);
     });
     // ---- 数据抽屉（全行 + 筛选 + 排序）----
@@ -212,6 +212,8 @@ export class UI {
     refs['drawer-close'].addEventListener('click', () => this.closeDrawer());
     refs['drawer-mask'].addEventListener('click', () => this.closeDrawer());
     refs['btn-dw-csv'].addEventListener('click', () => actions.onExportCsv?.());
+    // 导出**当前视图**（筛选 + 排序后的行）：看得懂之后能拿得走，闭环才成立
+    refs['btn-dw-export'].addEventListener('click', () => actions.onExportView?.(this.drawerResult()));
     refs['dw-tabs'].addEventListener('click', (ev) => {
       const b = pick(ev, 'button[data-tab]');
       if (!b) return;
@@ -484,6 +486,21 @@ export class UI {
    * 数据来自离线预计算的 `data/scenario.json`：每个候选点都已用**真实路网**重算过全网时间，
    * 浏览器只做"最近候选点的查表"，不在前端跑 Dijkstra（见 `tools/scenario.mjs` 的说明）。
    */
+  /** 「导出结果」要导的东西（列 + 筛选排序后的行 + 表名） */
+  drawerResult() {
+    const label = (TABLE_TABS.find(([k]) => k === this.drawerTab) ?? [null, this.drawerTab])[1];
+    return {
+      label,
+      cols: this.drawerCols ?? [],
+      rows: this.drawerRows ?? [],
+      filter: this.drawerFilter ?? '',
+      sort: this.drawerSort
+        ? { label: this.drawerCols?.[this.drawerSort.col]?.label ?? '', dir: this.drawerSort.dir }
+        : null,
+      day: this.model.days[this.day],
+    };
+  }
+
   /** 高亮状态文案（`null` = 当前没有高亮） */
   setHighlightInfo(text) {
     if (this.refs['hl-note']) this.refs['hl-note'].textContent = text ?? '';
@@ -702,19 +719,27 @@ export class UI {
       return st.dir * cmp;
     });
     const head = cols.map((c, i) => {
-      const cls = [c.num ? 'num' : '', c.mono ? 'mono' : ''].filter(Boolean).join(' ');
-      const arrow = st && st.col === i ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
-      return `<th class="${cls} sortable" data-col="${i}" title="点击按此列排序">${c.label}${arrow}</th>`;
+      const sorted = st && st.col === i;
+      const cls = [c.num ? 'num' : '', c.mono ? 'mono' : '', 'sortable', sorted ? 'sorted' : ''].filter(Boolean).join(' ');
+      const arrow = sorted ? (st.dir > 0 ? ' ▲' : ' ▼') : '';
+      return `<th class="${cls}" data-col="${i}" title="点击按此列排序">${c.label}${arrow}</th>`;
     }).join('');
     this.refs['dw-body'].innerHTML = `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>`
       + out.map((r) => `<tr${r.cls ? ` class="${r.cls}"` : ''}${r.attrs ?? ''}>${UI.cellsHtml(r.cells)}</tr>`).join('')
       + `</tbody></table>${out.length ? '' : '<p class="hint" style="padding:8px 10px">没有匹配的行（试试清空关键字）</p>'}`;
+    // 计数放标题栏（可截断、不挤控件）；交互提示放页脚（读起来像"状态栏"）
+    const cnt = this.refs['dw-count'];
+    if (cnt) cnt.textContent = kw || st ? `${out.length} / ${rows.length} 行` : `共 ${rows.length} 行`;
     const dw = this.refs['dw-note'];
     if (dw) {
       dw.textContent = `${note} · 共 ${rows.length} 行`
         + (out.length !== rows.length ? ` · 筛选后 ${out.length} 行` : '')
-        + ' · 点列头排序 · 点行在图上高亮';
+        + (st ? ` · 已按「${cols[st.col]?.label ?? ''}」${st.dir > 0 ? '升序' : '降序'}` : '')
+        + ' · 点列头排序 · 点行在图上高亮 · 「导出结果」导的就是这张表';
     }
+    // 供「导出结果」用：当前页签的列 + 过滤排序后的行
+    this.drawerCols = cols;
+    this.drawerRows = out;
   }
 
   toast(text, kind = 'info') {

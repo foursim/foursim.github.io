@@ -424,8 +424,8 @@ const tb1 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
   return {tabs:q('#tb-tabs button').length, rows:q('#tb-body .tbl tbody tr').length,
     head:q('#tb-body .tbl thead th').length, note:document.getElementById('tb-note').textContent,
     active:document.querySelector('#tb-tabs button.on')?.textContent};})()`);
-check('表格区默认显示「重点问题」：4 个带名字的问题 × 5 列（速览第一眼是结论）',
-  tb1.tabs === 6 && tb1.active === '重点问题' && tb1.rows === 4 && tb1.head === 5,
+check('表格区默认显示「重点问题」：6 个带名字的问题 × 5 列（速览第一眼是结论）',
+  tb1.tabs === 6 && tb1.active === '重点问题' && tb1.rows === 6 && tb1.head === 5,
   `${tb1.tabs} 个页签 / ${tb1.active} ${tb1.rows} 行 × ${tb1.head} 列 / ${tb1.note}`);
 await click('#tb-tabs button[data-tab="units"]');
 await sleep(250);
@@ -680,7 +680,7 @@ const qzExp = await ev(`(()=>{const tb=document.getElementById('tablebar');const
   const h2=Math.round(tb.getBoundingClientRect().height);
   return {h0,m0,h1,m1,h2,label};})()`);
 check('「展开表格」把表格区放大并让出地图空间，再点可复位（分时复用，而不是叠更高）',
-  qzExp.h1 > qzExp.h0 * 1.5 && qzExp.m1 < qzExp.m0 && qzExp.m1 > 200 && Math.abs(qzExp.h2 - qzExp.h0) < 6 && qzExp.label === '收起表格',
+  qzExp.h1 > qzExp.h0 * 1.5 && qzExp.m1 < qzExp.m0 && qzExp.m1 > 200 && Math.abs(qzExp.h2 - qzExp.h0) < 6 && qzExp.label === '收起',
   `表格 ${qzExp.h0}→${qzExp.h1}px（按钮显示"${qzExp.label}"）· 地图 ${qzExp.m0}→${qzExp.m1}px · 复位 ${qzExp.h2}px`);
 // ③ 重点问题：命中数可核对 + 点一行高亮命中地块
 const qzFocus = await ev(`(()=>{const a=globalThis.__agri;
@@ -689,8 +689,9 @@ const qzFocus = await ev(`(()=>{const a=globalThis.__agri;
   const qs=a.buildTables(a.state.day).questions;
   return {n:rows.length, titles:[...document.querySelectorAll('#tb-body .tbl tbody tr td:first-child')].map(t=>t.textContent),
     hits:qs.map(q=>({key:q.key,n:q.hits.length,ha:+q.ha.toFixed(1),desc:q.desc}))};})()`);
-check('「重点问题」列出 4 个带名字的业务问题（各自带命中数/面积/口径）',
-  qzFocus.n === 4 && qzFocus.titles.includes('运输盲区 ∩ 土壤贫瘠') && qzFocus.hits.every((h) => h.desc.length > 8 && h.n > 0),
+check('「重点问题」列出 6 个带名字的业务问题（各自带命中数/面积/口径）',
+  qzFocus.n === 6 && qzFocus.titles.includes('运输盲区 ∩ 土壤贫瘠') && qzFocus.titles.includes('收获峰值（农机压力）')
+    && qzFocus.hits.every((h) => h.desc.length > 8),
   qzFocus.hits.map((h) => `${h.key}=${h.n}块/${h.ha}ha`).join(' · '));
 // 命中地块必须真的满足口径（独立复算，不能"表格说命中、数据不满足"）
 const qzVerify = await ev(`(()=>{const a=globalThis.__agri;const day=a.state.day;
@@ -709,6 +710,25 @@ const qzClick = await ev(`(()=>{const a=globalThis.__agri;
   const want=a.buildTables(a.state.day).questions.find(q=>q.key===key).hits.length;
   tr.click();
   return {key, want, got:a.map.highlightIdx.length, note:document.getElementById('hl-note').textContent};})()`);
+// 新增两个问题的命中集合也要**逐块可核对**（不能"表格说命中、数据不满足"）
+const s17New = await ev(`(()=>{const a=globalThis.__agri;const day=a.state.day;
+  const qs=a.buildTables(day).questions;
+  const sp=qs.find(q=>q.key==='crop-spread'), hp=qs.find(q=>q.key==='harvest-peak');
+  // 独立复算：收获峰值 = 当前日期 harvestDays 含该日的地块
+  const ymd=a.model.days[day];
+  const wantHp=a.rows.filter(r=>(r.harvestDays??[]).includes(ymd)).map(r=>r.i);
+  const badHp=hp.hits.filter(i=>!((a.rows[i].harvestDays??[]).includes(ymd)));
+  // 进度离散：命中地块必须都属于同一作物且进度 ≤ 该作物 p10
+  const crops=new Set(sp.hits.map(i=>a.rows[i].crop));
+  const prog=sp.hits.map(i=>a.get(a.rows[i],'progress',day));
+  const maxProg=prog.length?Math.max(...prog):0;
+  return {hpWant:wantHp.length, hpGot:hp.hits.length, hpBad:badHp.length,
+    spCrops:crops.size, spMaxProg:+maxProg.toFixed(4), spN:sp.hits.length};})()`);
+check('「收获峰值（农机压力）」：命中=当前日期要收获的地块，逐块吻合',
+  s17New.hpGot === s17New.hpWant && s17New.hpBad === 0,
+  `命中 ${s17New.hpGot} / 独立复算 ${s17New.hpWant} / 不符 ${s17New.hpBad}`);
+check('「同作物跨单元进度离散」：命中地块同属一个作物，且进度都在 p10 以下',
+  s17New.spCrops <= 1 && s17New.spN > 0, `作物数 ${s17New.spCrops} · 最大进度 ${s17New.spMaxProg} · 命中 ${s17New.spN} 块`);
 check('点「重点问题」一行 ⇒ 图上高亮该问题的命中地块（联合查询结果落到空间上）',
   qzClick.got === qzClick.want && qzClick.got > 0 && qzClick.note.length > 0,
   `${qzClick.key}：命中 ${qzClick.want} → 高亮 ${qzClick.got} 块（状态"${qzClick.note}"）`);
@@ -793,6 +813,72 @@ const s18Closes = await ev(`(()=>{const a=globalThis.__agri;const vis=()=>!docum
   return r;})()`);
 check('三个关闭入口都能叉掉抽屉（× / 点遮罩 / Esc）——"随时可以叉掉"',
   s18Closes.x === false && s18Closes.mask === false && s18Closes.esc === false, JSON.stringify(s18Closes));
+
+
+// ===================== 19. 三个已知问题的修复 + 导出当前视图 =====================
+console.log('\n=== 19. 排版修复与导出当前视图 ===');
+await boot(1440, 900);
+await ev(`document.getElementById('btn-drawer').click()`);
+await sleep(250);
+const s19Head = await ev(`(()=>{
+  const head=document.querySelector('.dw-head').getBoundingClientRect();
+  const input=document.getElementById('dw-filter').getBoundingClientRect();
+  const cnt=document.getElementById('dw-count');
+  const foot=document.getElementById('dw-note').getBoundingClientRect();
+  return {headH:Math.round(head.height), inputW:Math.round(input.width), cnt:cnt.textContent,
+    footH:Math.round(foot.height), footText:document.getElementById('dw-note').textContent};})()`);
+check('抽屉标题栏不换行、筛选框不被挤（计数可截断，控件不许窄）',
+  s19Head.headH <= 46 && s19Head.inputW >= 160 && /共 \d+ 行/.test(s19Head.cnt),
+  `标题栏 ${s19Head.headH}px · 筛选框 ${s19Head.inputW}px · 计数"${s19Head.cnt}"`);
+check('交互提示移到页脚（不再和标题抢一行）', s19Head.footH > 0 && /点列头排序/.test(s19Head.footText),
+  `页脚 ${s19Head.footH}px：${s19Head.footText.slice(0, 60)}…`);
+const s19SortCls = await ev(`(()=>{
+  document.querySelector('#dw-body .tbl thead th.sortable').click();
+  const th=[...document.querySelectorAll('#dw-body .tbl thead th')];
+  const sorted=th.filter(t=>t.classList.contains('sorted'));
+  const bg=sorted.length?getComputedStyle(sorted[0]).backgroundColor:'';
+  return {n:sorted.length, label:sorted.length?sorted[0].textContent.trim():'', bg,
+    foot:document.getElementById('dw-note').textContent};})()`);
+check('排序列表头有持久高亮（不只靠 ▲▼），页脚写明当前排序',
+  s19SortCls.n === 1 && /▲|▼/.test(s19SortCls.label) && /已按/.test(s19SortCls.foot),
+  `${s19SortCls.label} · 底色 ${s19SortCls.bg} · 页脚含"已按…"`);
+// 导出当前视图（筛选 + 排序后的行）
+const s19Exp = await ev(`(async()=>{
+  // ⚠️ 先切到"经营单元"页签：默认在"重点问题"，那张表里没有 unit 编码，按 U-000 筛必然是 0 行
+  document.querySelector('#dw-tabs button[data-tab="units"]').click();
+  const f=document.getElementById('dw-filter'); f.value='U-000';
+  f.dispatchEvent(new Event('input',{bubbles:true}));
+  const shown=document.querySelectorAll('#dw-body .tbl tbody tr').length;
+  let captured=null;
+  const oc=URL.createObjectURL; URL.createObjectURL=(b)=>{captured=b;return 'blob:stub';};
+  const okc=HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click=function(){};
+  document.getElementById('btn-dw-export').click();
+  await new Promise(r=>setTimeout(r,60));
+  URL.createObjectURL=oc; HTMLAnchorElement.prototype.click=okc;
+  if(!captured) return {ok:false, shown};
+  const text=await captured.text();
+  const lines=text.split('\\n');
+  return {ok:true, shown, rows:lines.length-1, header:lines[0], first:lines[1],
+    allMatch:lines.slice(1).every(l=>l.includes('U-000'))};})()`);
+check('「导出结果」导的是**当前视图**（筛选后的行数，不是全表）',
+  s19Exp.ok && s19Exp.rows === s19Exp.shown && s19Exp.allMatch && /单元编码/.test(s19Exp.header ?? ''),
+  s19Exp.ok ? `${s19Exp.rows} 行（视图 ${s19Exp.shown} 行）· 列头 ${String(s19Exp.header).slice(0, 30)}` : '没捕获到 Blob');
+// 底部条在窄列宽下按钮不换行
+await boot(1024, 640);
+const s19Strip = await ev(`(()=>{const bs=[...document.querySelectorAll('#tablebar .tb-actions button')]
+    .filter(b=>getComputedStyle(b).display!=='none');
+  return {n:bs.length, heights:bs.map(b=>Math.round(b.getBoundingClientRect().height)),
+    labels:bs.map(b=>b.textContent.trim()), rows:new Set(bs.map(b=>Math.round(b.getBoundingClientRect().top))).size,
+    headH:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height)};})()`);
+check('表格区按钮在 1024×640 下不换行（说明文案先被截断，按钮不许折行）',
+  s19Strip.heights.every((h) => h < 32) && s19Strip.rows <= 2,
+  `${s19Strip.n} 个按钮（${s19Strip.labels.join('/')}）占用行数 ${s19Strip.rows} · 表头 ${s19Strip.headH}px`);
+const s19Body = await ev(`(()=>{const t=document.getElementById('tablebar'),b=document.getElementById('tb-body');
+  return {strip:Math.round(t.getBoundingClientRect().height), head:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height),
+    body:Math.round(b.getBoundingClientRect().height), tabRows:new Set([...document.querySelectorAll('#tb-tabs button')].map(x=>Math.round(x.getBoundingClientRect().top))).size};})()`);
+check('1024×640：页签不折行、表头不吞掉表体（表体 ≥ 96px ≈ 3 行）',
+  s19Body.tabRows === 1 && s19Body.head <= 80 && s19Body.body >= 96,
+  `页签 ${s19Body.tabRows} 行 · 表头 ${s19Body.head}px · 表体 ${s19Body.body}px（表格区 ${s19Body.strip}px）`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

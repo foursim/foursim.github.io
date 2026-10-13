@@ -203,6 +203,10 @@ try {
    * 所以每个问题 = 一句可核对的口径 + 命中数/面积 + 最严重的几块，**点一行就在图上高亮**。
    * 这些问题真正"联"了多张表：地块（P1）× 可达性（路网 Dijkstra）× 土壤（SoilGrids）× 居民点（OSM）。
    */
+  const CROP_NAME = (key) => (CROPS.find((c) => c.key === key)?.name ?? key);
+  /** 收获峰值日只算一次并缓存（27.5 万次循环不该每帧跑） */
+  let harvestPeak = null;
+
   function buildQuestions(day) {
     const pct = (arr, q) => {
       const a = arr.filter((v) => v != null).sort((x, y) => x - y);
@@ -262,6 +266,51 @@ try {
         top: sorted.length ? `${top}：${sorted[0][1].toFixed(1)} ha`
           + (sorted[1] ? `（第 2 名 ${sorted[1][0]} ${sorted[1][1].toFixed(1)} ha）` : '') : '没有盲区',
         desc: `到收储点 > ${accP90.toFixed(1)} 分的地块，按最近居民点归堆`,
+      });
+    }
+    // ⑤ 同作物跨单元的进度离散（讲"该不该统一调度"：同一个作物，不同地块差出几十个百分点）
+    {
+      const byCrop = new Map();
+      for (const r of rows) {
+        if (!(r.gddNeed > 0) || !r.crop) continue;
+        if (!byCrop.has(r.crop)) byCrop.set(r.crop, []);
+        byCrop.get(r.crop).push(get(r, 'progress', day));
+      }
+      let worst = null;
+      for (const [crop, arr] of byCrop) {
+        if (arr.length < 20) continue; // 样本太少的作物不参与（不然一个 3 块地的小作物就会"夺冠"）
+        const a = [...arr].sort((x, y) => x - y);
+        const p10 = a[Math.floor(a.length * 0.1)];
+        const p90 = a[Math.floor(a.length * 0.9)];
+        if (!worst || p90 - p10 > worst.span) worst = { crop, span: p90 - p10, p10, p90, n: arr.length };
+      }
+      const hit = worst ? rows.filter((r) => r.crop === worst.crop && get(r, 'progress', day) <= worst.p10) : [];
+      out.push({
+        key: 'crop-spread', title: '同作物跨单元进度离散',
+        hits: hit.map((r) => r.i), ha: ha(hit),
+        top: worst ? `${CROP_NAME(worst.crop)}：p10~p90 差 ${Math.round(worst.span * 100)} 个百分点（${worst.n} 块）` : '—',
+        desc: '取同一作物在各地块间 p90−p10 最大者；命中 = 该作物进度 ≤ p10 的地块',
+      });
+    }
+    // ⑥ 收获峰值日（农机压力）：命中=**当前日期**要收获的地块；摘要给全窗口最忙的一天
+    {
+      const ymd = ymdAt(day);
+      const today = rows.filter((r) => (r.harvestDays ?? []).includes(ymd));
+      if (!harvestPeak) {
+        // 全窗口逐日统计收获面积（549 × 501 ≈ 27.5 万次，算一次后缓存）
+        const byDay = new Map();
+        for (const r of rows) for (const d of r.harvestDays ?? []) byDay.set(d, (byDay.get(d) ?? 0) + r.area_ha);
+        const best = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
+        harvestPeak = best ? { day: best[0], ha: best[1] } : null;
+      }
+      out.push({
+        key: 'harvest-peak', title: '收获峰值（农机压力）',
+        hits: today.map((r) => r.i), ha: ha(today),
+        // 命中数为 0 时把"最忙的一天"写进摘要 —— 否则一行 0 命中看着像功能坏了
+        top: today.length
+          ? (harvestPeak ? `当日 ${fmtDay(ymd)} 要收 ${today.length} 块；全窗口最忙 ${fmtDay(harvestPeak.day)}：${harvestPeak.ha.toFixed(1)} ha` : '—')
+          : (harvestPeak ? `当日（${fmtDay(ymd)}）无收获；全窗口最忙 ${fmtDay(harvestPeak.day)}：${harvestPeak.ha.toFixed(1)} ha` : '—'),
+        desc: `命中 = 当前日期（${fmtDay(ymd)}）需要收获的地块；摘要给全窗口最忙的一天`,
       });
     }
     // ④ 最远的 10 块地（基线对照：不做归属，直接看最不利的）
@@ -574,6 +623,26 @@ try {
         ui.select(row);
       },
       onExportCsv: () => exportCsv(),
+      /**
+       * 导出**数据视图当前看到的表**（筛选 + 排序后的行）。
+       * 口径写进文件名与提示里：截图/文件离开了页面之后，**"这是哪一天的、筛了什么"必须还在**，
+       * 否则发出去的 CSV 过两天就没人说得清是什么口径了。
+       */
+      onExportView: (r) => {
+        const cellText = (c) => {
+          const o = typeof c === 'object' && c !== null ? c : { text: c };
+          return String(o.text ?? '').replace(/<[^>]*>/g, '');
+        };
+        const head = r.cols.map((c) => c.label);
+        const lines = [head.join(',')]
+          .concat(r.rows.map((row) => row.cells.map(cellText).map(csvCell).join(',')));
+        const stamp = `${r.day}${r.filter ? `_筛${r.filter.replace(/[^\w一-龥-]/g, '')}` : ''}`;
+        download(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }),
+          `农业监测_${r.label}_${stamp}.csv`);
+        ui.toast(`已导出「${r.label}」${r.rows.length} 行`
+          + (r.filter ? `（筛选「${r.filter}」）` : '')
+          + (r.sort ? `（按${r.sort.label}${r.sort.dir > 0 ? '升序' : '降序'}）` : ''), 'ok');
+      },
       onExportPng: () => exportPng(),
       /**
        * **表格 → 地图**：点"经营单元"一行 ⇒ 把该单元的成员地块全高亮并框进视野。
