@@ -307,6 +307,7 @@ const PRESETS = [
       const s = star(T, 'fact_parcel_season');
       return {
         kind: 'pivot', rows: s.rows, note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}`
+          + '；口径：**每季等权**（不是面积加权 —— 要面积加权就用 q3/q10 的面积口径自己算 Σ产量/Σ面积）'
           + (s.renamed.length ? `（重名列加前缀：${s.renamed.join('、')}）` : ''),
         // 口径（yield_basis）**进行维**：一个格子只可能是同一种口径 ⇒ 结构上就杜绝了"跨口径平均"
         pivot: { rowDims: ['crop_name_zh', 'yield_basis'], colDim: 'season_year', value: 'yield_t_ha', agg: 'mean', mixBy: 'yield_basis' },
@@ -409,11 +410,12 @@ const PRESETS = [
       const rows = [
         ...[...agg.values()].map((a) => ({
           level: 'Gemeinde', admin_code: a.code, admin_name: a.name, parent_code: a.parent,
-          n_grids: a.grids.size, n_units: a.units.size, n_parcels: a.parcels, area_ha: round(a.area, 1),
+          // 面积**不再四舍五入到 1 位**：那会让对比容差必须放宽到 ±0.05 ha（0.049 的系统偏差也能混过去）
+          n_grids: a.grids.size, n_units: a.units.size, n_parcels: a.parcels, area_ha: round(a.area, 6),
         })),
         ...[...up.entries()].map(([code, u]) => ({
           level: 'Kreis', admin_code: code, admin_name: nameOf.get(code) ?? '', parent_code: '',
-          n_grids: u.grids.size, n_units: u.units.size, n_parcels: u.parcels, area_ha: round(u.area, 1),
+          n_grids: u.grids.size, n_units: u.units.size, n_parcels: u.parcels, area_ha: round(u.area, 6),
         })),
       ];
       return {
@@ -441,9 +443,13 @@ const PRESETS = [
   },
   /*
    * 下面四条是**汇总型查询**：把剩下的事实表（区域逐日 / 农事事件 / 地块季 / 单元旬）各自压一层。
-   * 目的有两个 —— 交付侧能直接看；以及**给另一套引擎留出可逐行逐列对比的靶子**
-   * （原来只有 5 张表做过交叉验证，剩下 4 张事实表没有任何独立实现核过）。
+   * 目的有两个 —— 交付侧能直接看；以及**给另一套引擎留出可逐行逐列对比的靶子**。
+   * 覆盖情况（`tables/` 下共 6 张 `fact_*`）：q1/q10 覆盖 fact_parcel_season、q2/q11 覆盖 fact_unit_decade、
+   * q4 覆盖 fact_observation、q7 覆盖 fact_zone；本轮补上 fact_region_daily（q8）与 fact_parcel_event（q9），
+   * 并对前两张的**汇总口径**（按年/按旬）也做了逐行逐列对比。
    * 数值一律 round(…, 6)：只是收窄可读性，不给交叉验证制造容差借口。
+   * **求和与均值的空值语义不同**：求和把空值当 0（= SQL 的 SUM 忽略 NULL），均值**必须跳过空值**
+   * （= SQL 的 AVG 忽略 NULL）。q10 曾因为把空值算进均值分母而差了整整 2 倍。
    */
   {
     id: 'q8',
@@ -454,17 +460,24 @@ const PRESETS = [
       const agg = new Map();
       for (const r of rows) {
         const k = String(r.date_key).slice(0, 6);
-        if (!agg.has(k)) agg.set(k, { ym: k, n: 0, prec: 0, hum: 0, prog: 0, dis: 0 });
+        if (!agg.has(k)) agg.set(k, { ym: k, n: 0, prec: 0, hum: 0, nh: 0, prog: 0, np: 0, dis: 0 });
         const a = agg.get(k);
         a.n += 1;
-        a.prec += Number(r.precip_mm) || 0;
-        a.hum += Number(r.humidity_pct) || 0;
-        a.prog += Number(r.crop_progress) || 0;
+        a.prec += Number(r.precip_mm) || 0;   // 求和：空值当 0，与 SUM 语义一致
+        /*
+         * 均值一律**忽略空值**（把空值算进分母会把均值压下去 —— q10 就是这么差了 2 倍）。
+         * 这一条不能只靠 DuckDB 交叉验证兜：交叉验证是可跳过项，没装 DuckDB 时偏差会静默发生。
+         */
+        const h = r.humidity_pct;
+        if (h !== '' && h !== null && h !== undefined && !Number.isNaN(Number(h))) { a.hum += Number(h); a.nh += 1; }
+        const pg = r.crop_progress;
+        if (pg !== '' && pg !== null && pg !== undefined && !Number.isNaN(Number(pg))) { a.prog += Number(pg); a.np += 1; }
         a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
       }
       const out = [...agg.values()].sort((x, y) => x.ym.localeCompare(y.ym)).map((a) => ({
-        year_month: a.ym, n_days: a.n, precip_sum_mm: round(a.prec, 6), humidity_mean_pct: round(a.hum / a.n, 6),
-        progress_mean: round(a.prog / a.n, 6), disease_max: a.dis,
+        year_month: a.ym, n_days: a.n, precip_sum_mm: round(a.prec, 6),
+        humidity_mean_pct: a.nh ? round(a.hum / a.nh, 6) : '', progress_mean: a.np ? round(a.prog / a.np, 6) : '',
+        disease_max: a.dis,
       }));
       return {
         kind: 'list', rows: out, unit: 'mm / % / 0~1 / 级',
@@ -482,18 +495,24 @@ const PRESETS = [
       const agg = new Map();
       for (const r of rows) {
         const k = String(r.event_day).slice(0, 4);
-        if (!agg.has(k)) agg.set(k, { year: k, sow: 0, fertilize: 0, harvest: 0, total: 0 });
+        if (!agg.has(k)) agg.set(k, { year: k, sow: 0, fertilize: 0, harvest: 0, total: 0, ysum: 0, ny: 0 });
         const a = agg.get(k);
         if (r.event_type === 'sow') a.sow += 1;
         else if (r.event_type === 'fertilize') a.fertilize += 1;
         else if (r.event_type === 'harvest') a.harvest += 1;
         a.total += 1;
+        // 顺手把这张表里的**数值列**（收获事件的单产）也纳入对比：原来只比计数，数值列没人核过
+        const v = r.yield_t_ha;
+        if (v !== '' && v !== null && v !== undefined && !Number.isNaN(Number(v))) { a.ysum += Number(v); a.ny += 1; }
       }
-      const out = [...agg.values()].sort((x, y) => x.year.localeCompare(y.year));
+      const out = [...agg.values()].sort((x, y) => x.year.localeCompare(y.year)).map((a) => ({
+        year: a.year, sow: a.sow, fertilize: a.fertilize, harvest: a.harvest, total: a.total,
+        yield_t_ha_sum: round(a.ysum, 6), n_yield: a.ny,
+      }));
       return {
-        kind: 'list', rows: out, unit: '次',
-        note: `fact_parcel_event（农事流水）按年汇总：${rows.length} 条事件`,
-        listCols: ['year', 'sow', 'fertilize', 'harvest', 'total'],
+        kind: 'list', rows: out, unit: '次 / t·ha⁻¹',
+        note: `fact_parcel_event（农事流水）按年汇总：${rows.length} 条事件（含该表数值列 yield_t_ha 的合计与非空计数）`,
+        listCols: ['year', 'sow', 'fertilize', 'harvest', 'total', 'yield_t_ha_sum', 'n_yield'],
       };
     },
   },
@@ -539,18 +558,18 @@ const PRESETS = [
       const agg = new Map();
       for (const r of rows) {
         const k = String(r.decade_key);
-        if (!agg.has(k)) agg.set(k, { decade_key: k, units: new Set(), harv: 0, sown: 0, prog: 0, n: 0, dis: 0 });
+        if (!agg.has(k)) agg.set(k, { decade_key: k, units: new Set(), harv: 0, sown: 0, prog: 0, np: 0, dis: 0 });
         const a = agg.get(k);
         a.units.add(String(r.unit_id));
         a.harv += Number(r.harvested_ha) || 0;
         a.sown += Number(r.sown_ha) || 0;
-        a.prog += Number(r.progress_mean) || 0;
-        a.n += 1;
+        const pg = r.progress_mean;   // 均值跳过空值（同 q8/q10 的规则）
+        if (pg !== '' && pg !== null && pg !== undefined && !Number.isNaN(Number(pg))) { a.prog += Number(pg); a.np += 1; }
         a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
       }
       const out = [...agg.values()].sort((x, y) => x.decade_key.localeCompare(y.decade_key)).map((a) => ({
         decade_key: a.decade_key, n_units: a.units.size, harvested_ha: round(a.harv, 6),
-        sown_ha: round(a.sown, 6), progress_mean: round(a.prog / a.n, 6), disease_max: a.dis,
+        sown_ha: round(a.sown, 6), progress_mean: a.np ? round(a.prog / a.np, 6) : '', disease_max: a.dis,
       }));
       return {
         kind: 'list', rows: out, unit: 'ha / 0~1 / 级',
@@ -725,8 +744,9 @@ if (xlsxOut && results.length) {
   }];
   for (const r of results) {
     if (r.kind === 'pivot') {
-      const rows = r.pv.rowKeys.map((rk, i) => [rk, ...r.pv.matrix[i], r.pv.rowTotals[i]]);
-      rows.push(['合计', ...r.pv.colTotals, r.pv.grand]);
+      const r3 = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
+      const rows = r.pv.rowKeys.map((rk, i) => [rk, ...r.pv.matrix[i].map(r3), r3(r.pv.rowTotals[i])]);
+      rows.push(['合计', ...r.pv.colTotals.map(r3), r3(r.pv.grand)]);
       sheets.push({ name: sheetName(r), columns: [r.pv.rowDims.join(' · '), ...r.pv.colKeys, '合计'], rows });
     } else {
       sheets.push({ name: sheetName(r), columns: r.spec.listCols, rows: r.spec.rows.map((row) => r.spec.listCols.map((c) => row[c])) });
@@ -751,8 +771,9 @@ if (webOut && results.length) {
   const views = PICK.map((id) => {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'pivot') return null;
+    // 显示位数（页面用）与**存储精度**分开：存的与 CSV 一样是 3 位小数，免得三种形态互相对不上
     const dec = r.pv.value === 'progress_mean' ? 3 : 2;
-    const rd = (v) => (typeof v === 'number' ? Math.round(v * 10 ** dec) / 10 ** dec : v);
+    const rd = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
     return {
       id: r.id, title: r.title, question: r.question, note: r.spec.note,
       rowLabel: LABEL[id][0], colLabel: LABEL[id][1],
@@ -882,14 +903,20 @@ if (xlsxOut) {
 
 if (webOut) {
   const payload = JSON.parse(fs.readFileSync(path.resolve(webOut), 'utf8'));
+  // **逐格**比（原来只比行列数与总合计：格子的舍入偏差抓不到，等于没验精度同源）
   const bad = payload.views.filter((v) => {
     const src = results.find((x) => x.id === v.id);
-    return !src || src.pv.rowKeys.length !== v.rowKeys.length || src.pv.colKeys.length !== v.colKeys.length
-      || Math.abs(Number(src.pv.grand) - Number(v.grand)) > 0.01;
+    if (!src || !v.matrix.length) return true;
+    if (src.pv.rowKeys.length !== v.rowKeys.length || src.pv.colKeys.length !== v.colKeys.length) return true;
+    return v.matrix.some((row, i) => row.some((x, j) => {
+      const a = src.pv.matrix[i]?.[j];
+      if (a === '' || a === null || a === undefined) return !(x === '' || x === null);
+      return Math.abs(Number(a) - Number(x)) > 0.0005;   // 3 位小数的舍入余量
+    }));
   });
-  check('页面用的**静态透视**与自研结果同源（视图行列数与合计逐项一致 —— 页面只查表，绝不再算一遍）',
+  check('页面用的**静态透视**与自研结果**逐格同源**（3 位小数口径一致；页面只查表，绝不再算一遍）',
     payload.views.length >= 3 && bad.length === 0,
-    `${payload.views.length} 个视图${bad.length ? `，不一致：${bad.map((v) => v.id).join(',')}` : '，合计全部对齐'}`);
+    `${payload.views.length} 个视图 · ${payload.views.reduce((a, v) => a + v.matrix.length * v.colKeys.length, 0)} 个格子${bad.length ? `，不一致：${bad.map((v) => v.id).join(',')}` : '全部一致'}`);
 }
 
 {

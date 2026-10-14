@@ -132,16 +132,28 @@
    * 所以这里放一段**内联**（非模块、必然执行）的兜底：3 秒后还没看到启动标记，就把原因和做法写在页面上。
    * 判断依据是 main.js 顶部设的 __agriBoot：模块没被拦掉就一定有它，所以不会误报"数据还在加载"。
    */
+  var bootErr = null;
+  // 先记真实的脚本错误：依赖模块在求值时抛错时，main.js 的 fatal() 也不会执行，
+  // 那时候"请用静态服务器打开"会把人带偏 —— 有错就报错，没错才猜"被拦/网慢"
+  addEventListener('error', function (e) {
+    if (bootErr) return;
+    if (e && e.message) bootErr = e.message;
+    else if (e && e.target && e.target.tagName === 'SCRIPT') {
+      bootErr = '模块脚本没加载成（file:// 下浏览器会按 CORS 规则拦掉 type="module"）';
+    } else bootErr = '脚本或资源加载失败';
+  }, true);
   setTimeout(function () {
-    if (globalThis.__agriBoot || globalThis.__agri) return;
+    if (globalThis.__agriBoot || globalThis.__agri) return;   // 启动了（哪怕数据还在加载）就不吭声
     var el = document.getElementById('map');
-    if (!el || el.querySelector('.fatal')) return; // 已有更具体的错误信息就不覆盖
-    el.innerHTML = '<div class="fatal"><h2>请用静态服务器打开</h2>'
-      + '<p>本页面是纯静态的（只需同源的 HTML/CSS/JS 与 data/ 下的本地文件），不需要后端；'
-      + '但直接用 file:// 双击打开时，浏览器会拦掉模块脚本与本地 JSON 请求。</p>'
-      + '<p class="dim">任选一种：<code>npm run serve</code>（项目自带静态服务器）、'
-      + '<code>python -m http.server</code>、或任意静态托管（Nginx / 对象存储 / GitHub Pages）。</p></div>';
-  }, 3000);
+    if (!el || el.querySelector('.fatal')) return;            // 已有更具体的错误信息就不覆盖
+    var why = bootErr
+      ? '<p>原因：<code>' + String(bootErr).slice(0, 120) + '</code>（控制台里有完整堆栈）</p>'
+      : '<p>5 秒内没有启动：可能是模块被浏览器拦掉（用 file:// 打开时），也可能是网络太慢。</p>';
+    el.innerHTML = '<div class="fatal"><h2>页面没有启动</h2>' + why
+      + '<p class="dim">本页是纯静态的（只需同源的 HTML/CSS/JS 与 data/ 下的本地文件），不需要后端。'
+      + '请用静态服务器打开：<code>npm run serve</code>、<code>python -m http.server</code>、'
+      + '或任意静态服务器 / 托管（Nginx / 对象存储 / GitHub Pages）。</p></div>';
+  }, 5000);
 </script>
 </body>
 </html>

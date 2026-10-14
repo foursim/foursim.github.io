@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,6 +32,10 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 
 let pass = 0;
 let fail = 0;
+/** 跳过（不计数）：环境缺可选依赖时用它，而不是把"跳过"算成"通过"或"失败" */
+function skip(label, detail = '') {
+  console.log(`  [SKIP] ${label}${detail ? ` — ${detail}` : ''}`);
+}
 const check = (label, cond, detail = '') => {
   if (cond) { pass++; console.log(`  [OK]   ${label}${detail ? ` — ${detail}` : ''}`); }
   else { fail++; console.log(`  [FAIL] ${label}${detail ? ` — ${detail}` : ''}`); }
@@ -87,6 +91,23 @@ const mouse = (type, x, y) => send('Input.dispatchMouseEvent', { type, x: Math.r
 const shot = async (name) => { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, 'base64')); };
 await send('Page.enable');
 await send('Runtime.enable');
+/*
+ * 用 CDP 的 Network 域**真的记**页面发出去的请求。
+ * 为什么不能只看 performance.getEntriesByType('resource')：WebSocket 握手根本不进 resource timing，
+ * 所以 `ws===0` 是个永远成立的**空断言**（看着有，其实什么都没查）；
+ * 而且 `fetch('https://cdn…')` 这种裸字符串外链源码扫描也扫不到 —— 只有在这里看得见。
+ */
+const netEvents = { ws: [], external: [] };
+ws.addEventListener('message', (e) => {
+  const m = JSON.parse(e.data);
+  if (m.method === 'Network.webSocketCreated') netEvents.ws.push(m.params.url);
+  if (m.method === 'Network.requestWillBeSent') {
+    const u = m.params?.request?.url ?? '';
+    // 只关心"外部主机"：本机 127.0.0.1/localhost 上的静态服务不算（python http.server 那节也会换端口）
+    if (/^https?:\/\//.test(u) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(u)) netEvents.external.push(u);
+  }
+});
+await send('Network.enable');
 
 const center = (sel) => ev(`(()=>{const el=document.querySelector(${JSON.stringify(sel)});if(!el)return null;
   const r=el.getBoundingClientRect();const cx=r.left+r.width/2,cy=r.top+r.height/2;const hit=document.elementFromPoint(cx,cy);
@@ -1025,11 +1046,11 @@ await boot(1440, 900);
 {
   const net = await ev(`(()=>{const rs=performance.getEntriesByType('resource').map(r=>new URL(r.name));
     return {n:rs.length, origins:[...new Set(rs.map(u=>u.origin))],
-      ws:rs.filter(u=>/^wss?:$/.test(u.protocol)).length,
       ext:rs.filter(u=>u.origin!==location.origin).map(u=>u.href).slice(0,3)};})()`);
-  check('运行期**只加载同源静态资源**：无 CDN、无后端接口、无 websocket（纯静态的第一条硬线）',
-    net.ext.length === 0 && net.ws === 0 && net.n > 0,
-    `${net.n} 个请求，来源：${net.origins.join(' / ')}${net.ext.length ? `；外部：${net.ext.join(',')}` : ''}`);
+  check('运行期**只加载同源静态资源**：无 CDN、无后端接口、无 websocket（纯静态第一条硬线；用 CDP 的 Network 事件判，不看 resource timing）',
+    net.ext.length === 0 && net.n > 0 && netEvents.external.length === 0 && netEvents.ws.length === 0,
+    `${net.n} 个同源请求${net.ext.length ? `；resource 里的外部：${net.ext.join(',')}` : ''}`
+      + ` · CDP 记录：外部主机 ${netEvents.external.length} 个${netEvents.external.length ? `（${netEvents.external.slice(0, 2).join(',')}）` : ''} / websocket ${netEvents.ws.length} 个`);
 }
 
 {
@@ -1049,6 +1070,10 @@ await boot(1440, 900);
   let info = null;
   let py = null;
   const pyPort = 8300 + Math.floor(Math.random() * 300);
+  const pyProbe = spawnSync('python', ['-c', 'print(1)'], { encoding: 'utf8' });
+  if (pyProbe.status !== 0) {
+    skip('换成**任意静态服务器**（python -m http.server）页面照样完整跑起来', '环境里没有 python ⇒ 跳过（这一项不该把整个平台变成硬前置）');
+  } else {
   try {
     py = spawn('python', ['-m', 'http.server', String(pyPort), '--bind', '127.0.0.1'], { cwd: process.cwd(), stdio: 'ignore' });
     await sleep(1400);
@@ -1064,6 +1089,7 @@ await boot(1440, 900);
   check('换成**任意静态服务器**（python -m http.server，不含任何后端）页面照样完整跑起来',
     !!info && !info.error && info.parcels > 0 && info.map && !info.fatal,
     info?.error ? `失败：${info.error}` : `python http.server:${pyPort} ⇒ ${info.parcels} 个地块、地图容器就绪、无失败提示`);
+  }
 }
 
 {
@@ -1084,7 +1110,7 @@ await boot(1440, 900);
   let fb = null;
   try {
     await send('Page.navigate', { url: `${fileUrl}?t=${Date.now()}` });
-    await sleep(4200);
+    await sleep(6300);   // 兜底脚本的判定超时是 5s（见 index.html），这里必须等得比它久
     fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, boot:!!globalThis.__agriBoot, text:f?f.textContent.replace(/\s+/g,' ').slice(0,140):''};})()`);
   } catch (err) {
     fb = { error: String(err.message ?? err).slice(0, 80) };

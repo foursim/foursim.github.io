@@ -64,8 +64,10 @@ if (!fs.existsSync(SELF_JSON)) {
   console.log('[准备] 自研侧结果不存在，先跑一次 `node tools/query.mjs --json …`');
   const r = spawnSync(process.execPath, ['tools/query.mjs', '--json', SELF_JSON], { stdio: 'ignore' });
   if (r.status !== 0) {
-    console.log('  ⚠️ 自研引擎没跑通，跳过交叉验证（先修它）');
-    process.exit(0);
+    // 自研引擎跑不通是**真问题**，必须红（原来这里 exit 0，等于把失败伪装成"跳过"）
+    check('自研引擎能跑通（交叉验证的前置）', false, '`node tools/query.mjs` 退出码非 0，先修它');
+    console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
+    process.exit(1);
   }
 }
 const self = JSON.parse(fs.readFileSync(SELF_JSON, 'utf8'));
@@ -113,7 +115,8 @@ const queries = [
   { id: 'q9', sql: `SELECT substr(event_day, 1, 4) AS y,
       SUM(CASE WHEN event_type = 'sow' THEN 1 ELSE 0 END) AS sow,
       SUM(CASE WHEN event_type = 'fertilize' THEN 1 ELSE 0 END) AS fert,
-      SUM(CASE WHEN event_type = 'harvest' THEN 1 ELSE 0 END) AS harv, COUNT(*) AS total
+      SUM(CASE WHEN event_type = 'harvest' THEN 1 ELSE 0 END) AS harv, COUNT(*) AS total,
+      SUM(${dbl('yield_t_ha')}) AS ysum, COUNT(yield_t_ha) AS nyield
       FROM fact_parcel_event GROUP BY 1 ORDER BY 1` },
   { id: 'q10', sql: `SELECT crop_code, COUNT(*) AS n, SUM(${dbl('yield_t')}) AS yt,
       AVG(${dbl('yield_t_ha')}) AS yha, MAX(CAST(disease_level_max AS INTEGER)) AS dis
@@ -138,15 +141,23 @@ const run = spawnSync('python', ['tools/duck-run.py', jobFile, duckFile], {
   encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
 });
 if (run.status !== 0) {
-  console.log(`  ⚠️ DuckDB 侧执行失败，跳过对比：${(run.stderr ?? '').split('\n').slice(-3).join(' ').slice(0, 200)}`);
-  process.exit(0);
+  /*
+   * ⚠️ 这里**必须红**。原来写的是"打印一行 warn 然后 exit 0"：只要某条 SQL 写错（列名改了、表删了），
+   * 整包交叉验证就静默消失，而退出码仍是 0 —— 按退出码判断的脚本会得到"通过"。
+   * 环境没有 DuckDB 是"跳过"（可选加强项），但**有 DuckDB 却跑挂了**是"失败"。
+   */
+  check(`DuckDB 侧执行 ${queries.length} 条 SQL`, false,
+    `执行失败：${(run.stderr ?? '').split('\n').slice(-3).join(' ').slice(0, 200)}`);
+  console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
+  process.exit(1);
 }
 let duck;
 try {
   duck = JSON.parse(fs.readFileSync(duckFile, 'utf8'));
 } catch (err) {
-  console.log(`  ⚠️ 读不到/解析不了 DuckDB 结果，跳过对比：${String(err.message).slice(0, 120)}`);
-  process.exit(0);
+  check('读回 DuckDB 结果（显式 UTF-8 文件）', false, String(err.message).slice(0, 140));
+  console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
+  process.exit(1);
 }
 const R = Object.fromEntries(duck.results.map((r) => [r.id, r]));
 const selfQ = (id) => self.queries.find((q) => q.id === id);
@@ -187,7 +198,9 @@ function comparePivot(id, selfQq, { colIdx = [0, 1], valIdx = 2, label = '' } = 
   }
   const onlySql = [...sqlMap.keys()].filter((k) => !myMap.has(k));
   check(`交叉验证 ${id}${label ? `（${label}）` : ''}：**逐格一致**（${myMap.size} 格，含"哪些格子有值"也要一致）`,
-    bad === 0 && onlyMine.length === 0 && onlySql.length === 0,
+    // ⚠️ 必须同时要求两侧**非空**：只判 bad===0 时，两侧都为空会让它"空过"
+    myMap.size > 0 && sqlMap.size > 0 && myMap.size === sqlMap.size
+      && bad === 0 && onlyMine.length === 0 && onlySql.length === 0,
     `不一致 ${bad} 格 · 只在自研侧 ${onlyMine.length} 格 · 只在 DuckDB 侧 ${onlySql.length} 格 · 最大相对差 ${worst.toExponential(1)}`);
   return { myMap, sqlMap };
 }
@@ -203,7 +216,7 @@ function comparePivot(id, selfQq, { colIdx = [0, 1], valIdx = 2, label = '' } = 
   let bad = 0;
   for (const [k, v] of myMap) if (!sqlMap.has(k) || !close(v, sqlMap.get(k))) bad++;
   check('交叉验证 q1：**单产（行=作物·口径 × 列=年）逐格一致**',
-    bad === 0 && sqlMap.size === myMap.size,
+    myMap.size > 0 && bad === 0 && sqlMap.size === myMap.size,
     `${myMap.size} 格，不一致 ${bad}；口径在行维 ⇒ 格子内不会混口径`);
 }
 comparePivot('q2', selfQ('q2'), { label: '单元 × 旬 进度矩阵' });
@@ -230,7 +243,8 @@ comparePivot('q7', selfQ('q7'), { label: '分区 × 作物（走 SQL JOIN）' })
     });
   });
   check('交叉验证：DuckDB **原生 `PIVOT ... ON ... USING` 宽表** == 自研透视矩阵',
-    bad === 0 && missing === 0,
+    // 同样要求非空：宽表列数必须 >1（除 unit_id 外至少有一旬）且行维非空
+    q.rowKeys.length > 0 && cols.length > 1 && bad === 0 && missing === 0,
     `${q.rowKeys.length} 行 × ${q.colKeys.length} 列，不一致 ${bad}，缺行 ${missing}`);
 }
 
@@ -240,21 +254,24 @@ comparePivot('q7', selfQ('q7'), { label: '分区 × 作物（走 SQL JOIN）' })
   const sql = R.q5.rows.map((r) => r[0]).sort();
   const same = mine.length === sql.length && mine.every((x, i) => x === sql[i]);
   check('交叉验证 q5：**多条件联合筛选命中集合完全一致**（主键逐个对，不是只比个数）',
-    same, `自研 ${mine.length} 块 vs DuckDB ${sql.length} 块${same ? '（集合相同）' : `；首个差异 ${mine.find((x, i) => x !== sql[i]) ?? '（长度不同）'}`}`);
+    mine.length > 0 && same, `自研 ${mine.length} 块 vs DuckDB ${sql.length} 块${same ? '（集合相同）' : `；首个差异 ${mine.find((x, i) => x !== sql[i]) ?? '（长度不同）'}`}`);
 }
 
 {
   const q = selfQ('q6');
   const mine = new Map(q.rows.filter((r) => r.level === 'Gemeinde').map((r) => [r.admin_code, r]));
-  // 面积给"半个输出单位"的余量：自研侧为可读性四舍五入到 1 位小数（990.2 vs 990.171）
-  const closeArea = (a, b) => Math.abs(Number(a) - Number(b)) <= 0.05 + 1e-6 * Math.max(1, Math.abs(Number(b)));
+  /*
+   * 面积曾经用 ±0.05 ha 的绝对容差（因为自研侧为了可读性 round 到 1 位小数），
+   * 那样"系统性偏 0.049 ha"也会判过 —— 现在自研侧按 6 位小数输出，容差回到通用相对容差（1e-6）。
+   */
+  const closeArea = (a, b) => close(a, b);
   let bad = 0;
   for (const r of R.q6.rows) {
     const m = mine.get(r[0]);
     if (!m || !close(m.n_grids, r[1]) || !close(m.n_units, r[2]) || !close(m.n_parcels, r[3]) || !closeArea(m.area_ha, r[4])) bad++;
   }
   check('交叉验证 q6：**四层钻取链的逐层去重计数一致**（网格/单元/地块/面积四项）',
-    bad === 0 && R.q6.rows.length === mine.size,
+    mine.size > 0 && bad === 0 && R.q6.rows.length === mine.size,
     `${R.q6.rows.length} 个行政区划，不一致 ${bad}`);
 }
 
@@ -282,7 +299,8 @@ function compareAgg(id, label) {
       }
     });
   }
-  check(`交叉验证 ${id}：**${label}** 逐行逐列一致`, bad === 0 && sql.length === mine.size,
+  check(`交叉验证 ${id}：**${label}** 逐行逐列一致`,
+    mine.size > 0 && sql.length > 0 && bad === 0 && sql.length === mine.size,
     `${sql.length} 行 × ${q.cols.length - 1} 个度量 · 不一致 ${bad}${diffs.length ? `（${diffs.join('; ')}）` : ''}`);
 }
 

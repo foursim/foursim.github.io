@@ -166,7 +166,7 @@ fact_unit_decade,n_parcels,地块数,number of parcels,地块数,number,,>0,1,M,
 fact_unit_decade,temp_mean_c,平均气温,mean air temperature,平均气温,number,,-40~45,℃,M,model,1,
 fact_unit_decade,precip_sum_mm,旬降水量,decade precipitation sum,旬降水量,number,,0~600,mm,M,model,1,
 fact_unit_decade,soil_wetness_mean,旬均根区土壤湿度,mean root-zone soil wetness,旬均根区土壤湿度,number,,0~1,1,M,soil-survey,0,
-fact_unit_decade,progress_mean,旬均生长进度,mean crop progress,旬均生长进度,number,,0~1,1,M,model,1,
+fact_unit_decade,progress_mean,旬均生长进度,mean crop progress,单元内**按地块等权**平均（与 water_index_mean / fertility_index_mean 的**面积加权**口径不同 —— 比之前先看权重口径）,number,,0~1,1,M,model,1,单元内**按地块等权**平均（与 water_index_mean / fertility_index_mean 的**面积加权**口径不同 —— 比之前先看权重口径）
 fact_unit_decade,progress_p10,生长进度 p10,crop progress 10th percentile,看单元内进度离散,number,,0~1,1,O,model,1,看单元内进度离散
 fact_unit_decade,progress_p90,生长进度 p90,crop progress 90th percentile,生长进度 p90,number,,0~1,1,O,model,1,
 fact_unit_decade,disease_level_max,病害气象等级(最高),max disease level,病害气象等级(最高),number,,1~5,级,M,model,1,
