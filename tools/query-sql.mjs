@@ -140,6 +140,13 @@ const queries = [
       FROM fact_parcel_season s LEFT JOIN dim_parcel p ON p.parcel_id = s.parcel_id
       LEFT JOIN dim_crop c ON c.crop_code = s.crop_code
       GROUP BY 1 ORDER BY 1` },
+  // 收获排产压力：与自研 q14 逐行逐列比（吨·分钟 = 运力占用）
+  { id: 'q14', sql: `SELECT s.harvest_day AS day, COUNT(*) AS n, SUM(${dbl('p.area_ha')}) AS ha,
+      SUM(${dbl('s.yield_t')}) AS yt,
+      SUM(${dbl('s.yield_t')} * ${dbl('p.t_min_to_store')}) / NULLIF(SUM(${dbl('s.yield_t')}), 0) AS tmin_w,
+      SUM(${dbl('s.yield_t')} * ${dbl('p.t_min_to_store')}) AS haul
+      FROM fact_parcel_season s LEFT JOIN dim_parcel p ON p.parcel_id = s.parcel_id
+      WHERE s.harvest_day <> '' GROUP BY 1 ORDER BY 1` },
   // 农事日历：与自研 q13 逐格比（月 × 事件类型计数；月份键由 event_day 前 6 位拼出来）
   { id: 'q13', sql: `SELECT substr(event_day, 1, 4) || '-' || substr(event_day, 5, 2) AS ym, event_type, COUNT(*) AS val
       FROM fact_parcel_event GROUP BY 1, 2` },
@@ -329,6 +336,7 @@ compareAgg('q9', '农事事件 → 年 × 类型计数');
 compareAgg('q10', '地块季 → 作物（季数 / 总产 / 平均单产 / 病级峰值）');
 compareAgg('q11', '单元 × 旬 → 旬（单元数 / 收获与播种面积 / 进度均值）');
 compareAgg('q12', '单产两套口径（季等权 / Σ总产÷Σ面积）');
+compareAgg('q14', '收获排产压力（按日：块数 / 面积 / 产量 / 加权运距 / 吨·分钟）');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`SQL 侧产物：${path.relative(process.cwd(), SQL_DIR)}/（保留下来便于人工核对）`);

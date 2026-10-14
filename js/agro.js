@@ -385,6 +385,16 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
   };
   const sampleIdx = [];
   const snowed = new Set();
+  /**
+   * 窗口**起点**的年与月日（如 2024-07-01）。
+   *
+   * 用途只有一个，但是必须的：**多年生作物的收割期可能落在窗口开始之前**（牧草 06-10 < 07-01）。
+   * 模型没有"窗口之前割过没有"的记忆，于是第一版在窗口第一天把它们**全割了一遍**
+   * —— 实测 178 块牧草 / 292.4 ha 全挤在 2024-07-01，成了"全窗口最忙的一天"（伪峰，
+   * 而 2025 年同一批牧草的收割日是 06-10，说明 2024 那次本就发生在窗口之前）。
+   */
+  const startYear = Number(String(days[0]).slice(0, 4));
+  const startMD = mdOf(days[0]);
 
   for (let d = 0; d < n; d++) {
     const ymd = days[d];
@@ -505,8 +515,15 @@ export function simulate({ seed = 20261013, parcels, weather = null, mix = DEFAU
         const gddDone = !perYear && prog >= 0.999;
         // 一年生：成熟就收（但不早于本季收获月的 1 号），或到了本季的**收获截止日**必须收。
         // 两个日期都来自 `season`（已按播种年归位），所以不会出现"播种当天就收"。
+        /*
+         * 多年生的第三个条件 = **窗口边缘闸门**：起点那年，若该作物的收割期本身**不晚于窗口开始**
+         * （牧草 06-10 ≤ 07-01），当年就**整年不记** —— 它多半在窗口开始前已经割过。
+         * ⚠️ 这个判断必须按**作物的收割期**，不能按"当天"：第一版写成 `md <= startMD`，
+         * 于是窗口第一天被挡住、第二天照样割 ⇒ 伪峰只从 07-01 挪到 07-02。
+         */
+        const skipStartYear = year === startYear && c.harvestMD <= startMD;
         const canHarvest = perYear
-          ? (md >= c.harvestMD && s.harvestYear !== year)
+          ? (md >= c.harvestMD && s.harvestYear !== year && !skipStartYear)
           : ((gddDone && season && ymd >= season.early) || (season && ymd >= season.deadline));
         if (canHarvest) {
           s.harvestDays.push(ymd);

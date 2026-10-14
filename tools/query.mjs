@@ -628,6 +628,51 @@ const PRESETS = [
     },
   },
   /*
+   * **q14 收获排产压力（按日）**：回答"哪天会堵"。
+   *
+   * 口径（全部可追，没有拍脑袋的系数）：
+   * - 当日待收量 `yield_t` 与面积来自季表 + 地块表；
+   * - `t_min_w` = 当日待收量的**加权平均**到收储点时间（按吨加权，不是按块平均）；
+   * - `haul_t_min` = Σ(吨 × 分钟) = 当日的"**运力占用**"（吨·分钟）—— 越大越堵。
+   *   不引"车数/载重/趟数"这类项目里没有的参数：占用是**算出来的**，不是假设出来的。
+   *
+   * ⚠️ **口径边界（如实标注）**：多年生作物（牧草/果园）没有"播种→收获"的季，
+   * 因此不在这张表里（它们的收获看事件表 q9/q13）。所以本表的最忙一天 = **一年生作物**的最忙一天，
+   * 与页面重点问题（含多年生）的峰值日不是同一件事 —— 判据把这条边界也验了。
+   */
+  {
+    id: 'q14',
+    title: '收获排产压力（按日）',
+    question: '哪几天最堵：当日待收吨数、加权平均运距、以及运力占用（吨·分钟）',
+    build: (T) => {
+      const st = star(T, 'fact_parcel_season');
+      const agg = new Map();
+      for (const r of st.rows) {
+        if (!r.harvest_day) continue;
+        const k = String(r.harvest_day);
+        if (!agg.has(k)) agg.set(k, { day: k, n: 0, ha: 0, yt: 0, haul: 0, nyt: 0 });
+        const a = agg.get(k);
+        a.n += 1;
+        a.ha += Number(r.area_ha) || 0;
+        const y = Number(r.yield_t);
+        const tm = Number(r.t_min_to_store);
+        if (Number.isFinite(y) && y > 0 && Number.isFinite(tm)) { a.yt += y; a.haul += y * tm; a.nyt += 1; }
+      }
+      const out = [...agg.values()].sort((x, y) => x.day.localeCompare(y.day)).map((a) => ({
+        day: a.day, n_parcels: a.n, area_ha: round(a.ha, 6),
+        yield_t: round(a.yt, 6), t_min_w: a.yt > 0 ? round(a.haul / a.yt, 6) : '',
+        haul_t_min: round(a.haul, 6),
+      }));
+      const busiest = [...out].sort((a, b) => b.haul_t_min - a.haul_t_min)[0];
+      return {
+        kind: 'list', rows: out, unit: '块 / ha / t / min / t·min',
+        note: `fact_parcel_season ⟕ dim_parcel（要地块面积与到收储点时间）：${out.length} 个收获日`
+          + `（**一年生作物口径**，多年生不在季表里）· 运力占用最高：${busiest ? `${busiest.day} ${busiest.haul_t_min} t·min` : '—'}`,
+        listCols: ['day', 'n_parcels', 'area_ha', 'yield_t', 't_min_w', 'haul_t_min'],
+      };
+    },
+  },
+  /*
    * q9 把事件表按**年**压了一层，这里按**月**再压一层：
    * 农忙窗口是以月为单位的（哪个月在播种、哪个月在收），按年看不出来。
    * `count` 聚合要一列数值，所以补一列常量 1 —— 引擎对空值/非数值一律跳过，不能拿月份的字符串去数。
@@ -850,7 +895,7 @@ if (webOut && results.length) {
   const CHART_VIEW = { q13: 'stacked' };
   // 对照表：q12（两套单产口径）+ q8（区域逐日的月汇总）——
   // 后者是**唯一还没进页面**的那张事实表的汇总（天气/进度/病害的月度背景），能看数据也能当判据靶子
-  const LIST_PICK = ['q12', 'q8'];
+  const LIST_PICK = ['q12', 'q8', 'q14'];
   const listViews = LIST_PICK.map((id) => {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'list') return null;
@@ -1146,6 +1191,39 @@ if (webOut) {
       checked.push(`${q.id}${what}`);
       if (all.join('|') !== sorted.join('|')) bad.push(`${q.id}.${what}`);
     }
+  }
+  {
+    /*
+     * **q14 的三条判据**：守恒（当日的产量与面积加起来必须等于季表口径的总和）、
+     * 逐日独立复算、以及**口径边界**（季表里没有多年生作物 —— 这条是"如实标注"而不是"忘了"）。
+     */
+    const q = results.find((x) => x.id === 'q14');
+    const st = star(T, 'fact_parcel_season');
+    const withDay = st.rows.filter((r) => r.harvest_day);
+    const sum = (list, f) => list.reduce((a, r) => a + (Number(f(r)) || 0), 0);
+    const totHa = sum(withDay, (r) => r.area_ha);
+    const totYt = sum(withDay, (r) => r.yield_t);
+    const bad = [];
+    const rows14 = q.spec.rows;                        // 列表型结果的行在 spec.rows（透视才在 pv）
+    for (const day of [rows14[0].day, rows14[rows14.length - 1].day]) {
+      const g = withDay.filter((r) => String(r.harvest_day) === day);
+      const mine = rows14.find((r) => r.day === day);
+      const haul = sum(g, (r) => (Number(r.yield_t) || 0) * (Number(r.t_min_to_store) || 0));
+      if (mine.n_parcels !== g.length || Math.abs(mine.area_ha - sum(g, (r) => r.area_ha)) > 1e-6
+        || Math.abs(mine.yield_t - sum(g, (r) => r.yield_t)) > 1e-6
+        || Math.abs(mine.haul_t_min - haul) > 1e-6) bad.push(day);
+    }
+    check('收获排产压力：**守恒**（逐日面积/产量加起来 = 季表口径总和）且抽样两天逐项独立复算一致',
+      bad.length === 0
+        && Math.abs(sum(rows14, (r) => r.area_ha) - totHa) < 0.05
+        && Math.abs(sum(rows14, (r) => r.yield_t) - totYt) < 0.05,
+      `${rows14.length} 个收获日 · 面积 ${round(sum(rows14, (r) => r.area_ha), 1)}/${round(totHa, 1)} ha`
+        + ` · 产量 ${round(sum(rows14, (r) => r.yield_t), 0)}/${round(totYt, 0)} t`
+        + (bad.length ? ` · 不一致 ${bad.join('、')}` : ''));
+    const peren = withDay.filter((r) => Number(r.gdd_need_cd) === 0);
+    check('排产压力的**口径边界**如实标注：多年生作物（牧草/果园）没有"播种→收获"季 ⇒ 不在本表里',
+      peren.length === 0 && /多年生/.test(String(q.spec?.note ?? q.note ?? '')),
+      `季表里 gdd_need_cd=0 的行 ${peren.length} 条（0 = 边界成立）· 说明里写明了`);
   }
   check('**时间维按时间排**（年 / 年月 / 年月旬 这类键必须单调递增）',
     bad.length === 0,

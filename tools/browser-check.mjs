@@ -1241,7 +1241,7 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
       csvHead:lines[1].split(','), csvLines:lines.length, note:document.getElementById('tb-note').textContent};})()`);
   check('页面「透视视图」也能渲染**对照表**（q12 单产两套口径）：列名与行数照离线 JSON，导出 CSV 同源',
     // 视图数写死是故意的：少一个视图（离线没生成/页面没读）必须当场红
-    list.idx >= 0 && list.kind === 'list' && list.nViews === 7
+    list.idx >= 0 && list.kind === 'list' && list.nViews === 8
       && list.head.join(',') === list.cols.join(',') && list.bodyRows === list.nRows
       && list.csvHead.join(',') === list.cols.join(',') && list.csvLines === list.nRows + 2
       && /只查表/.test(list.note),
@@ -1603,9 +1603,14 @@ const s27c = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
     csvHead:(csv.indexOf(String.fromCharCode(10))>=0?csv.split(String.fromCharCode(10))[1]:''), hasZeroDec:/[0-9]+\.00/.test(csv),
     // 月份必须**单调递增**（离线已排好序；页面若自己重排过，这里会红）
     months:trs.map(tr=>tr.children[0].textContent.trim()).filter(x=>/^[0-9]{4}-[0-9]{2}$/.test(x))};})()`);
-check('**农事日历进页面**（离线算好、页面只查表）：13 月 × 3 类型 + 合计行，且合计与离线/交叉验证过的数**对得上**',
+// 合计**不写死**：读离线 CSV 的合计行来对（数据一改（如修了窗口边缘伪峰）这里不该假失败）
+const q13csv = fs.readFileSync('tables/query/q13_农事日历_月_事件类型_次_.csv', 'utf8').trim().split(/\r?\n/);
+const q13tot = q13csv[q13csv.length - 1].split(',').slice(1, 4).map((x) => Number(x));
+check('**农事日历进页面**（离线算好、页面只查表）：13 月 × 3 类型 + 合计行，且合计与离线**表**逐项对得上',
   s27c.idx >= 0 && s27c.nRows === 14 && s27c.head.length === 5 && /月份/.test(s27c.head[0])
-    && s27c.lastRow[0] === '合计' && /^586,772,801,2159$/.test(s27c.lastRow.slice(1).join(','))
+    && s27c.lastRow[0] === '合计'
+    && s27c.lastRow.slice(1, 4).map(Number).every((v, i) => v === q13tot[i])
+    && Number(s27c.lastRow[4]) === q13tot.reduce((a, b) => a + b, 0)
     && /^\d{4}-\d{2}$/.test(String(s27c.firstRow[0])) && !s27c.hasZeroDec
     && s27c.months.length === 13 && s27c.months.every((m, i) => i === 0 || m > s27c.months[i - 1]),
   `${s27c.n} 个视图（选中「${s27c.title}」· ${s27c.nRows - 1} 个月 + 合计行，${(s27c.months ?? [])[0]} → ${(s27c.months ?? []).slice(-1)[0]}）· 表头 ${(s27c.head ?? []).join('|')}`
@@ -1770,6 +1775,38 @@ check('**不画"双地图"**的空间依据（实测）：最小尺寸下劈半�
   mapW1024 / 2 < 250 && mapW1440 / 2 < 420,
   `1440×900 地图区 ${mapW1440}px ⇒ 劈半 ${Math.round(mapW1440 / 2)}px · `
     + `1024×640 ⇒ ${mapW1024}px、劈半 ${Math.round(mapW1024 / 2)}px（已定：前后对照改用条形图）`);
+
+
+// 收获峰值日：页面（模型逐日序列）× 离线事件表（收获事件）两条路径必须同一天
+{
+  const evLines = fs.readFileSync('tables/fact_parcel_event.csv', 'utf8').trim().split(/\r?\n/);
+  const evHead = evLines[0].split(',');
+  const iType = evHead.indexOf('event_type');
+  const iDay = evHead.indexOf('event_day');
+  const iPid = evHead.indexOf('parcel_id');
+  const par = fs.readFileSync('tables/dim_parcel.csv', 'utf8').trim().split(/\r?\n/);
+  const parHead = par[0].split(',');
+  const iP = parHead.indexOf('parcel_id');
+  const iA = parHead.indexOf('area_ha');
+  const area = new Map(par.slice(1).map((l) => { const c = l.split(','); return [c[iP], Number(c[iA])]; }));
+  const byDay = new Map();
+  for (const l of evLines.slice(1)) {
+    const c = l.split(',');
+    if (c[iType] !== 'harvest') continue;
+    byDay.set(c[iDay], (byDay.get(c[iDay]) ?? 0) + (area.get(c[iPid]) ?? 0));
+  }
+  const offPeak = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
+  const page = await ev(`(()=>{const a=globalThis.__agri;
+    const q=(a.buildTables(a.state.day).questions??[]).find(x=>x.key==='harvest-peak')||{};
+    const m=String(q.top||'').match(/全窗口最忙\\s*(\\d{4})-(\\d{2})-(\\d{2})[：:]\\s*([0-9.]+)\\s*ha/);
+    return {top:q.top||'', day:m?(m[1]+m[2]+m[3]):null, ha:m?Number(m[4]):null};})()`);
+  check('**收获峰值日两条路径一致**：页面（模型逐日序列）与离线事件表（收获事件）指向同一天，面积对得上',
+    page.day === offPeak[0] && Math.abs((page.ha ?? -1) - offPeak[1]) < 0.2,
+    `页面 ${page.day} ${page.ha} ha · 离线事件表 ${offPeak[0]} ${offPeak[1].toFixed(1)} ha（${byDay.size} 个收获日）`);
+  check('峰值日**不在窗口第一天**（多年生作物窗口边缘伪峰已修：2024-07-01 那 292.4 ha 是假的）',
+    page.day !== null && page.day !== '20240701' && offPeak[0] !== '20240701',
+    `页面峰值 ${page.day} · 离线峰值 ${offPeak[0]} · 窗口首日 2024-07-01 的收获面积 ${(byDay.get('20240701') ?? 0).toFixed(1)} ha`);
+}
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

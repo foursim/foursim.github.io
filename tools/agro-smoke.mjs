@@ -135,6 +135,35 @@ for (const p of R.parcels) {
   // 看**峰值**而不是末值：末值可能是下一季刚播种（进度归 0）
   if (p.harvestDay && Math.max(...s) >= 0.85) peakOk++;
 }
+/*
+ * **收获不能在窗口第一天堆成伪峰**（这条是修完 bug 加的防回归）：
+ * 多年生作物（牧草 06-10 / 果园 09-25）的收割期可能早于窗口开始（2024-07-01），
+ * 模型没有"窗口前割过没有"的记忆 ⇒ 第一版在 2024-07-01 把 178 块牧草（292.4 ha）全割了，
+ * 而 2025 年同一批牧草的收割日是 06-10 —— 说明 2024 那次本就发生在窗口之前。
+ * 口径：起点那年，**作物的收割期不晚于窗口开始就整年不记**（按作物判，不按"当天"判 ——
+ * 按当天判只会把伪峰从 07-01 挪到 07-02）。
+ */
+{
+  const start = String(R.days?.[0] ?? '');
+  const startMD = `${start.slice(4, 6)}-${start.slice(6, 8)}`;
+  const byDay = new Map();
+  for (const p of R.parcels) for (const d of p.harvestDays ?? []) byDay.set(d, (byDay.get(d) ?? 0) + p.area_ha);
+  const total = [...byDay.values()].reduce((a, b) => a + b, 0);
+  const day1 = byDay.get(start) ?? 0;
+  // 起点年不记收获的作物：收割期 ≤ 窗口开始（牧草）；该记的：收割期晚于窗口开始（果园 09-25）
+  const skipCrops = CROPS.filter((c) => c.gddNeed === 0 && c.harvestMD <= startMD).map((c) => c.key);
+  const keepCrops = CROPS.filter((c) => c.gddNeed === 0 && c.harvestMD > startMD).map((c) => c.key);
+  const skipBad = R.parcels.filter((p) => skipCrops.includes(p.crop)
+    && (p.harvestDays ?? []).some((d) => d.slice(0, 4) === start.slice(0, 4)));
+  const keepBad = R.parcels.filter((p) => keepCrops.includes(p.crop)
+    && !(p.harvestDays ?? []).some((d) => d.slice(0, 4) === start.slice(0, 4)));
+  check('窗口第一天的收获面积≈0（多年生作物的收割期早于窗口开始 ⇒ 不该在第一天集体收割）',
+    day1 < total * 0.01,
+    `窗口 ${start}：当天 ${day1.toFixed(1)} ha / 全窗口 ${total.toFixed(0)} ha（${(100 * day1 / (total || 1)).toFixed(2)}%）`);
+  check(`多年生作物的**窗口边缘**口径正确：收割期早于窗口开始的当年不记（${skipCrops.join('/') || '无'}），晚于的照记（${keepCrops.join('/') || '无'}）`,
+    skipCrops.length > 0 && keepCrops.length > 0 && skipBad.length === 0 && keepBad.length === 0,
+    `不记 ${skipCrops.join('/') || '无'}（越界 ${skipBad.length} 块）· 照记 ${keepCrops.join('/') || '无'}（漏记 ${keepBad.length} 块）`);
+}
 check('生长进度季内单调不减（换季重置除外）', mono, `${progParcels} 块`);
 check('已收获地块的进度峰值 ≥ 0.85（收获前确实长到了接近成熟）',
   peakOk >= harvested.length * 0.6, `${peakOk}/${harvested.length}`);
