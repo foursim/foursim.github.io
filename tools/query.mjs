@@ -34,6 +34,7 @@
  *   npm run query -- --check         # 只跑判据（供全量重跑用）
  */
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const arg = (k, d) => {
@@ -42,6 +43,7 @@ const arg = (k, d) => {
 };
 const has = (k) => process.argv.includes(`--${k}`);
 const TABLES = arg('tables', 'tables');
+const DATA = arg('data', 'data');   // q15 要读离线情景推演结果（data/scenario.json）
 const OUT = arg('out', path.join(TABLES, 'query'));
 
 let pass = 0;
@@ -672,6 +674,67 @@ const PRESETS = [
       };
     },
   },
+  /**
+   * **q15 排产建议：错峰 vs 增点**
+   *
+   * 回答"最堵的一天到底该怎么办"。三个数都是**算出来的**，参数只有一个且明写（错峰窗口 ±K 天）：
+   * - 现状：峰值日的运力占用（= q14 的最大值）；
+   * - 错峰：把峰值日的占用摊到前后各 K 天（每天新增 = 峰值占用 ÷ (2K+1)）⇒ 取摊完后的新峰值；
+   * - 增点：把**受益面积最大**的那个候选点应用到峰值日的待收地块上
+   *   （`improved` 是 `[地块索引, 省多少分钟]`；索引与 `dim_parcel` 行序一致 —— 这一点有判据验）。
+   *
+   * ⚠️ 这是**估算**不是仿真：假设"量能摊开、路况不变、新点只影响当天待收地块"。
+   * 页面/文档里不许把它说成"仿真结果"。
+   */
+  {
+    id: 'q15',
+    title: '排产建议：错峰 vs 增点（三个数）',
+    question: '峰值日那么堵：把活摊开更管用，还是就近建点更管用？',
+    build: (T) => {
+      const st = star(T, 'fact_parcel_season');
+      const scen = JSON.parse(fs.readFileSync(path.join(arg('data', 'data'), 'scenario.json'), 'utf8'));
+      const byDay = new Map();
+      for (const r of st.rows) {
+        if (!r.harvest_day) continue;
+        const y = Number(r.yield_t);
+        const tm = Number(r.t_min_to_store);
+        if (!(Number.isFinite(y) && y > 0 && Number.isFinite(tm))) continue;
+        byDay.set(r.harvest_day, (byDay.get(r.harvest_day) ?? 0) + y * tm);
+      }
+      const peak = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
+      const K = 3;                                   // 错峰窗口 ±3 天（明写；不是拟合出来的）
+      const per = peak[1] / (2 * K + 1);
+      const peakSpread = Math.max(...[...byDay.keys()].map((d) => (d === peak[0] ? byDay.get(d) - peak[1] + per : byDay.get(d) + per)));
+      const best = scen.candidates.reduce((b, c) => (c.improved_ha > (b ? b.improved_ha : -1) ? c : b), null);
+      const gain = new Map(best.improved);
+      const idxOf = new Map(T.get('dim_parcel').rows.map((r, i) => [r.parcel_id, i]));
+      let peakHaul = 0;
+      let peakNew = 0;
+      for (const r of st.rows) {
+        if (r.harvest_day !== peak[0]) continue;
+        const y = Number(r.yield_t);
+        const tm = Number(r.t_min_to_store);
+        if (!(Number.isFinite(y) && y > 0 && Number.isFinite(tm))) continue;
+        peakHaul += y * tm;
+        peakNew += y * Math.max(0, tm - (gain.get(idxOf.get(r.parcel_id)) ?? 0));
+      }
+      const dropSpread = 1 - peakSpread / peak[1];
+      const dropPoint = (peakHaul - peakNew) / peak[1];
+      const winner = dropSpread >= dropPoint ? '错峰' : '增点';
+      const rows = [
+        { 情景: '现状（峰值日）', 峰值占用: round(peak[1], 1), 降幅: 0, 说明: `${peak[0]}：${round(peakHaul, 1)} t·min（= q14 的最大值）` },
+        { 情景: `错峰（摊到前后各 ${K} 天）`, 峰值占用: round(peakSpread, 1), 降幅: round(dropSpread, 4), 说明: `每天新增 = 峰值占用 ÷ ${2 * K + 1}；再取摊完后的新峰值（另 ${2 * K} 天本来就有收获）` },
+        { 情景: '增点（建在受益最大处）', 峰值占用: round(peak[1] - peakHaul + peakNew, 1), 降幅: round(dropPoint, 4), 说明: `候选 ${(best.lon).toFixed(4)},${(best.lat).toFixed(4)}（${best.improved_ha} ha 受益）只作用在**峰值日**的待收地块上` },
+      ];
+      return {
+        kind: 'list', rows, unit: 't·min / 比例',
+        note: `**估算**（不是仿真）：参数只有错峰窗口 ±${K} 天 · 本数据下更管用的是 **${winner}**`
+          + `（错峰降 ${(dropSpread * 100).toFixed(1)}% vs 增点降 ${(dropPoint * 100).toFixed(1)}%）`
+          + ' · 假设：量能摊开、路况不变、新点只影响当天待收地块',
+        listCols: ['情景', '峰值占用', '降幅', '说明'],
+      };
+    },
+  },
   /*
    * q9 把事件表按**年**压了一层，这里按**月**再压一层：
    * 农忙窗口是以月为单位的（哪个月在播种、哪个月在收），按年看不出来。
@@ -840,7 +903,7 @@ if (jsonOut && results.length) {
 // ---------- 多 sheet Excel（业务方不用装任何工具就能读；与 CSV 是同一批结果） ----------
 const xlsxOut = arg('xlsx');
 if (xlsxOut && results.length) {
-  const { writeXlsx } = await import('./xlsx.mjs');
+  const { writeXlsx, colName } = await import('./xlsx.mjs');   // colName 用来算图表的数据引用
   /** Excel 的 sheet 名有硬限制：≤31 字符、不能含 []:*?/\\ ，且必须唯一 */
   const sheetName = (r) => {
     const t = `${r.id} ${r.title}`.replace(/[\[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -864,13 +927,114 @@ if (xlsxOut && results.length) {
       const r3 = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
       const rows = r.pv.rowKeys.map((rk, i) => [rk, ...r.pv.matrix[i].map(r3), r3(r.pv.rowTotals[i])]);
       rows.push(['合计', ...r.pv.colTotals.map(r3), r3(r.pv.grand)]);
-      sheets.push({ name: sheetName(r), columns: [r.pv.rowDims.join(' · '), ...r.pv.colKeys, '合计'], rows });
+      const sh = { name: sheetName(r), columns: [r.pv.rowDims.join(' · '), ...r.pv.colKeys, '合计'], rows };
+      // 透视表也能配图：表头是 [行维, ...colKeys, 合计]，所以列的字母要按 colKeys 的位置算
+      if (r.id === 'q13') {
+        const ci = r.pv.colKeys.indexOf('harvest');
+        if (ci >= 0) {
+          sh.chart = {
+            title: '农事日历：各月收获次数', seriesName: '收获次数',
+            catCol: colName(0), valCol: colName(ci + 1), from: 2, to: r.pv.rowKeys.length + 1,
+            cats: r.pv.rowKeys.map(String),
+            vals: r.pv.rowKeys.map((_, i) => Number(r.pv.matrix[i][ci]) || 0),
+            widthPx: 660, heightPx: 330,
+          };
+        }
+      }
+      sheets.push(sh);
     } else {
-      sheets.push({ name: sheetName(r), columns: r.spec.listCols, rows: r.spec.rows.map((row) => r.spec.listCols.map((c) => row[c])) });
+      const sh = { name: sheetName(r), columns: r.spec.listCols, rows: r.spec.rows.map((row) => r.spec.listCols.map((c) => row[c])) };
+      /*
+       * **给"按时间看量"的表配原生柱状图**（不是图片）：导出的 Excel 不该只有干巴巴的数字。
+       * 引用按**工作表里的真实列字母**算，避免"图和数不对应"这种最尴尬的错误。
+       */
+      const ci = (c) => r.spec.listCols.indexOf(c);
+      const col = (c) => (ci(c) >= 0 ? colName(ci(c)) : null);
+      const nums = (c) => r.spec.rows.map((x) => Number(x[c]) || 0);
+      const strs = (c) => r.spec.rows.map((x) => String(x[c] ?? ''));
+      if (r.id === 'q14') {
+        sh.chart = {
+          title: '收获排产压力：每日运力占用（吨·分钟）', seriesName: '吨·分钟',
+          catCol: col('day'), valCol: col('haul_t_min'), from: 2, to: r.spec.rows.length + 1,
+          cats: strs('day'), vals: nums('haul_t_min'), widthPx: 660, heightPx: 330,
+        };
+      }
+      if (r.id === 'q13') {
+        sh.chart = {
+          title: '农事日历：各月收获次数', seriesName: '收获次数',
+          catCol: col('月份'), valCol: col('harvest'), from: 2, to: r.spec.rows.length + 1,
+          cats: strs('月份'), vals: nums('harvest'), widthPx: 660, heightPx: 330,
+        };
+      }
+      sheets.push(sh);
     }
   }
   const info = writeXlsx(path.resolve(xlsxOut), sheets);
-  console.log(`[写出] ${xlsxOut}（${info.sheets} 个工作表，${(info.bytes / 1024).toFixed(0)} KB：一张查询一个 sheet + 说明）`);
+  console.log(`[写出] ${xlsxOut}（${info.sheets} 个工作表 / ${info.charts} 张原生图表，${(info.bytes / 1024).toFixed(0)} KB：一张查询一个 sheet + 说明）`);
+  /*
+   * **把图表读回来核对**（不是"人工核过可打开"这种口头保证）：
+   * 用 openpyxl 打开产物，核对每个图表的类型、标题与**数据引用**是否与预期一致 ——
+   * 图表 XML 拼错了 Excel 只会显示一个空框，不读回来等于没验。
+   * python/openpyxl 缺失时**跳过**（可选加强项）；装了却读不出来 ⇒ 失败。
+   */
+  {
+    const probe = path.join(path.dirname(path.resolve(xlsxOut)), '_xlsx_probe.json');
+    const py = [
+      'import json, openpyxl, sys',
+      'wb = openpyxl.load_workbook(sys.argv[1])',
+      'out = {"sheets": wb.sheetnames, "charts": []}',
+      'for ws in wb.worksheets:',
+      '    for ch in getattr(ws, "_charts", []):',
+      '        title = None',
+      '        try: title = ch.title.tx.rich.p[0].r[0].t',
+      '        except Exception: title = None',
+      '        out["charts"].append({"sheet": ws.title, "type": type(ch).__name__, "title": title,',
+      '            "val": [ (s.val.numRef.f if (s.val and s.val.numRef) else None) for s in ch.series ],',
+      '            "cat": [ (s.cat.strRef.f if (s.cat and getattr(s.cat, "strRef", None)) else None) for s in ch.series ],',
+      '            "n": [ (len(s.val.numRef.numCache.pt) if (s.val and s.val.numRef and s.val.numRef.numCache) else 0) for s in ch.series ]})',
+      'open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(out, ensure_ascii=False))',
+    ].join('\n');
+    const r2 = spawnSync('python', ['-c', py, path.resolve(xlsxOut), probe],
+      { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    let got = null;
+    try { got = JSON.parse(fs.readFileSync(probe, 'utf8')); } catch { got = null; }
+    fs.rmSync(probe, { force: true });
+    if (!got) {
+      check('Excel 原生图表（openpyxl 读回核对）', true,
+        `跳过：读不出产物（${String(r2.stderr ?? '').split('\n')[0].slice(0, 60) || '没有 python/openpyxl'}）`);
+    } else {
+      const wantTitles = sheets.filter((x) => x.chart).map((x) => x.chart.title);
+      const byTitle = (t) => got.charts.find((c) => c.title === t);
+      // 期望引用按**图表声明本身**算（透视表比列表多一行"合计"，用 rows.length+1 会算错）
+      const wantRef = (title) => {
+        const sh = sheets.find((x) => x.chart && x.chart.title === title);
+        if (!sh) return null;
+        const q = (n) => `'${n.replace(/'/g, "''")}'`;
+        return `${q(sh.name)}!$${sh.chart.valCol}$${sh.chart.from}:$${sh.chart.valCol}$${sh.chart.to}`;
+      };
+      /*
+       * 还要验"**图和数真的对应**"：引用范围必须正好覆盖数据行（从第 2 行到数据末行），
+       * **不能把透视的"合计"行也圈进图里**（那样图上会多一根"总和"柱，一眼假）。
+       */
+      const DATA_ROWS = { q14: results.find((x) => x.id === 'q14')?.spec.rows.length, q13: results.find((x) => x.id === 'q13')?.pv.rowKeys.length };
+      const rangeOk = sheets.filter((x) => x.chart).every((x) => {
+        const id = Object.keys(DATA_ROWS).find((k) => sheetName(results.find((r) => r.id === k)) === x.name);
+        return id ? x.chart.to === DATA_ROWS[id] + 1 && x.chart.from === 2 : false;
+      });
+      const c14 = byTitle('收获排产压力：每日运力占用（吨·分钟）');
+      const c13 = byTitle('农事日历：各月收获次数');
+      const rows14 = sheets.find((x) => x.chart && x.chart.title === '收获排产压力：每日运力占用（吨·分钟）')?.rows.length ?? -1;
+      check('Excel **带原生图表**：openpyxl 读回的类型/标题/**数据引用**/缓存点数全对得上（不是"人工打开看过"）',
+        got.charts.length === wantTitles.length && got.charts.length >= 2
+          && !!c14 && c14.type === 'BarChart' && c14.val[0] === wantRef(c14.title)
+          && c14.n[0] === (DATA_ROWS.q14 ?? -9) && c14.cat[0] === wantRef('收获排产压力：每日运力占用（吨·分钟）').replace(/\$F\$/g, '$A$')
+          && !!c13 && c13.type === 'BarChart' && c13.val[0] === wantRef(c13.title)
+          && c13.n[0] === (DATA_ROWS.q13 ?? -9) && rangeOk,
+        `${got.sheets.length} 个工作表 / ${got.charts.length} 张图：`
+          + got.charts.map((c) => `${c.title}（${c.type}，${c.val[0]}，缓存 ${c.n[0]} 点）`).join('；')
+          + ` · 引用范围正好覆盖数据行=${rangeOk}`);
+    }
+  }
 }
 
 // ---------- 页面用的**静态透视视图**（页面只查表，一行计算都不做） ----------
@@ -1058,7 +1222,7 @@ if (xlsxOut) {
   const head = okSize ? fs.readFileSync(f).subarray(0, 2).toString('latin1') : '';
   check('查询结果已导成**多 sheet Excel**（一张查询一个 sheet + 说明；ZIP 头正确、体积合理）',
     okSize && head === 'PK',
-    okSize ? `${(fs.statSync(f).size / 1024).toFixed(0)} KB / ${results.length + 1} 个工作表（另用 openpyxl 人工核过可打开）` : '没写出');
+    okSize ? `${(fs.statSync(f).size / 1024).toFixed(0)} KB / ${results.length + 1} 个工作表（图表另由 openpyxl 读回核对）` : '没写出');
 }
 
 if (webOut) {
@@ -1224,6 +1388,28 @@ if (webOut) {
     check('排产压力的**口径边界**如实标注：多年生作物（牧草/果园）没有"播种→收获"季 ⇒ 不在本表里',
       peren.length === 0 && /多年生/.test(String(q.spec?.note ?? q.note ?? '')),
       `季表里 gdd_need_cd=0 的行 ${peren.length} 条（0 = 边界成立）· 说明里写明了`);
+  }
+  {
+    /*
+     * q15 的三条：① 与 q14 同口径（"现状"必须等于 q14 的最大值）；
+     * ② **不变量**：两条建议都不许让峰值变差；③ 跨文件一致性：`scenario.json` 的地块索引
+     * 与 `dim_parcel` 的行序必须一致（不一致的话"增点"就是算在别的地块上，还看不出来）。
+     */
+    const q15 = results.find((x) => x.id === 'q15');
+    const q14 = results.find((x) => x.id === 'q14');
+    const q14max = Math.max(...q14.spec.rows.map((r) => r.haul_t_min));
+    const now = q15.spec.rows[0].峰值占用;
+    const worse = q15.spec.rows.slice(1).filter((r) => r.峰值占用 > now + 0.5);
+    const scen = JSON.parse(fs.readFileSync(path.join(DATA, 'scenario.json'), 'utf8'));
+    const gj = JSON.parse(fs.readFileSync(path.join(DATA, 'parcels.geojson'), 'utf8'));
+    const ids = gj.features.map((f) => f.properties?.id ?? f.properties?.parcel_id);
+    const par = T.get('dim_parcel').rows.map((r) => r.parcel_id);
+    check('排产建议：「现状」与 q14 同口径（= q14 的日峰值），且两条建议都**不会让峰值变差**',
+      Math.abs(now - q14max) < 0.5 && worse.length === 0,
+      `现状 ${round(now, 1)} = q14 峰值 ${round(q14max, 1)} t·min · 更差的建议 ${worse.length} 条`);
+    check('排产建议的**跨文件一致性**：`scenario.json` 的地块索引与 `dim_parcel` 行序一致（否则"增点"算在别的地块上）',
+      ids.length === par.length && ids.every((x, i) => x === par[i]),
+      `${ids.length} 个地块逐个同序 · 错峰降 ${(q15.spec.rows[1].降幅 * 100).toFixed(1)}% vs 增点降 ${(q15.spec.rows[2].降幅 * 100).toFixed(1)}%`);
   }
   check('**时间维按时间排**（年 / 年月 / 年月旬 这类键必须单调递增）',
     bad.length === 0,

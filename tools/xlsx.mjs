@@ -102,7 +102,7 @@ const esc = (s) => String(s)
   .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
   // Excel 不接受 XML 1.0 之外的控制字符（CSV 里偶尔混进来的 \r 也会让文件打不开）
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-const colName = (n) => {
+export const colName = (n) => {
   let s = '';
   let x = n + 1;
   while (x > 0) {
@@ -121,13 +121,66 @@ function cell(ref, v) {
 }
 
 /**
+ * **原生图表**（Office Open XML DrawingML chart）。
+ *
+ * 为什么不用图片：图片是死的，用户改一个数图不会跟着变；原生图表在 Excel 里是可编辑、可换类型的。
+ * 代价是要自己拼 `chartSpace`，而且**极易拼错还不报错**（Excel 打开只显示一个空框）——
+ * 所以判据里用 openpyxl `read_chart` **把图表读回来**核对类型与数据引用（见 `npm run query`）。
+ *
+ * 目前只做**柱状图**（本项目要用到的就是"按日/按月看量"）。缓存（c:cat / c:val）一并写进去：
+ * 有些查看器不读工作表就直接画图，没缓存会画出空白图。
+ */
+const EMU_PER_PX = 9525;
+const qname = (n) => `'${String(n).replace(/'/g, "''")}'`;
+
+function barChartXml(sheetName, ch) {
+  const cats = ch.cats ?? [];
+  const vals = ch.vals ?? [];
+  const ref = (col) => `${qname(sheetName)}!$${col}$${ch.from}:$${col}$${ch.to}`;
+  const numPts = vals.map((v, i) => `<c:pt idx="${i}"><c:v>${Number.isFinite(v) ? v : 0}</c:v></c:pt>`).join('');
+  const strPts = cats.map((v, i) => `<c:pt idx="${i}"><c:v>${esc(v)}</c:v></c:pt>`).join('');
+  const serName = ch.seriesName ?? '值';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="zh-CN"/><a:t>${esc(ch.title ?? '')}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>
+<c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/>
+<c:barChart><c:barDir val="${ch.barDir === 'bar' ? 'bar' : 'col'}"/><c:grouping val="clustered"/><c:varyColors val="0"/>
+<c:ser><c:idx val="0"/><c:order val="0"/>
+<c:tx><c:strRef><c:f>${qname(sheetName)}!$${ch.valCol}$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${esc(serName)}</c:v></c:pt></c:strCache></c:strRef></c:tx>
+<c:cat><c:strRef><c:f>${ref(ch.catCol)}</c:f><c:strCache><c:ptCount val="${cats.length}"/>${strPts}</c:strCache></c:strRef></c:cat>
+<c:val><c:numRef><c:f>${ref(ch.valCol)}</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${vals.length}"/>${numPts}</c:numCache></c:numRef></c:val>
+</c:ser>
+<c:axId val="100"/><c:axId val="200"/></c:barChart>
+<c:catAx><c:axId val="100"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:crossAx val="200"/></c:catAx>
+<c:valAx><c:axId val="200"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="100"/></c:valAx>
+</c:plotArea>
+<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend><c:plotVisOnly val="1"/></c:chart>
+</c:chartSpace>`;
+}
+
+function drawingXml(chartRid, ch) {
+  const cx = Math.round((ch.widthPx ?? 620) * EMU_PER_PX);
+  const cy = Math.round((ch.heightPx ?? 300) * EMU_PER_PX);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+<xdr:oneCellAnchor><xdr:from><xdr:col>${ch.anchorCol ?? 12}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${ch.anchorRow ?? 1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+<xdr:ext cx="${cx}" cy="${cy}"/>
+<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="图表 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${chartRid}"/></a:graphicData></a:graphic>
+</xdr:graphicFrame><xdr:clientData/></xdr:oneCellAnchor>
+</xdr:wsDr>`;
+}
+
+/**
  * 写一个工作簿。
  * @param {string} out 目标路径
  * @param {{name:string, columns:any[], rows:any[][], note?:string}[]} sheets
  *  - `columns` 表头文案；`rows` 与表头等长的二维数组（与 CSV 导出的数据同源，避免两套口径）
  */
 export function writeXlsx(out, sheets) {
-  const sheetXml = (sh) => {
+  const sheetXml = (sh, drawingRid) => {
     const widths = sh.columns.map((c, i) => {
       let w = String(c ?? '').length * 1.6 + 2;
       for (const r of sh.rows.slice(0, 400)) {
@@ -146,12 +199,13 @@ export function writeXlsx(out, sheets) {
     }).join('');
     const lastRef = `${colName(sh.columns.length - 1)}${sh.rows.length + 1}`;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
 <sheetFormatPr defaultRowHeight="14.5"/>
 <cols>${widths}</cols>
 <sheetData>${head}${body}</sheetData>
 <autoFilter ref="A1:${lastRef}"/>
+${drawingRid ? `<drawing r:id="${drawingRid}"/>` : ''}
 </worksheet>`;
   };
 
@@ -167,6 +221,8 @@ export function writeXlsx(out, sheets) {
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 ${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
+${sheets.filter((x) => x.chart).map((_, k) => `<Override PartName="/xl/charts/chart${k + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+<Override PartName="/xl/drawings/drawing${k + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`).join('\n')}
 </Types>`, 'utf8'),
   });
   parts.push({
@@ -204,10 +260,34 @@ ${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
 <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
 </styleSheet>`, 'utf8'),
   });
+  let chartIdx = 0;
   sheets.forEach((sh, i) => {
-    parts.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: Buffer.from(sheetXml(sh), 'utf8') });
+    const hasChart = !!sh.chart;
+    const rid = hasChart ? 'rId1' : null;
+    parts.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: Buffer.from(sheetXml(sh, rid), 'utf8') });
+    if (!hasChart) return;
+    chartIdx += 1;
+    // 图表本体
+    parts.push({ name: `xl/charts/chart${chartIdx}.xml`, data: Buffer.from(barChartXml(sheetNames[i], sh.chart), 'utf8') });
+    // 绘图容器（把图表锚在某个单元格上）
+    parts.push({ name: `xl/drawings/drawing${chartIdx}.xml`, data: Buffer.from(drawingXml('rId1', sh.chart), 'utf8') });
+    parts.push({
+      name: `xl/drawings/_rels/drawing${chartIdx}.xml.rels`,
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartIdx}.xml"/>
+</Relationships>`, 'utf8'),
+    });
+    // 工作表 → 绘图 的关系
+    parts.push({
+      name: `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${chartIdx}.xml"/>
+</Relationships>`, 'utf8'),
+    });
   });
 
   fs.writeFileSync(out, zip(parts));
-  return { sheets: sheets.length, bytes: fs.statSync(out).size };
+  return { sheets: sheets.length, charts: chartIdx, bytes: fs.statSync(out).size };
 }
