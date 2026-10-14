@@ -439,6 +439,126 @@ const PRESETS = [
       };
     },
   },
+  /*
+   * 下面四条是**汇总型查询**：把剩下的事实表（区域逐日 / 农事事件 / 地块季 / 单元旬）各自压一层。
+   * 目的有两个 —— 交付侧能直接看；以及**给另一套引擎留出可逐行逐列对比的靶子**
+   * （原来只有 5 张表做过交叉验证，剩下 4 张事实表没有任何独立实现核过）。
+   * 数值一律 round(…, 6)：只是收窄可读性，不给交叉验证制造容差借口。
+   */
+  {
+    id: 'q8',
+    title: '区域逐日 → 按年月汇总',
+    question: '每个月的水热与进度（降水合计 / 湿度均值 / 进度均值 / 病级峰值）',
+    build: (T) => {
+      const rows = T.get('fact_region_daily').rows;
+      const agg = new Map();
+      for (const r of rows) {
+        const k = String(r.date_key).slice(0, 6);
+        if (!agg.has(k)) agg.set(k, { ym: k, n: 0, prec: 0, hum: 0, prog: 0, dis: 0 });
+        const a = agg.get(k);
+        a.n += 1;
+        a.prec += Number(r.precip_mm) || 0;
+        a.hum += Number(r.humidity_pct) || 0;
+        a.prog += Number(r.crop_progress) || 0;
+        a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
+      }
+      const out = [...agg.values()].sort((x, y) => x.ym.localeCompare(y.ym)).map((a) => ({
+        year_month: a.ym, n_days: a.n, precip_sum_mm: round(a.prec, 6), humidity_mean_pct: round(a.hum / a.n, 6),
+        progress_mean: round(a.prog / a.n, 6), disease_max: a.dis,
+      }));
+      return {
+        kind: 'list', rows: out, unit: 'mm / % / 0~1 / 级',
+        note: `fact_region_daily（区域 × 日）按年月汇总：${out.length} 个月 / ${rows.length} 天`,
+        listCols: ['year_month', 'n_days', 'precip_sum_mm', 'humidity_mean_pct', 'progress_mean', 'disease_max'],
+      };
+    },
+  },
+  {
+    id: 'q9',
+    title: '农事事件 → 按年 × 类型计数',
+    question: '每年播种 / 施肥 / 收获各多少次（农事流水事实表）',
+    build: (T) => {
+      const rows = T.get('fact_parcel_event').rows;
+      const agg = new Map();
+      for (const r of rows) {
+        const k = String(r.event_day).slice(0, 4);
+        if (!agg.has(k)) agg.set(k, { year: k, sow: 0, fertilize: 0, harvest: 0, total: 0 });
+        const a = agg.get(k);
+        if (r.event_type === 'sow') a.sow += 1;
+        else if (r.event_type === 'fertilize') a.fertilize += 1;
+        else if (r.event_type === 'harvest') a.harvest += 1;
+        a.total += 1;
+      }
+      const out = [...agg.values()].sort((x, y) => x.year.localeCompare(y.year));
+      return {
+        kind: 'list', rows: out, unit: '次',
+        note: `fact_parcel_event（农事流水）按年汇总：${rows.length} 条事件`,
+        listCols: ['year', 'sow', 'fertilize', 'harvest', 'total'],
+      };
+    },
+  },
+  {
+    id: 'q10',
+    title: '地块季 → 按作物汇总',
+    question: '每类作物有多少季、总产与平均单产多少、最高病级（口径另见 q1）',
+    build: (T) => {
+      const rows = T.get('fact_parcel_season').rows;
+      const agg = new Map();
+      for (const r of rows) {
+        const k = String(r.crop_code);
+        if (!agg.has(k)) agg.set(k, { crop_code: k, n: 0, yt: 0, yha: 0, nyha: 0, dis: 0 });
+        const a = agg.get(k);
+        a.n += 1;                                        // 季数 = 全部季（含没有单产记录的）
+        a.yt += Number(r.yield_t) || 0;                  // 合计：空值当 0 累加，与 SUM 语义一致
+        /*
+         * ⚠️ 均值必须**忽略空值**：把空值当 0 计进分母，均值会被整体压下去。
+         * 这个错（正好差 2 倍）是交叉验证抓出来的 —— 自研侧 2.89 t/ha vs DuckDB 5.78 t/ha，
+         * 因为一半的季没有单产记录。SQL 的 AVG 忽略 NULL，自研的 pivot() 也忽略空值，只有这里漏了。
+         */
+        const v = r.yield_t_ha;
+        if (v !== '' && v !== null && v !== undefined && !Number.isNaN(Number(v))) { a.yha += Number(v); a.nyha += 1; }
+        a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
+      }
+      const out = [...agg.values()].sort((x, y) => x.crop_code.localeCompare(y.crop_code)).map((a) => ({
+        crop_code: a.crop_code, n_seasons: a.n, yield_t_total: round(a.yt, 6),
+        yield_t_ha_avg: a.nyha ? round(a.yha / a.nyha, 6) : '', disease_max: a.dis,
+      }));
+      return {
+        kind: 'list', rows: out, unit: 't / t/ha / 级',
+        note: `fact_parcel_season（地块 × 季）按作物汇总：${rows.length} 季`,
+        listCols: ['crop_code', 'n_seasons', 'yield_t_total', 'yield_t_ha_avg', 'disease_max'],
+      };
+    },
+  },
+  {
+    id: 'q11',
+    title: '单元 × 旬 → 按旬汇总',
+    question: '每旬有多少单元在作业、收获/播种面积合计、进度均值与病级峰值（作业调度看着用）',
+    build: (T) => {
+      const rows = T.get('fact_unit_decade').rows;
+      const agg = new Map();
+      for (const r of rows) {
+        const k = String(r.decade_key);
+        if (!agg.has(k)) agg.set(k, { decade_key: k, units: new Set(), harv: 0, sown: 0, prog: 0, n: 0, dis: 0 });
+        const a = agg.get(k);
+        a.units.add(String(r.unit_id));
+        a.harv += Number(r.harvested_ha) || 0;
+        a.sown += Number(r.sown_ha) || 0;
+        a.prog += Number(r.progress_mean) || 0;
+        a.n += 1;
+        a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
+      }
+      const out = [...agg.values()].sort((x, y) => x.decade_key.localeCompare(y.decade_key)).map((a) => ({
+        decade_key: a.decade_key, n_units: a.units.size, harvested_ha: round(a.harv, 6),
+        sown_ha: round(a.sown, 6), progress_mean: round(a.prog / a.n, 6), disease_max: a.dis,
+      }));
+      return {
+        kind: 'list', rows: out, unit: 'ha / 0~1 / 级',
+        note: `fact_unit_decade（单元 × 旬）按旬汇总：${out.length} 旬 × ${rows.length} 行`,
+        listCols: ['decade_key', 'n_units', 'harvested_ha', 'sown_ha', 'progress_mean', 'disease_max'],
+      };
+    },
+  },
 ];
 
 // ===================== 输出 =====================
@@ -581,6 +701,79 @@ if (jsonOut && results.length) {
   console.log(`[写出] ${jsonOut}（机器可读结果，供交叉验证）`);
 }
 
+// ---------- 多 sheet Excel（业务方不用装任何工具就能读；与 CSV 是同一批结果） ----------
+const xlsxOut = arg('xlsx');
+if (xlsxOut && results.length) {
+  const { writeXlsx } = await import('./xlsx.mjs');
+  /** Excel 的 sheet 名有硬限制：≤31 字符、不能含 []:*?/\\ ，且必须唯一 */
+  const sheetName = (r) => {
+    const t = `${r.id} ${r.title}`.replace(/[\[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim();
+    return t.length > 31 ? `${r.id} ${t.slice(r.id.length + 1, 31 - r.id.length - 1)}` : t;
+  };
+  const sheets = [{
+    name: '说明',
+    columns: ['项', '内容'],
+    rows: [
+      ['数据集', 'Wolnzach 乡镇农业监测 · 透视与联合查询结果'],
+      ['生成时间', new Date().toISOString()],
+      ['数据源', 'tables/*.csv（与 农业监测数据.xlsx 同一批表）'],
+      ['谁算的', 'npm run query（自研零依赖引擎）；另有 npm run query:sql 用 DuckDB 交叉验证'],
+      ['怎么看', '一张查询一个 sheet：行维在左、列维在表头、右下角是总合计；单产行标签自带口径（不同口径不能比大小）'],
+      ['注意', '单产按 yield_basis 分籽粒/鲜重/干花/干草/鲜果；混口径的格子会在 CSV 侧标 * 并在备注里列出'],
+      ['查询清单', results.map((r) => `${r.id} ${r.title}`).join('; ')],
+    ],
+  }];
+  for (const r of results) {
+    if (r.kind === 'pivot') {
+      const rows = r.pv.rowKeys.map((rk, i) => [rk, ...r.pv.matrix[i], r.pv.rowTotals[i]]);
+      rows.push(['合计', ...r.pv.colTotals, r.pv.grand]);
+      sheets.push({ name: sheetName(r), columns: [r.pv.rowDims.join(' · '), ...r.pv.colKeys, '合计'], rows });
+    } else {
+      sheets.push({ name: sheetName(r), columns: r.spec.listCols, rows: r.spec.rows.map((row) => r.spec.listCols.map((c) => row[c])) });
+    }
+  }
+  const info = writeXlsx(path.resolve(xlsxOut), sheets);
+  console.log(`[写出] ${xlsxOut}（${info.sheets} 个工作表，${(info.bytes / 1024).toFixed(0)} KB：一张查询一个 sheet + 说明）`);
+}
+
+// ---------- 页面用的**静态透视视图**（页面只查表，一行计算都不做） ----------
+const webOut = arg('web');
+if (webOut && results.length) {
+  /*
+   * 为什么不在页面里现算透视：**页面要保持纯静态、零依赖、首屏不卡**（见 README「纯静态保证」）。
+   * 透视是离线工具的事，页面只 fetch 这份 JSON 然后把矩阵画成表 —— 和 `data/scenario.json` 一个思路。
+   * 这份 JSON 由 `npm run query` 从 `tables/*.csv` 生成，与 `tables/query/*.csv` 是同一批结果的两种形态。
+   */
+  const PICK = ['q1', 'q3', 'q2', 'q7'];
+  const LABEL = {
+    q1: ['作物 · 口径', '年'], q3: ['统计网格', '作物'], q2: ['经营单元', '旬'], q7: ['管理分区', '作物'],
+  };
+  const views = PICK.map((id) => {
+    const r = results.find((x) => x.id === id);
+    if (!r || r.kind !== 'pivot') return null;
+    const dec = r.pv.value === 'progress_mean' ? 3 : 2;
+    const rd = (v) => (typeof v === 'number' ? Math.round(v * 10 ** dec) / 10 ** dec : v);
+    return {
+      id: r.id, title: r.title, question: r.question, note: r.spec.note,
+      rowLabel: LABEL[id][0], colLabel: LABEL[id][1],
+      unit: r.unit ?? '', agg: r.pv.agg, value: r.pv.value, decimals: dec,
+      rowKeys: r.pv.rowKeys, colKeys: r.pv.colKeys,
+      matrix: r.pv.matrix.map((row) => row.map(rd)),
+      rowTotals: r.pv.rowTotals.map(rd), colTotals: r.pv.colTotals.map(rd), grand: rd(r.pv.grand),
+      n: r.pv.n,
+    };
+  }).filter(Boolean);
+  const payload = {
+    dataset: 'Wolnzach 乡镇农业监测（模拟）× 透视视图',
+    generated_at: new Date().toISOString(),
+    source: '由 npm run query 离线生成自 tables/*.csv；页面只查表（纯静态，无后端）',
+    views,
+  };
+  const file = path.resolve(webOut);
+  fs.writeFileSync(file, JSON.stringify(payload), 'utf8');
+  console.log(`[写出] ${webOut}（${views.length} 个静态透视视图：${views.map((v) => `${v.id} ${v.rowKeys.length}×${v.colKeys.length}`).join(' / ')}，${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+}
+
 // ===================== 判据 =====================
 
 console.log('\n=== 透视与联合查询判据 ===');
@@ -644,6 +837,29 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 }
 
 {
+  // 独立复算 q10 的平均单产（只取非空值），与查询结果比 —— 交叉验证能抓，但这条不依赖 DuckDB 在场
+  const p10 = PRESETS.find((p) => p.id === 'q10').build(T);
+  const rows = T.get('fact_parcel_season').rows;
+  const acc = new Map();
+  for (const r of rows) {
+    const k = String(r.crop_code);
+    if (!acc.has(k)) acc.set(k, { n: 0, sum: 0 });
+    const v = r.yield_t_ha;
+    if (v !== '' && v !== null && v !== undefined && !Number.isNaN(Number(v))) {
+      const a = acc.get(k); a.n += 1; a.sum += Number(v);
+    }
+  }
+  const bad = p10.rows.filter((r) => {
+    const a = acc.get(r.crop_code);
+    if (!a || !a.n) return r.yield_t_ha_avg !== '';
+    return Math.abs(Number(r.yield_t_ha_avg) - a.sum / a.n) > 1e-6;
+  });
+  check('均值型汇总**忽略空值**（空值算 0 会把均值压下去；这条独立复算，不依赖另一套引擎在场）',
+    bad.length === 0 && p10.rows.length > 0,
+    bad.length ? `${bad.length} 类不符：${bad.map((r) => r.crop_code).join(',')}` : `${p10.rows.length} 类作物的平均单产与"非空值均值"一致`);
+}
+
+{
   const p6 = PRESETS.find((p) => p.id === 'q6').build(T);
   const g = p6.rows.filter((r) => r.level === 'Gemeinde');
   const up = p6.rows.filter((r) => r.level === 'Kreis');
@@ -652,6 +868,28 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
     up.length > 0 && sum(up, 'n_parcels') === sum(g, 'n_parcels') && sum(up, 'n_units') === sum(g, 'n_units')
       && Math.abs(sum(up, 'area_ha') - sum(g, 'area_ha')) < 0.5,
     `${g.length} 个乡 → ${up.length} 个县：地块 ${sum(up, 'n_parcels')}、单元 ${sum(up, 'n_units')}、面积 ${round(sum(up, 'area_ha'), 1)} ha`);
+}
+
+if (xlsxOut) {
+  const f = path.resolve(xlsxOut);
+  const okSize = fs.existsSync(f) && fs.statSync(f).size > 8000;
+  // 结构自检：xlsx 是 ZIP，前两字节必须是 'PK'（写出器自己实现的 ZIP，先看这层最便宜的判据）
+  const head = okSize ? fs.readFileSync(f).subarray(0, 2).toString('latin1') : '';
+  check('查询结果已导成**多 sheet Excel**（一张查询一个 sheet + 说明；ZIP 头正确、体积合理）',
+    okSize && head === 'PK',
+    okSize ? `${(fs.statSync(f).size / 1024).toFixed(0)} KB / ${results.length + 1} 个工作表（另用 openpyxl 人工核过可打开）` : '没写出');
+}
+
+if (webOut) {
+  const payload = JSON.parse(fs.readFileSync(path.resolve(webOut), 'utf8'));
+  const bad = payload.views.filter((v) => {
+    const src = results.find((x) => x.id === v.id);
+    return !src || src.pv.rowKeys.length !== v.rowKeys.length || src.pv.colKeys.length !== v.colKeys.length
+      || Math.abs(Number(src.pv.grand) - Number(v.grand)) > 0.01;
+  });
+  check('页面用的**静态透视**与自研结果同源（视图行列数与合计逐项一致 —— 页面只查表，绝不再算一遍）',
+    payload.views.length >= 3 && bad.length === 0,
+    `${payload.views.length} 个视图${bad.length ? `，不一致：${bad.map((v) => v.id).join(',')}` : '，合计全部对齐'}`);
 }
 
 {

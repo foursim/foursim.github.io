@@ -598,6 +598,25 @@ try {
     ui.setTables(lastTables);
   }
 
+  /*
+   * 透视视图（静态）：第一次切到「透视视图」页签时才取 `data/pivot.json`。
+   * 矩阵是**离线**由 `npm run query --web` 算好的，页面只画表 —— 这样页面保持纯静态、首屏也不多背一份 JSON。
+   */
+  let pivotData = null;
+  let pivotLoading = false;
+  const ensurePivot = () => {
+    if (pivotData || pivotLoading) return;
+    pivotLoading = true;
+    loadJson('data/pivot.json')
+      .then((d) => { pivotData = d; ui.setPivot(d); })
+      .catch((err) => {
+        ui.pivotLoadFailed = true;
+        ui.toast(`透视数据加载失败：${err.message}（先跑 npm run query）`, 'warn');
+        ui.setPivot(null);
+      })
+      .finally(() => { pivotLoading = false; });
+  };
+
   const ui = new UI({
     model, rows, get, thresholds,
     actions: {
@@ -625,6 +644,7 @@ try {
         map.focusParcel(row);
         ui.select(row);
       },
+      onNeedPivot: () => ensurePivot(),
       onExportCsv: () => exportCsv(),
       /**
        * 导出**数据视图当前看到的表**（筛选 + 排序后的行）。
@@ -700,7 +720,7 @@ try {
   requestAnimationFrame(frame);
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
-  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson,
+  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, ensurePivot,
     admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key,
     scenario: scenarioFile, pickScenario };
 } catch (err) {

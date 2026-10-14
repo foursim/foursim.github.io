@@ -12,6 +12,7 @@ dim_crop,hierarchy_l1,作物大类,crop hierarchy level 1,作物大类,text,,cer
 dim_crop,base_temp_c,基温,base temperature,基温,number,,0~15,℃,M,statistics,0,
 dim_crop,gdd_need_cd,生育期积温需求,GDD requirement,生育期积温需求,number,,0~3000,℃·d,M,statistics,0,
 dim_crop,yield_ref,参考单产,reference yield,公开统计锚点,number,,0~60,t/ha,M,statistics,0,公开统计锚点
+dim_crop,yield_ref_source,参考单产来源,reference yield source,公开统计口径 + 年份 + 作物码（可追；口径不同不混用的要在文字里写明）,text,,,,M,model,1,公开统计口径 + 年份 + 作物码（可追；口径不同不混用的要在文字里写明）
 dim_crop,yield_uom,单产单位,yield unit,单产单位,text,,t/ha,,M,model,1,
 dim_crop,yield_basis,单产口径,yield basis,不同作物不能直接比大小,text,,籽粒/鲜重/干花/干草/鲜果,,M,statistics,0,不同作物不能直接比大小
 dim_crop,sow_window,播种窗口,sowing window,播种窗口,text,,MM-DD~MM-DD,,O,statistics,0,

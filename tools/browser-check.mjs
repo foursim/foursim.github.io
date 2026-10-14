@@ -425,7 +425,8 @@ const tb1 = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
     head:q('#tb-body .tbl thead th').length, note:document.getElementById('tb-note').textContent,
     active:document.querySelector('#tb-tabs button.on')?.textContent};})()`);
 check('表格区默认显示「重点问题」：6 个带名字的问题 × 5 列（速览第一眼是结论）',
-  tb1.tabs === 6 && tb1.active === '重点问题' && tb1.rows === 6 && tb1.head === 5,
+  // 页签数不写死（会随功能增长）：只要默认落在「重点问题」且结构没变即可
+  tb1.tabs >= 6 && tb1.active === '重点问题' && tb1.rows === 6 && tb1.head === 5,
   `${tb1.tabs} 个页签 / ${tb1.active} ${tb1.rows} 行 × ${tb1.head} 列 / ${tb1.note}`);
 await click('#tb-tabs button[data-tab="units"]');
 await sleep(250);
@@ -968,10 +969,12 @@ const s20More = await ev(`(()=>{const a=globalThis.__agri;
   const rowsBefore=document.querySelectorAll('#tb-body .tbl tbody tr').length;
   sel.value='scenario'; sel.dispatchEvent(new Event('change',{bubbles:true}));
   return {vis:vis.length, labels:vis.map(b=>b.textContent.trim()), selVisible, opt:sel.options.length,
+    // 页签总数从 DOM 数（而不是写死）：以后加页签时这条判据不该假失败
+    nTabs:document.querySelectorAll('#tb-tabs button').length,
     active:a.ui.activeTable, rowsBefore, rowsAfter:document.querySelectorAll('#tb-body .tbl tbody tr').length};})()`);
 check('1024×640：页签只留 3 个 + 「更多」下拉承载其余（避免折行吃掉表体）',
-  s20More.vis === 3 && s20More.selVisible && s20More.opt === 7,
-  `可见页签 ${s20More.vis} 个（${s20More.labels.join('/')}）· 下拉 ${s20More.opt - 1} 项`);
+  s20More.vis === 3 && s20More.selVisible && s20More.opt === s20More.nTabs + 1,
+  `可见页签 ${s20More.vis} 个（${s20More.labels.join('/')}）· 下拉 ${s20More.opt - 1} 项 / 页签共 ${s20More.nTabs} 个`);
 check('「更多」下拉能切到被收起的那张表（情景推演）',
   s20More.active === 'scenario' && s20More.rowsAfter !== s20More.rowsBefore,
   `${s20More.rowsBefore} 行 → ${s20More.rowsAfter} 行，activeTable=${s20More.active}`);
@@ -1092,6 +1095,60 @@ await boot(1440, 900);
 }
 await boot(1440, 900);
 await shot('static-1440x900');
+
+
+// ===================== 22. 页面上的静态透视视图（离线生成，页面只查表） =====================
+console.log('\n=== 22. 页面上的静态透视视图 ===');
+await boot(1440, 900);
+const s22 = await ev(`(async()=>{
+  const a=globalThis.__agri;const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+  for(let i=0;i<50 && !(a.ui.pivotData&&a.ui.pivotData.views.length);i++) await sleep(100);
+  const sel=document.getElementById('pivot-sel');
+  const snap=()=>{
+    const th=[...document.querySelectorAll('#tb-body .tbl thead th')].map(x=>x.textContent.trim());
+    const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+    let sum=0;
+    for(const tr of trs.slice(0,-1)){ for(const td of [...tr.children].slice(1,-1)){
+      const v=Number(td.textContent.replace(/[^0-9.-]/g,'')); if(Number.isFinite(v)) sum+=v; } }
+    const lastCells=trs.length?[...trs[trs.length-1].children]:[];
+    const lastText=trs.length?trs[trs.length-1].textContent.replace(/\s+/g,' ').trim():'';
+    const lastRaw=lastCells.length?lastCells[lastCells.length-1].textContent.trim():'';
+    const lastNum=Number.isFinite(Number(lastRaw))?Number(lastRaw):null;
+    return {nCol:th.length, nRow:trs.length, head:th.slice(0,3), lastHead:th[th.length-1],
+      note:document.getElementById('tb-note').textContent, selVisible:!sel.classList.contains('hidden'),
+      opt:sel.options.length, sum:Math.round(sum*100)/100,
+      lastRaw, lastNum,
+      lastText:lastText.slice(0,40)};
+  };
+  const first=snap();
+  sel.value='1'; sel.dispatchEvent(new Event('change',{bubbles:true}));
+  const second=snap();
+  const reqs=[...new Set(performance.getEntriesByType('resource').filter(r=>r.name.includes('pivot.json')).map(r=>new URL(r.name).origin))];
+  // 选择器只在「透视视图」页签出现：切到别的页签必须隐藏
+  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  const hiddenElsewhere=sel.classList.contains('hidden');
+  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+  const v=a.ui.pivotData?a.ui.pivotData.views:null;
+  return {views:v?v.length:0, origins:reqs, origin:location.origin, hiddenElsewhere,
+    v0:v?{r:v[0].rowKeys.length,c:v[0].colKeys.length,grand:v[0].grand,agg:v[0].agg,value:v[0].value,unit:v[0].unit,dec:v[0].decimals}:null,
+    v1:v?{r:v[1].rowKeys.length,c:v[1].colKeys.length,grand:v[1].grand,agg:v[1].agg,dec:v[1].decimals}:null,
+    first, second};})()`);
+check('「透视视图」页签读的是**离线 JSON**：行列数 == 视图行列数（另加"合计"行/列），页脚写明口径与来源',
+  s22.views >= 3 && s22.first.nRow === s22.v0.r + 1 && s22.first.nCol === s22.v0.c + 2
+    && s22.first.lastHead === '合计' && /(mean|sum)/.test(s22.first.note) && /页面只查表/.test(s22.first.note),
+  `${s22.views} 个视图 · 首屏 ${s22.first.nRow} 行 × ${s22.first.nCol} 列（视图 ${s22.v0.r}×${s22.v0.c}，末列「${s22.first.lastHead}」）`);
+check('切换透视视图：行列数随之变化（不是把同一张表换个标题）',
+  s22.second.nRow === s22.v1.r + 1 && s22.second.nCol === s22.v1.c + 2 && s22.second.nRow !== s22.first.nRow,
+  `${s22.first.nRow}×${s22.first.nCol} → ${s22.second.nRow}×${s22.second.nCol}（视图 ${s22.v1.r}×${s22.v1.c}，agg=${s22.v1.agg}）`);
+check('**逐格求和 == 离线总合计**（渲染没错行错列），且合计行右下角就是总合计',
+  Math.abs(s22.second.sum - Number(s22.v1.grand)) <= 0.01 * (s22.v1.r * s22.v1.c) + 0.05
+    && Math.abs(Number(s22.second.lastNum) - Number(s22.v1.grand)) <= 0.5 * 10 ** -s22.v1.dec + 1e-9,
+  `格内求和 ${s22.second.sum} vs 离线合计 ${s22.v1.grand}（${s22.v1.r}×${s22.v1.c} 格，sum 视图）；合计行末值 ${s22.second.lastNum}（末格原文「${s22.second.lastRaw}」）；合计行文本「${s22.second.lastText.slice(0,30)}…」`);
+check('仍**纯静态**：透视数据是同源静态文件；选择器只在「透视视图」页签出现（别的页签不留噪音）',
+  s22.origins.length === 1 && s22.origins[0] === s22.origin && s22.hiddenElsewhere === true,
+  `请求来源 ${s22.origins.join(',') || '（未取到）'} · 其他页签隐藏=${s22.hiddenElsewhere}`);
+await shot('pivot-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

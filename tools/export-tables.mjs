@@ -270,6 +270,7 @@ const COLDEF = {
   yield_t: D('总产', 'total yield', 't', '0~500', 'C'),
   yield_t_total: D('总产(合计)', 'total yield (sum)', 't', '0~5000', 'O'),
   yield_ref: D('参考单产', 'reference yield', 't/ha', '0~60', 'M', '公开统计锚点'),
+  yield_ref_source: D('参考单产来源', 'reference yield source', '', '', 'M', '公开统计口径 + 年份 + 作物码（可追；口径不同不混用的要在文字里写明）'),
   yield_uom: D('单产单位', 'yield unit', '', 't/ha', 'M'),
   yield_basis: D('单产口径', 'yield basis', '', '籽粒/鲜重/干花/干草/鲜果', 'M', '不同作物不能直接比大小'),
   gdd_need_cd: D('生育期积温需求', 'GDD requirement', '℃·d', '0~3000', 'M'),
@@ -349,7 +350,7 @@ const HIERARCHY = {
 // ---------- dim_crop（作物字典：含层级位与单位，参照 EuroCrops 的作物码归一思路） ----------
 counts.dim_crop = writeCsv('dim_crop',
   ['crop_code', 'crop_name_zh', 'crop_name_en', 'hierarchy_l1', 'base_temp_c', 'gdd_need_cd',
-    'yield_ref', 'yield_uom', 'yield_basis', 'sow_window', 'harvest_md', 'disease_code'],
+    'yield_ref', 'yield_ref_source', 'yield_uom', 'yield_basis', 'sow_window', 'harvest_md', 'disease_code'],
   [...CROPS.map((c) => ({
     crop_code: c.key,
     crop_name_zh: c.name,
@@ -358,6 +359,7 @@ counts.dim_crop = writeCsv('dim_crop',
     base_temp_c: c.base,
     gdd_need_cd: c.gddNeed,
     yield_ref: c.yieldRef,
+    yield_ref_source: c.refSrc ?? '',
     yield_uom: 't/ha',
     yield_basis: c.basis,
     sow_window: c.sow ? c.sow.join('~') : '',
@@ -376,6 +378,7 @@ counts.dim_source = writeCsv('dim_source',
     { source_id: 'model', name: `本项目模型 seed=${SITE.seed}`, url: '', license: '本仓库', synthetic: 1, usage: '作物 / 农事 / 产量 / 病害 / 水肥 / 气象生成' },
     { source_id: 'derived', name: '派生（路网 Dijkstra / 空间聚类）', url: '', license: 'ODbL-1.0（依 OSM）', synthetic: 0, usage: '可达性时间 / 经营单元 / 统计网格 / 管理分区样点' },
     { source_id: 'statistics', name: '公开农业统计（作物日历与参考单产）', url: 'https://www.destatis.de', license: '公开统计口径', synthetic: 0, usage: '作物基温/生育期积温/参考单产（验收锚点）' },
+    { source_id: 'eurostat', name: 'Eurostat apro_cpsh1（作物单产 YLD_HUMD_EU_T_HA，geo=DE）', url: 'https://ec.europa.eu/eurostat/databrowser/view/apro_cpsh1', license: 'Eurostat 公开数据', synthetic: 0, usage: '**参考单产锚点**：冬小麦 C1111 / 冬大麦 C1310 / 冬油菜 I1111 / 绿玉米 G3000 / 啤酒花 I4000（2023+2024 均值）' },
     { source_id: 'soilgrids', name: 'ISRIC SoilGrids v2.0（250 m）', url: 'https://www.isric.org/explore/soilgrids', license: 'CC BY 4.0', synthetic: 0, usage: '土壤质地/pH/有机碳（0~30 cm 加权，最近采样点赋值）' },
     { source_id: 'dem', name: 'Copernicus GLO-90 DEM（Open-Meteo Elevation）', url: 'https://open-meteo.com/en/docs/elevation-api', license: 'Copernicus DEM 免费开放', synthetic: 0, usage: '地块高程 → 地块级气温偏移（直减率）' },
     { source_id: 'soil-survey', name: '中国土壤普查/耕地质量等级（**尚未接入**）', url: '', license: '待定', synthetic: 0, usage: '耕地质量等级（GB/T 33469）—— 现留空' },
@@ -914,6 +917,25 @@ const parcelIds = new Set(table('dim_parcel').map((r) => r.parcel_id));
   }
   check('维度表**主键唯一**（重复键会让任何连接静默放大行数）', bad.length === 0,
     bad.join('；') || `${Object.keys(KEYS).length} 张维度表逐张检查通过`);
+}
+
+{
+  /*
+   * **参考单产必须可追、且真的对得上公开统计**。
+   * `EUROSTAT_ANCHOR` 是从 Eurostat `apro_cpsh1`（`YLD_HUMD_EU_T_HA`，geo=DE，2023+2024 均值）抄下来的，
+   * 与 `js/agro.js` 里的 `yieldRef` 逐项比对：改了数却没改来源、或来源写了数却对不上，都会在这里报出来。
+   */
+  const EUROSTAT_ANCHOR = {
+    WINTER_WHEAT: 7.33, WINTER_BARLEY: 7.08, WINTER_RAPESEED: 3.46, SILAGE_MAIZE: 43.26, HOPS: 2.13,
+  };
+  const noSrc = CROPS.filter((c) => !c.refSrc || c.refSrc.length < 20);
+  const offAnchor = CROPS.filter((c) => EUROSTAT_ANCHOR[c.key] !== undefined
+    && Math.abs(c.yieldRef - EUROSTAT_ANCHOR[c.key]) > 0.005);
+  check('每类作物的**参考单产都有来源标注**，且与 Eurostat 抄录值逐项吻合（改数不改来源会立刻报）',
+    noSrc.length === 0 && offAnchor.length === 0,
+    noSrc.length ? `缺来源：${noSrc.map((c) => c.key).join(',')}`
+      : offAnchor.length ? `与锚点不符：${offAnchor.map((c) => `${c.key} ${c.yieldRef}≠${EUROSTAT_ANCHOR[c.key]}`).join('；')}`
+        : `${CROPS.length} 类作物 · 5 项与 Eurostat 锚点吻合（牧草/果园按口径不同或待补，已如实标注）`);
 }
 
 check('作物大类**逐类显式映射**（没有兜底 —— 果园曾因"否则算谷物"被算成谷物）',

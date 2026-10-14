@@ -29,16 +29,25 @@ import { Rng } from './rng.js';
  * 青贮玉米按鲜重记（≈45 t/ha），啤酒花按干花（Hallertau ≈1.8 t/ha）。
  */
 export const CROPS = [
-  { key: 'WINTER_WHEAT', name: '冬小麦', base: 0, sow: ['10-01', '11-05'], harvestMD: '07-25', gddNeed: 2400, yieldRef: 7.7, yieldCv: 0.10, basis: '籽粒', disease: 'FHB' },
-  { key: 'WINTER_BARLEY', name: '冬大麦', base: 0, sow: ['09-20', '10-20'], harvestMD: '07-05', gddNeed: 2000, yieldRef: 6.6, yieldCv: 0.10, basis: '籽粒', disease: 'FHB' },
-  { key: 'WINTER_RAPESEED', name: '冬油菜', base: 5, sow: ['08-25', '09-20'], harvestMD: '07-15', gddNeed: 1700, yieldRef: 3.6, yieldCv: 0.12, basis: '籽粒', disease: 'SCLEROTINIA' },
+  { key: 'WINTER_WHEAT', name: '冬小麦', base: 0, sow: ['10-01', '11-05'], harvestMD: '07-25', gddNeed: 2400, yieldRef: 7.33, yieldCv: 0.10, basis: '籽粒', disease: 'FHB',
+    refSrc: 'Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · C1111（普通冬小麦含斯佩耳特）2023+2024 均值 7.33 t/ha' },
+  { key: 'WINTER_BARLEY', name: '冬大麦', base: 0, sow: ['09-20', '10-20'], harvestMD: '07-05', gddNeed: 2000, yieldRef: 7.08, yieldCv: 0.10, basis: '籽粒', disease: 'FHB',
+    refSrc: 'Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · C1310（冬大麦）2023+2024 均值 7.08 t/ha' },
+  { key: 'WINTER_RAPESEED', name: '冬油菜', base: 5, sow: ['08-25', '09-20'], harvestMD: '07-15', gddNeed: 1700, yieldRef: 3.46, yieldCv: 0.12, basis: '籽粒', disease: 'SCLEROTINIA',
+    refSrc: 'Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · I1111（冬油菜/芜菁油菜籽）2023+2024 均值 3.46 t/ha（DBV 2024 收获报告口径一致：33.8 dt/ha）' },
   // 青贮玉米的需求定在 950：**这是被实测数据钉出来的** —— Hallertau(463m) 4/25→9/20 的
   // GDD10 只有 986 ℃·d，需求超过它就永远熟不了；而粒用玉米需要 1400+ ⇒ 该地区只能青贮。
-  { key: 'SILAGE_MAIZE', name: '青贮玉米', base: 10, sow: ['04-25', '05-15'], harvestMD: '09-20', gddNeed: 950, yieldRef: 45.0, yieldCv: 0.12, basis: '鲜重', disease: 'LEAF_BLIGHT' },
-  { key: 'HOPS', name: '啤酒花', base: 5, sow: ['04-01', '04-20'], harvestMD: '09-05', gddNeed: 1300, yieldRef: 1.8, yieldCv: 0.15, basis: '干花', disease: 'DOWNY_MILDEW' },
+  { key: 'SILAGE_MAIZE', name: '青贮玉米', base: 10, sow: ['04-25', '05-15'], harvestMD: '09-20', gddNeed: 950, yieldRef: 43.26, yieldCv: 0.12, basis: '鲜重', disease: 'LEAF_BLIGHT',
+    refSrc: 'Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · G3000（绿玉米/青贮玉米）2023+2024 均值 43.26 t/ha（鲜重口径）' },
+  { key: 'HOPS', name: '啤酒花', base: 5, sow: ['04-01', '04-20'], harvestMD: '09-05', gddNeed: 1300, yieldRef: 2.13, yieldCv: 0.15, basis: '干花', disease: 'DOWNY_MILDEW',
+    refSrc: 'Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · I4000（啤酒花）2023+2024 均值 2.13 t/ha；演示区 Hallertau 2024 收获 40,302 t（VDH 新闻声明 2024-11-27）' },
   // 多年生/草类：**不播种**（`sow: null`），只按农事日历收 —— 判据不要对它们要求 sow 事件
-  { key: 'MEADOW', name: '牧草', base: 5, sow: null, harvestMD: '06-10', gddNeed: 0, yieldRef: 9.0, yieldCv: 0.15, basis: '干草', disease: null },
-  { key: 'ORCHARD', name: '果园', base: 5, sow: null, harvestMD: '09-25', gddNeed: 0, yieldRef: 12.0, yieldCv: 0.20, basis: '鲜果', disease: 'SCAB' },
+  { key: 'MEADOW', name: '牧草', base: 5, sow: null, harvestMD: '06-10', gddNeed: 0, yieldRef: 9.0, yieldCv: 0.15, basis: '干草', disease: null,
+    // ⚠️ 这里**故意不用** Eurostat 的数：G1000「临时草地」口径是青绿饲草（2023/2024 为 21.3/22.5 t/ha），
+    // 与"干草"不是一回事；两个口径混用就是把不同东西当同一个数比（本项目最忌讳的一类错）
+    refSrc: '干草口径（本项目设定，≈8~11 t DM/ha 的草地年产对应干草 9 t/ha）；Eurostat G1000 为临时草地青绿饲草口径，**不混用**' },
+  { key: 'ORCHARD', name: '果园', base: 5, sow: null, harvestMD: '09-25', gddNeed: 0, yieldRef: 12.0, yieldCv: 0.20, basis: '鲜果', disease: 'SCAB',
+    refSrc: '**待补**：Eurostat apro_cpsh1 不含果树单产（该数据集无 Apple/Orchard 项）；接 Destatis Baumobstanbau 前先按 12 t/ha 鲜果占位并如实标注' },
 ];
 export const CROP_BY_KEY = Object.fromEntries(CROPS.map((c) => [c.key, c]));
 

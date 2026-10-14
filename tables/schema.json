@@ -12,7 +12,7 @@
  "record_counts": {
   "dim_date": 549,
   "dim_crop": 8,
-  "dim_source": 8,
+  "dim_source": 9,
   "dim_grid": 217,
   "dim_unit": 62,
   "dim_parcel": 501,
@@ -25,7 +25,7 @@
   "dim_variable": 16,
   "fact_unit_decade": 3348,
   "meta_dataset": 18,
-  "dim_data_element": 177
+  "dim_data_element": 178
  },
  "tables": {
   "dim_parcel": {

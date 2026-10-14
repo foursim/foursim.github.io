@@ -106,6 +106,21 @@ const queries = [
       COUNT(*) AS n_parcels, SUM(${dbl('area_ha')}) AS area FROM dim_parcel GROUP BY 1 ORDER BY 1` },
   { id: 'q7', sql: `SELECT z.zone_code, p.crop_name_zh, SUM(${dbl('z.area_ha_est')}) AS val
       FROM fact_zone z LEFT JOIN dim_parcel p ON p.parcel_id = z.parcel_id GROUP BY 1, 2` },
+  // 剩下 4 张事实表也要有独立实现核过（原来只覆盖了 5 张）
+  { id: 'q8', sql: `SELECT substr(date_key, 1, 6) AS ym, COUNT(*) AS n_days, SUM(${dbl('precip_mm')}) AS prec,
+      AVG(${dbl('humidity_pct')}) AS hum, AVG(${dbl('crop_progress')}) AS prog, MAX(CAST(disease_level_max AS INTEGER)) AS dis
+      FROM fact_region_daily GROUP BY 1 ORDER BY 1` },
+  { id: 'q9', sql: `SELECT substr(event_day, 1, 4) AS y,
+      SUM(CASE WHEN event_type = 'sow' THEN 1 ELSE 0 END) AS sow,
+      SUM(CASE WHEN event_type = 'fertilize' THEN 1 ELSE 0 END) AS fert,
+      SUM(CASE WHEN event_type = 'harvest' THEN 1 ELSE 0 END) AS harv, COUNT(*) AS total
+      FROM fact_parcel_event GROUP BY 1 ORDER BY 1` },
+  { id: 'q10', sql: `SELECT crop_code, COUNT(*) AS n, SUM(${dbl('yield_t')}) AS yt,
+      AVG(${dbl('yield_t_ha')}) AS yha, MAX(CAST(disease_level_max AS INTEGER)) AS dis
+      FROM fact_parcel_season GROUP BY 1 ORDER BY 1` },
+  { id: 'q11', sql: `SELECT decade_key, COUNT(DISTINCT unit_id) AS units, SUM(${dbl('harvested_ha')}) AS harv,
+      SUM(${dbl('sown_ha')}) AS sown, AVG(${dbl('progress_mean')}) AS prog, MAX(CAST(disease_level_max AS INTEGER)) AS dis
+      FROM fact_unit_decade GROUP BY 1 ORDER BY 1` },
   // 顺带验一个"键列是文本"的事实（不是查询，是核对）
   { id: 'keys', sql: `SELECT DISTINCT admin_code FROM dim_parcel` },
 ];
@@ -245,6 +260,36 @@ comparePivot('q7', selfQ('q7'), { label: '分区 × 作物（走 SQL JOIN）' })
 
 // 中间文件用完即删（SQL 侧 CSV 与自研 JSON 保留下来，便于人工核对）
 for (const f of ['_duck_job.json', '_duck_result.json']) fs.rmSync(path.join(OUT, f), { force: true });
+
+/**
+ * 汇总型查询的对比：**逐行逐列**比（不是只比行数）。
+ * 键列取自研侧的 `cols[0]`；其余列按 `listCols` 顺序与 SQL 的 SELECT 顺序一一对应。
+ */
+function compareAgg(id, label) {
+  const q = selfQ(id);
+  if (!q) return;
+  const mine = new Map(q.rows.map((r) => [String(r[q.cols[0]]), r]));
+  const sql = R[id].rows;
+  let bad = 0;
+  const diffs = [];
+  for (const r of sql) {
+    const m = mine.get(String(r[0]));
+    if (!m) { bad++; if (diffs.length < 3) diffs.push(`${r[0]}:自研侧缺`); continue; }
+    q.cols.slice(1).forEach((c, i) => {
+      if (!close(m[c], r[i + 1])) {
+        bad++;
+        if (diffs.length < 3) diffs.push(`${r[0]}.${c}: ${m[c]} vs ${r[i + 1]}`);
+      }
+    });
+  }
+  check(`交叉验证 ${id}：**${label}** 逐行逐列一致`, bad === 0 && sql.length === mine.size,
+    `${sql.length} 行 × ${q.cols.length - 1} 个度量 · 不一致 ${bad}${diffs.length ? `（${diffs.join('; ')}）` : ''}`);
+}
+
+compareAgg('q8', '区域逐日 → 年月（降水合计 / 湿度与进度均值 / 病级峰值）');
+compareAgg('q9', '农事事件 → 年 × 类型计数');
+compareAgg('q10', '地块季 → 作物（季数 / 总产 / 平均单产 / 病级峰值）');
+compareAgg('q11', '单元 × 旬 → 旬（单元数 / 收获与播种面积 / 进度均值）');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`SQL 侧产物：${path.relative(process.cwd(), SQL_DIR)}/（保留下来便于人工核对）`);

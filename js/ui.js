@@ -49,6 +49,8 @@ const TABLE_TABS = [
   ['crops', '作物与收成'],
   ['alarms', '告警明细'],
   ['scenario', '情景推演'],
+  // 透视视图：矩阵由 `npm run query --web data/pivot.json` 离线算好，页面**只查表**（纯静态硬线）
+  ['pivot', '透视视图'],
 ];
 
 /**
@@ -116,6 +118,10 @@ export class UI {
     this.colHidden = UI.loadColHidden();
     /** 当前抽屉里的图（判据与导出要用它核对） */
     this.drawerChartInfo = null;
+    /** 离线透视视图（data/pivot.json）与当前选中的那个 */
+    this.pivotData = null;
+    this.pivotView = 0;
+    this.pivotLoadFailed = false;
     this.refs = {};
     this.lastHtml = {};
     this.cacheDom();
@@ -134,7 +140,7 @@ export class UI {
       'tablebar', 'btn-export-csv', 'btn-export-png',
       'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
-      'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more'];
+      'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -193,6 +199,11 @@ export class UI {
     });
     refs['tb-more'].addEventListener('change', (ev) => {
       if (ev.target.value) this.setTable(ev.target.value);
+    });
+    refs['pivot-sel'].addEventListener('change', (ev) => {
+      this.pivotView = Number(ev.target.value) || 0;
+      this.renderTables();
+      this.renderDrawer();
     });
     /*
      * **表格 → 地图**（反向联动）：点表格行 ⇒ 地图上高亮相关地块。
@@ -538,6 +549,8 @@ export class UI {
    */
   /** 切换表格页签（底部条页签 / 窄屏「更多」下拉 / 抽屉页签都走它，避免三处逻辑各写一遍） */
   setTable(key, { drawer = false } = {}) {
+    // 透视数据是**懒加载**的：第一次切到这个页签才取（首屏少一份 JSON），加载完成后再重画一次
+    if (key === 'pivot') this.actions?.onNeedPivot?.();
     if (drawer) {
       if (this.drawerTab === key) return;
       this.actions?.onClearHighlight?.({ silent: true });
@@ -644,6 +657,28 @@ export class UI {
     this.scenario = sc;
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
     this.renderTables();
+  }
+
+  /** 离线透视数据到达后调用（数据没到之前这个页签显示"加载中"） */
+  setPivot(data) {
+    this.pivotData = data ?? null;
+    this.pivotLoadFailed = !data;
+    this.renderPivotSel();
+    this.renderTables();
+    this.renderDrawer();
+  }
+
+  /** 透视视图选择器：只在「透视视图」页签（或该页签的抽屉）下出现 —— 别的页签跟它无关，占位就是噪音 */
+  renderPivotSel() {
+    const sel = this.refs['pivot-sel'];
+    if (!sel) return;
+    const views = this.pivotData?.views ?? [];
+    const on = this.activeTable === 'pivot' || (this.drawerOpen && this.drawerTab === 'pivot');
+    sel.classList.toggle('hidden', !on || views.length === 0);
+    if (views.length && sel.options.length !== views.length) {
+      sel.innerHTML = views.map((v, i) => `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`).join('');
+    }
+    if (views.length) sel.value = String(Math.min(this.pivotView, views.length - 1));
   }
 
   setTables(tables) {
@@ -770,6 +805,42 @@ export class UI {
           { text: String(r[3]), num: true }, { text: r[4], cls: 'dim small' }] }));
         note = `候选点 ${cand.lon.toFixed(5)}, ${cand.lat.toFixed(5)} · 平均可省 ${cand.avg_gain_min} 分钟/块 · 真实路网重算（离线预计算，${meta.step_m} m 网格）`;
       }
+    } else if (key === 'pivot') {
+      /*
+       * **静态透视视图**：矩阵、行列合计、总合计全部由离线工具算好（`npm run query --web data/pivot.json`），
+       * 页面只把矩阵画成表 —— 不做任何聚合、不连任何服务。理由见 README「纯静态保证」：
+       * 页面必须零依赖、首屏不卡，而透视是离线工具的事（62×54 这种规模也不该在浏览器里现算）。
+       */
+      const views = this.pivotData?.views ?? [];
+      if (!views.length) {
+        cols = [{ label: '状态' }];
+        rows = [{
+          cells: [{
+            text: this.pivotLoadFailed
+              ? '透视数据没取到：先跑 npm run query 生成 data/pivot.json，再用静态服务器打开本页'
+              : '透视数据加载中…',
+            cls: 'dim wrap',
+          }],
+        }];
+        note = '静态透视视图 · 离线生成，页面只查表';
+      } else {
+        const v = views[Math.min(this.pivotView, views.length - 1)];
+        const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '—' : Number(x).toFixed(v.decimals));
+        cols = [{ label: v.rowLabel }, ...v.colKeys.map((ck) => ({ label: ck, num: true })), { label: '合计', num: true }];
+        rows = v.rowKeys.map((rk, ri) => ({
+          cells: [{ text: String(rk), cls: 'mono' }, ...v.matrix[ri].map((x) => ({ text: f(x), num: true })),
+            { text: f(v.rowTotals[ri]), num: true, cls: 'dim' }],
+        }));
+        // 末行是"合计"：与右侧的列合计、右下角的总合计构成一次可核对的守恒（判据会逐格求和比对）
+        rows.push({
+          cells: [
+            { text: '合计', cls: 'mono' },
+            ...v.colTotals.map((x) => ({ text: f(x), num: true, cls: 'dim' })),
+            { text: f(v.grand), num: true, cls: 'dim' },
+          ],
+        });
+        note = `${v.title} · ${v.agg}(${v.value}) ${v.unit} · ${v.rowKeys.length} × ${v.colKeys.length} · 离线生成，页面只查表`;
+      }
     } else {
       const list = this.alarmsFor(d);
       cols = [{ label: '等级' }, { label: '事项' }, { label: '说明' }, { label: '涉及地块（点击定位）' }];
@@ -787,6 +858,7 @@ export class UI {
 
 
   renderTables() {
+    this.renderPivotSel();
     if (!this.refs['tb-body']) return;
     for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === this.activeTable);

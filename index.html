@@ -38,6 +38,8 @@
         <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开</button>
         <button id="btn-drawer" class="mini" title="打开数据视图：全行表格 + 筛选 + 排序（左侧地图仍可见）">数据视图</button>
         <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">清除高亮</button>
+        <!-- 透视视图选择器：只在「透视视图」页签下出现（矩阵与合计都由离线工具算好，页面只查表） -->
+        <select id="pivot-sel" class="mini hidden" title="切换透视视图（离线生成，页面只查表）" aria-label="透视视图"></select>
         <span id="tb-note" class="tb-note"></span>
         <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
         <button id="btn-export-png" class="mini" title="导出地图 PNG（含标题、日期与图例）">导出 PNG</button>

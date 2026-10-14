@@ -1,9 +1,9 @@
-crop_code,crop_name_zh,crop_name_en,hierarchy_l1,base_temp_c,gdd_need_cd,yield_ref,yield_uom,yield_basis,sow_window,harvest_md,disease_code
-WINTER_WHEAT,冬小麦,WINTER_WHEAT,cereal,0,2400,7.7,t/ha,籽粒,10-01~11-05,07-25,FHB
-WINTER_BARLEY,冬大麦,WINTER_BARLEY,cereal,0,2000,6.6,t/ha,籽粒,09-20~10-20,07-05,FHB
-WINTER_RAPESEED,冬油菜,WINTER_RAPESEED,industrial,5,1700,3.6,t/ha,籽粒,08-25~09-20,07-15,SCLEROTINIA
-SILAGE_MAIZE,青贮玉米,SILAGE_MAIZE,fodder,10,950,45,t/ha,鲜重,04-25~05-15,09-20,LEAF_BLIGHT
-HOPS,啤酒花,HOPS,industrial,5,1300,1.8,t/ha,干花,04-01~04-20,09-05,DOWNY_MILDEW
-MEADOW,牧草,MEADOW,grassland,5,0,9,t/ha,干草,,06-10,
-ORCHARD,果园,ORCHARD,permanent,5,0,12,t/ha,鲜果,,09-25,SCAB
-FALLOW,休耕,fallow,fallow,,,0,t/ha,,,,
+crop_code,crop_name_zh,crop_name_en,hierarchy_l1,base_temp_c,gdd_need_cd,yield_ref,yield_ref_source,yield_uom,yield_basis,sow_window,harvest_md,disease_code
+WINTER_WHEAT,冬小麦,WINTER_WHEAT,cereal,0,2400,7.33,Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · C1111（普通冬小麦含斯佩耳特）2023+2024 均值 7.33 t/ha,t/ha,籽粒,10-01~11-05,07-25,FHB
+WINTER_BARLEY,冬大麦,WINTER_BARLEY,cereal,0,2000,7.08,Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · C1310（冬大麦）2023+2024 均值 7.08 t/ha,t/ha,籽粒,09-20~10-20,07-05,FHB
+WINTER_RAPESEED,冬油菜,WINTER_RAPESEED,industrial,5,1700,3.46,Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · I1111（冬油菜/芜菁油菜籽）2023+2024 均值 3.46 t/ha（DBV 2024 收获报告口径一致：33.8 dt/ha）,t/ha,籽粒,08-25~09-20,07-15,SCLEROTINIA
+SILAGE_MAIZE,青贮玉米,SILAGE_MAIZE,fodder,10,950,43.26,Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · G3000（绿玉米/青贮玉米）2023+2024 均值 43.26 t/ha（鲜重口径）,t/ha,鲜重,04-25~05-15,09-20,LEAF_BLIGHT
+HOPS,啤酒花,HOPS,industrial,5,1300,2.13,"Eurostat apro_cpsh1 · YLD_HUMD_EU_T_HA · DE · I4000（啤酒花）2023+2024 均值 2.13 t/ha；演示区 Hallertau 2024 收获 40,302 t（VDH 新闻声明 2024-11-27）",t/ha,干花,04-01~04-20,09-05,DOWNY_MILDEW
+MEADOW,牧草,MEADOW,grassland,5,0,9,干草口径（本项目设定，≈8~11 t DM/ha 的草地年产对应干草 9 t/ha）；Eurostat G1000 为临时草地青绿饲草口径，**不混用**,t/ha,干草,,06-10,
+ORCHARD,果园,ORCHARD,permanent,5,0,12,**待补**：Eurostat apro_cpsh1 不含果树单产（该数据集无 Apple/Orchard 项）；接 Destatis Baumobstanbau 前先按 12 t/ha 鲜果占位并如实标注,t/ha,鲜果,,09-25,SCAB
+FALLOW,休耕,fallow,fallow,,,0,,t/ha,,,,
