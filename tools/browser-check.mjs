@@ -1227,6 +1227,76 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
     + `抽屉别的页签仍隐藏=${s22.ctrlHiddenOtherTab}；抽屉透视页签两个都可见=${s22.btnInDrawer}`);
 await shot('pivot-1440x900');
 
+
+// ===================== 23. 按经营单元（P2）看地图 =====================
+console.log('\n=== 23. 按经营单元（P2）看地图（面积加权着色） ===');
+await boot(1440, 900);
+const s23 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
+  const layers=m.unitLayer.getLayers();
+  const ids=layers.slice(0,3).map(x=>x.feature.properties.unit_id);
+  const st=(uid)=>{const l=layers.find(x=>x.feature.properties.unit_id===uid);const o=l.options;
+    return {fill:!!o.fill, op:o.fillOpacity, color:o.fillColor};};
+  const before=ids.map(st);
+  const cb=document.querySelector('input[data-layer="unitfill"]');
+  const present=!!cb;
+  if(cb){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+  const vals=ids.map(u=>m.unitValue(u));
+  const after=ids.map(st);
+  // 独立复算：面积加权均值（判据侧自己算一遍，不复用页面里的 unitValue）
+  const spec=window.__agri.VARIABLES? null:null;
+  const recompute=(uid)=>{let num=0,den=0;
+    for(const row of a.rows){ if(row.unit_id!==uid) continue;
+      const v=a.get(row,m.variable,m.day); const w=row.area_ha||0;
+      if(v!==null&&v!==undefined&&!Number.isNaN(Number(v))){num+=Number(v)*w;den+=w;} }
+    return den>0?num/den:null;};
+  const re=ids.map(recompute);
+  const expectColors=re.map(v=>a.colorOf[m.variable](v));
+  const colorsBefore=ids.map(st).map(o=>o.color);
+  const day0=a.state.day;
+  a.setDay(Math.min(a.model.days.length-1, day0+40));   // 换一天
+  const colorsAfter=ids.map(st).map(o=>o.color);
+  const day1=a.state.day;
+  a.setDay(day0);
+  if(cb){cb.checked=false; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+  const off=ids.map(st);
+  // 地块填充在两种状态下的不透明度（单元着色开启时应被调暗）
+  const pf=document.querySelector('#map canvas')? m.parcelLayer.getLayers()[0].options.fillOpacity : null;
+  const onOp=(()=>{const cb2=document.querySelector('input[data-layer="unitfill"]');cb2.checked=true;
+    cb2.dispatchEvent(new Event('change',{bubbles:true}));
+    const v=m.parcelLayer.getLayers()[0].options.fillOpacity;
+    cb2.checked=false; cb2.dispatchEvent(new Event('change',{bubbles:true}));
+    return v;})();
+  const offOp=m.parcelLayer.getLayers()[0].options.fillOpacity;
+  const parcelFill={on:!!document.querySelector('input[data-layer="unitfill"]'), onOp, offOp};
+  return {present, ids, before, vals, after, re, expectColors, colorsBefore, colorsAfter, off, parcelFill,
+    variable:m.variable, day0, day1, interactive:m.unitLayer.options.interactive,
+    nUnits:layers.length};})()`);
+check('「单元着色」开关存在，打开后单元面**按当前指标着色**（面积加权），颜色与判据侧独立复算一致',
+  s23.present && s23.nUnits === 62
+    && s23.after.every((o) => o.fill === true && o.op > 0)
+    && s23.after.every((o, i) => o.color === s23.expectColors[i]),
+  `${s23.nUnits} 个单元；抽样 ${s23.ids.length} 个：填充 ${s23.after.map((o) => o.op).join('/')} · 颜色 ${s23.after.map((o) => o.color).join('/')} vs 期望 ${s23.expectColors.join('/')}`);
+check('单元取值 = 成员地块的**面积加权均值**（判据自己算一遍，不复用页面函数）',
+  s23.vals.every((v, i) => v !== null && Math.abs(v - s23.re[i]) < 1e-9),
+  s23.vals.map((v, i) => `${(v ?? NaN).toFixed(4)}≈${(s23.re[i] ?? NaN).toFixed(4)}`).join(' '));
+check('单元着色**跟随当前帧**：换一天后颜色随之变化（不是停在打开那一刻）',
+  s23.colorsAfter.some((c, i) => c !== s23.colorsBefore[i]),
+  `第 ${s23.day0} 天 → 第 ${s23.day1} 天：${s23.colorsBefore.join('/')} → ${s23.colorsAfter.join('/')}`);
+check('关掉开关回到**轮廓**（fill=false）；默认（未打开）也是轮廓',
+  s23.before.every((o) => o.fill === false) && s23.off.every((o) => o.fill === false),
+  `默认 fill=${s23.before.map((o) => o.fill).join('/')} · 关闭后 fill=${s23.off.map((o) => o.fill).join('/')}`);
+check('单元图层**不可交互**（`interactive:false`）：单元面盖在地块上，若可交互会把"点地块"整个吃掉',
+  s23.interactive === false, `interactive=${s23.interactive}`);
+check('打开单元着色时，**地块填充自动调暗**（两层同一指标叠着会互相糊掉）；关闭后恢复',
+  s23.parcelFill.on === true && s23.parcelFill.onOp > 0 && s23.parcelFill.onOp < 0.4 && s23.parcelFill.offOp > 0.7,
+  `地块填充不透明度：开启单元着色 ${s23.parcelFill.onOp} / 关闭后 ${s23.parcelFill.offOp}`);
+// 留一张"**开着**单元着色"的截图（上面那条是在关闭后拍的，肉眼看不出效果）
+await ev(`(()=>{const cb=document.querySelector('input[data-layer="unitfill"]');cb.checked=true;cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await sleep(500);
+await shot('units-fill-on-1440x900');
+await ev(`(()=>{const cb=document.querySelector('input[data-layer="unitfill"]');cb.checked=false;cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await shot('units-fill-1440x900');
+
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
 ws.close();

@@ -10,7 +10,7 @@ import { simulate, levelOf, CROPS } from './agro.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
 import { cssVar, THEME } from './theme.js';
-import { VARIABLES, legendItems, fmtDay } from './geo.js';
+import { VARIABLES, legendItems, fmtDay, colorOf } from './geo.js';
 
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
 
@@ -722,7 +722,7 @@ try {
   requestAnimationFrame(frame);
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
-  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, ensurePivot,
+  globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, ensurePivot, colorOf,
     admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key,
     scenario: scenarioFile, pickScenario };
 } catch (err) {

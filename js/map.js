@@ -43,7 +43,7 @@ export class AgriMap {
     this.variable = 'progress';
     this.day = 0;
     this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true,
-      units: true, grids: false, zones: false, admin: true, villages: true };
+      units: true, unitfill: false, grids: false, zones: false, admin: true, villages: true };
     /** 表格联动高亮：当前被高亮的地块 `{layer, feature}`（下次高亮前先复原） */
     this.highlighted = [];
     /** 当前高亮的地块下标（外部/判据读它） */
@@ -112,10 +112,16 @@ export class AgriMap {
       onEachFeature: (f, layer) => layer.bindTooltip(`${f.properties.level_min} 分钟内可达`, { sticky: true }),
     }).addTo(this.map);
 
-    /** P2 经营单元轮廓（单元几何 = 成员地块环的集合，相邻所以看起来连成一片） */
+    /**
+     * P2 经营单元（单元几何 = 成员地块环的集合，相邻所以看起来连成一片）。
+     *
+     * 两种看法：① 只画**轮廓**（默认，虚线框）；② **按当前指标着色**（`visible.unitfill`）。
+     * ⚠️ 图层保持 `interactive: false`：单元面盖在地块上面，若可交互会把"点地块"整个吃掉
+     * （本项目的主要交互就是点地块看详情）。所以要选单元，用表格里的"经营单元"页签。
+     */
     this.unitLayer = L.geoJSON(units, {
       interactive: false,
-      style: () => ({ color: this.token.unitLine, weight: 1.6, opacity: 0.55, fill: false, dashArray: '8 4' }),
+      style: (f) => this.unitStyle(f),
     }).addTo(this.map);
     /** P4 统计网格线 */
     this.gridLayer = L.geoJSON(grids, {
@@ -213,10 +219,58 @@ export class AgriMap {
       weight: 0.5,
       opacity: this.visible.parcels ? 0.7 : 0,
       fillColor: fill,
-      fillOpacity: this.visible.fill ? 0.82 : 0,
+      /*
+       * 打开「单元着色」时把地块填充**调暗**：两层画的是同一个指标、只是粒度不同，
+       * 都按 0.82 叠着会互相糊掉（实测：单元色与地块色混起来平均只有 2.4/255 的差别，
+       * 眼睛基本看不出"哪个单元是什么水平"）。调暗后单元色成为主体，地块仍能看出轮廓与休耕虚线。
+       */
+      fillOpacity: this.visible.fill ? (this.visible.unitfill ? 0.26 : 0.82) : 0,
       // 休耕/未播种用虚线边区分开
       dashArray: row.fallow ? '2 2' : null,
     };
+  }
+
+  /**
+   * 一个经营单元在当前指标/日期下的**着色样式**。
+   *
+   * 取值口径：**面积加权均值**（不是等权）—— 30 ha 的地块与 0.5 ha 的地块对"这个单元整体什么水平"
+   * 的贡献不该一样。这与导出侧的 `water_index_mean` / `fertility_index_mean` 同口径；
+   * 进度在导出侧给了两套口径（`progress_mean` 等权 / `progress_area_mean` 面积加权），地图上用**面积加权**那套。
+   * 分类型变量（如土地利用）取"面积最大的那类"，同样按面积。
+   */
+  unitStyle(feature) {
+    const base = { color: this.token.unitLine, weight: 1.6, opacity: 0.55, dashArray: '8 4' };
+    if (!this.visible?.unitfill) return { ...base, fill: false };
+    const v = this.unitValue(feature.properties.unit_id);
+    const spec = VARIABLES[this.variable];
+    const fillColor = v === null || v === undefined
+      ? '#8a949e'
+      : (spec.type === 'class' ? (colorOf[this.variable](v) ?? '#555a55') : colorOf[this.variable](v));
+    return { ...base, fill: true, fillColor, fillOpacity: 0.62 };
+  }
+
+  /** 单元取值：数值型按面积加权，分类型按面积最大（成员地块在该单元内的聚合） */
+  unitValue(unitId) {
+    const spec = VARIABLES[this.variable];
+    const isCat = spec.type === 'class' || spec.type === 'categorical';
+    let num = 0;
+    let den = 0;
+    const weights = new Map();
+    for (const row of this.rows) {
+      if (row.unit_id !== unitId) continue;
+      const v = this.get(row, this.variable, this.day);
+      const w = row.area_ha || 0;
+      if (v === null || v === undefined || Number.isNaN(Number(v))) continue;
+      if (isCat) weights.set(v, (weights.get(v) ?? 0) + w);
+      else { num += Number(v) * w; den += w; }
+    }
+    if (isCat) {
+      let best = null;
+      let bw = -1;
+      for (const [k, w] of weights) if (w > bw) { bw = w; best = k; }
+      return best;
+    }
+    return den > 0 ? num / den : null;
   }
 
   tipFor(row) {
@@ -259,12 +313,20 @@ export class AgriMap {
       if (this.zoneLayer && on) this.zoneLayer.addTo(this.map);
       else if (this.zoneLayer && !on) this.map.removeLayer(this.zoneLayer);
     }
+    // 单元着色开关会同时影响**两层**（开：单元填色 + 地块调暗；关：单元回轮廓 + 地块恢复正常）
+    // —— 只重画一层会留下"关掉后地块还是暗的"这种残留（判据抓过一次）
+    else if (name === 'unitfill') {
+      this.unitLayer.setStyle((f) => this.unitStyle(f));
+      this.parcelLayer.setStyle((f) => this.styleFor(f));
+    }
     else this.refresh();
     if (name === 'temp' && on) this.drawTemp();
   }
 
   refresh() {
     this.parcelLayer.setStyle((f) => this.styleFor(f));
+    // 单元着色跟的是"当前指标 + 当前日期"，所以换天/换指标时也要重算（否则颜色会停在旧帧上）
+    if (this.unitLayer) this.unitLayer.setStyle((f) => this.unitStyle(f));
     // 高亮是"用户当前的查看选择"，不该被"换一天/换指标"的刷新抹掉：刷新后补回来
     for (const { layer } of this.highlighted) layer.setStyle(this.hlStyle());
     this.drawTemp();
