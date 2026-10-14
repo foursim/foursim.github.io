@@ -573,8 +573,19 @@ await boot(1440, 900);
 await click('#tb-tabs button[data-tab="scenario"]');
 await sleep(250);
 const scBefore = await ev(`document.getElementById('tb-body').textContent`);
-check('「情景推演」未选点时给出操作提示（不是一张空表）',
-  /点一下/.test(scBefore), scBefore.replace(/\s+/g, ' ').slice(0, 70));
+{
+  // 行为已变：未选点时不再是"一句提示"，而是**154 个候选的排行表**（点一行即可选中）
+  const rank = await ev(`(()=>{const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+    const parse=(t)=>Number(String(t).replace(/[^0-9.-]/g,''));
+    const vals=trs.map(tr=>parse(tr.children[1].textContent));
+    const cands=globalThis.__agri.scenario.candidates;
+    return {n:trs.length, nC: cands.length, desc: vals.every((v,i)=>i===0||vals[i-1]>=v),
+      top: vals[0], argmax: Math.max(...cands.map(c=>c.improved_ha)),
+      note: document.getElementById('tb-note').textContent.replace(/\s+/g,' ')};})()`);
+  check('「情景推演」未选点时给出**候选点排行**（全部候选、按受益面积降序、首位就是最大受益）',
+    rank.n === rank.nC && rank.desc && Math.abs(rank.top - rank.argmax) < 0.06 && /按受益面积排序/.test(rank.note),
+    `${rank.n}/${rank.nC} 行 · 首位 ${rank.top} ha（最大 ${rank.argmax} ha）· 降序 ${rank.desc}`);
+}
 // 在地图上"点"一下（Leaflet 的 click 事件，带经纬度）
 const pick = await ev(`(()=>{const a=globalThis.__agri;
   const best=[...a.scenario.candidates].sort((x,y)=>y.improved_parcels*x.avg_gain_min-y.improved_parcels*x.avg_gain_min)[0];
@@ -584,10 +595,12 @@ await sleep(350);
 const after = await ev(`(()=>{const q=(s)=>document.querySelectorAll(s);
   const rows=[...q('#tb-body .tbl tbody tr')].map(tr=>[...tr.children].map(td=>td.textContent.trim()));
   return {n:rows.length, first:rows.map(r=>r[0]), note:document.getElementById('tb-note').textContent,
+    marked:[...q('#tb-body .tbl tbody tr')].filter(tr=>/★/.test(tr.textContent)).length,
     hl:globalThis.__agri.map.highlightIdx.length};})()`);
-check('地图点选后给出"现状 / 新建后 / 变化"对比（7 项，含盲区与受影响地块）',
-  after.n === 7 && /平均/.test(after.first[0]) && /盲区/.test(after.first[5]),
-  `${after.n} 行：${after.first.join('、')}`);
+// 行为已变：对比不再是一张 7 行的表，而是"该行标 ★ + 表注给现状基线 + 抽屉里的前后对照图"
+check('地图点选后：排行表里那一行标 ★、表注写明**现状基线**与平均可省（对比信息没丢，换了位置）',
+  after.marked === 1 && /已选/.test(after.note) && /现状：平均/.test(after.note),
+  `★ 行 ${after.marked} · 表注：${after.note.replace(/\s+/g, ' ').slice(0, 96)}`);
 check('受影响地块在图上被高亮（与表格→地图同一个高亮通道）',
   after.hl === pick.want && after.hl > 0, `高亮 ${after.hl} 个（受影响 ${pick.improved} 块，其中 >1 分钟 ${pick.want} 块）`);
 check('对比数字来自离线重算（与 scenario.json 的平均改善一致）',
@@ -1631,9 +1644,9 @@ const s28a = await ev(`(async()=>{const a=globalThis.__agri;
   const info=a.ui.drawerChartInfo&&{col:a.ui.drawerChartInfo.col,n:a.ui.drawerChartInfo.items.length,
     top:a.ui.drawerChartInfo.items[0]?.label, v:a.ui.drawerChartInfo.items[0]?.value};
   return {shown:!wrap.classList.contains('hidden'), ink, info};})()`);
-check('抽屉里**统计网格**也配了排行图（面积，真画了像素）',
-  s28a.shown && s28a.info && s28a.info.col === '面积 ha' && s28a.info.n > 0 && s28a.ink > 200,
-  `${s28a.info?.n} 个网格，首位 ${s28a.info?.top}=${s28a.info?.v} ha · 着色像素 ${s28a.ink}`);
+check('抽屉里**统计网格**也配了排行图（进度：面积不随时间变，回放时图会是僵的）',
+  s28a.shown && s28a.info && s28a.info.col === '进度 %' && s28a.info.n > 0 && s28a.ink > 200,
+  `${s28a.info?.n} 个网格，首位 ${s28a.info?.top}=${s28a.info?.v}% · 着色像素 ${s28a.ink}`);
 
 // 农事日历：视图自带堆叠柱（由离线 JSON 的 chart 字段声明，页面不认 id）
 const s28b = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
@@ -1807,6 +1820,119 @@ check('**不画"双地图"**的空间依据（实测）：最小尺寸下劈半�
     page.day !== null && page.day !== '20240701' && offPeak[0] !== '20240701',
     `页面峰值 ${page.day} · 离线峰值 ${offPeak[0]} · 窗口首日 2024-07-01 的收获面积 ${(byDay.get('20240701') ?? 0).toFixed(1)} ha`);
 }
+
+
+// ===================== 31. 时序回放 · 候选点排行 =====================
+console.log('\n=== 31. 时序回放 / 候选点排行 ===');
+await boot(1440, 900);
+// ② 回放：单元 / 网格 的着色与图表**随日期动**，且两天的颜色都等于独立复算
+const s31a = await ev(`(async()=>{const a=globalThis.__agri;const m=a.map;const ui=a.ui;
+  const cb=(n)=>document.querySelector('input[data-layer="'+n+'"]');
+  const on=(n,v)=>{const el=cb(n); if(!el) return; el.checked=v; el.dispatchEvent(new Event('change',{bubbles:true}));};
+  on('unitfill',true); on('gridfill',true);
+  const unitColors=()=>m.unitLayer.getLayers().slice(0,4).map(l=>l.options.fillColor||'');
+  const gridColors=()=>m.gridLayer.getLayers().slice(0,4).map(l=>l.options.fillColor||'');
+  // 独立复算：按 AGG_RULE 面积加权（progress 排除不播种），再走 colorOf
+  const rec=(field,id)=>{let num=0,den=0;
+    for(const r of a.rows){ if(r[field]!==id) continue;
+      if(!(r.gddNeed>0)) continue;
+      const v=a.get(r,'progress',m.day); const w=r.area_ha||0;
+      if(v===null||v===undefined||Number.isNaN(Number(v))) continue; num+=Number(v)*w; den+=w; }
+    return den>0?num/den:null;};
+  const days=[Math.floor(a.model.days.length*0.35), Math.floor(a.model.days.length*0.8)];
+  const snap=[];
+  for(const d of days){
+    a.setDay(d);
+    await new Promise(r=>setTimeout(r,60));
+    const u0=m.unitLayer.getLayers()[0].feature.properties.unit_id;
+    const g0=m.gridLayer.getLayers()[0].feature.properties.grid_id;
+    snap.push({d, ymd:a.model.days[d], uc:unitColors(), gc:gridColors(),
+      u0:{id:u0, got:(m.unitLayer.getLayers()[0].options.fillColor||''), want:a.colorOf.progress(rec('unit_id',u0))},
+      g0:{id:g0, got:(m.gridLayer.getLayers()[0].options.fillColor||''), want:a.colorOf.progress(rec('grid_id',g0))}});
+  }
+  // 图表随日期动：抽屉里的网格排行图（进度）在两个日期应当不同
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="grids"]').click();
+  const chart=[];
+  for(const d of days){
+    a.setDay(d);
+    await new Promise(r=>setTimeout(r,80));
+    const info=ui.drawerChartInfo;
+    chart.push({d, col:info&&info.col, top:info&&info.items&&info.items[0]&&info.items[0].value,
+      topLabel:info&&info.items&&info.items[0]&&info.items[0].label});
+  }
+  return {snap, chart, days};})()`);
+// 效果截图：停在较晚的那个日期，单元/网格着色与网格排行图都已是那一帧的
+await shot('replay-当日着色-1440x900');
+check('**时序回放**：换日期后单元与网格的着色都真的变了，且两天都等于按 AGG_RULE 的独立复算',
+  s31a.snap.length === 2
+    && s31a.snap[0].uc.join() !== s31a.snap[1].uc.join()
+    && s31a.snap[0].gc.join() !== s31a.snap[1].gc.join()
+    && s31a.snap.every((x) => x.u0.got === x.u0.want && x.g0.got === x.g0.want),
+  `${s31a.snap[0].ymd} vs ${s31a.snap[1].ymd}：单元首色 ${s31a.snap[0].uc[0]}→${s31a.snap[1].uc[0]}`
+    + ` · 网格首色 ${s31a.snap[0].gc[0]}→${s31a.snap[1].gc[0]}`
+    + ` · 复算一致 ${s31a.snap.every((x) => x.u0.got === x.u0.want) ? '单元✓' : '单元✗'}`
+    + `${s31a.snap.every((x) => x.g0.got === x.g0.want) ? ' 网格✓' : ' 网格✗'}`);
+check('**回放时图表跟着动**：网格排行图（进度）在两个日期的首位值不同（面积不随时变 ⇒ 改用进度）',
+  s31a.chart[0].col === '进度 %' && s31a.chart[1].col === '进度 %'
+    && s31a.chart[0].top !== s31a.chart[1].top,
+  `${s31a.chart[0].topLabel} ${s31a.chart[0].top}% → ${s31a.chart[1].topLabel} ${s31a.chart[1].top}%`);
+
+// ③ 候选点排行：154 行、按受益面积降序、抽样与离线 JSON 一致、点一行能选中
+const s31b = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const m=a.map;
+  window.confirm=()=>true;
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  await new Promise(r=>setTimeout(r,80));
+  const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+  const parse=(t)=>Number(String(t).replace(/[^0-9.-]/g,''));
+  const head=[...document.querySelectorAll('#tb-body .tbl thead th')].map(t=>t.textContent.trim());
+  const rows=trs.map(tr=>({cand:tr.getAttribute('data-cand'), cells:[...tr.children].map(td=>td.textContent.trim())}));
+  const cands=a.scenario.candidates;
+  const r5=(v)=>Math.round(v*1e5);
+  const findCand=(attr)=>{const [lng,lat]=String(attr).split('|').map(Number);
+    return cands.find(c=>r5(c.lon)===r5(lng)&&r5(c.lat)===r5(lat));};
+  // 独立复算：受益面积最大的候选
+  const argmax=cands.reduce((b,c,i)=>c.improved_ha>(b.ha??-1)?{i,ha:c.improved_ha}:b,{});
+  // ⚠️ 表格按受益面积**排过序** ⇒ 行号 ≠ 候选序号，必须按行上的 data-cand 找回候选再比
+  const sample=[0,1,2].map(i=>{const c=findCand(rows[i].cand)||{};
+    return {id:rows[i].cells[0], gotH:parse(rows[i].cells[1]), wantH:c.improved_ha,
+      gotG:parse(rows[i].cells[2]), wantG:c.avg_gain_min};});
+  // 点第 3 行 ⇒ 地图高亮该候选的受影响地块 + 那一行被标 ★
+  const target=findCand(rows[2].cand)||{improved:[]};
+  document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
+  await new Promise(r=>setTimeout(r,60));
+  const beforePick={chartKind:ui.drawerChartInfo&&ui.drawerChartInfo.kind,
+    chartTop:ui.drawerChartInfo&&ui.drawerChartInfo.items&&ui.drawerChartInfo.items[0]};
+  return {n:rows.length, nCands:cands.length, head, sample, argmax, beforePick,
+    sortedDesc:rows.every((r,i)=>i===0||parse(rows[i-1].cells[1])>=parse(r.cells[1])),
+    firstIsArgmax:parse(rows[0].cells[1])===argmax.ha};})()`);
+// 效果截图①：**还没选中任何候选点** —— 抽屉里是"候选点排行图"（该建在哪）
+await shot('candidates-rank-1440x900');
+// 然后点第 3 行（选中该候选点）
+const s31c = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const m=a.map;
+  const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+  trs[2].dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,150));
+  const marked=[...document.querySelectorAll('#tb-body .tbl tbody tr')].filter(tr=>/★/.test(tr.textContent)).length;
+  const note=document.getElementById('tb-note').textContent.replace(/\s+/g,' ');
+  // 前后对照图在**抽屉**里，所以断言前要先把抽屉切到「情景推演」
+  document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
+  await new Promise(r=>setTimeout(r,100));
+  return {hl:m.highlighted.length, marked, note, chartKind:ui.drawerChartInfo&&ui.drawerChartInfo.kind};})()`);
+// 效果截图②：选中后（★ + 地图高亮 + 抽屉里的前后对照图）
+await shot('candidates-picked-1440x900');
+check('**候选点排行表**：154 个候选全在表里、按受益面积降序、首位就是最大受益候选（独立复算）',
+  s31b.n === s31b.nCands && s31b.sortedDesc && s31b.firstIsArgmax && s31b.head.length === 9,
+  `${s31b.n}/${s31b.nCands} 行 · 列 ${s31b.head.length} 个 · 首位 ${s31b.head[1]} = ${s31b.argmax.ha} ha（降序 ${s31b.sortedDesc}）`);
+check('未选点时的抽屉图是"候选排行"（该建在哪），选点后切成"前后对照"（省在哪里）',
+  s31b.beforePick?.chartKind === 'rank' && s31c.chartKind === 'paired',
+  `选点前 kind=${s31b.beforePick?.chartKind}（首位 ${s31b.beforePick?.chartTop?.label} ${s31b.beforePick?.chartTop?.value} ha）→ 选点后 kind=${s31c.chartKind}`);
+check('候选点的**数**与离线 JSON 一致（抽样 3 个：受益面积 / 平均节省）',
+  s31b.sample.every((x) => Math.abs(x.gotH - x.wantH) < 0.06 && Math.abs(x.gotG - x.wantG) < 0.005),
+  s31b.sample.map((x) => `${x.id} ${x.gotH}=${x.wantH}·${x.gotG}≈${x.wantG}`).join(' · '));
+check('**点候选点一行 ⇒ 在图上选中该点**（高亮其受影响地块 + 该行标 ★ + 图切成前后对照）',
+  s31c.hl > 0 && s31c.marked === 1 && s31c.chartKind === 'paired' && /已选/.test(s31c.note),
+  `高亮 ${s31c.hl} 块 · ★ 行 ${s31c.marked} · 图 kind=${s31c.chartKind} · 表注含"已选"`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

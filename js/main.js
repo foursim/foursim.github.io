@@ -758,6 +758,10 @@ try {
         if (hlKey) ui.toast(`${unitId}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
       },
       /** 点"统计网格"一行 ⇒ 与单元同一套高亮（只换空间键为 grid_id） */
+      // 情景推演：候选点排行表要"整份离线数据"，页面只映射不改算
+      onScenarioCandidates: () => scenarioFile.candidates,
+      onScenarioMeta: () => scenarioFile.metadata,
+      onPickCandidate: (latlng) => pickScenario(latlng),
       onHighlightGrid: (gridId) => {
         const idx = rows.filter((r) => r.grid_id === gridId).map((r) => r.i);
         const n = highlightGroup(`grid:${gridId}`, idx, `统计网格 ${gridId}`);

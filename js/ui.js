@@ -36,7 +36,10 @@ const LAYERS = [
  */
 const CHART_SPEC = {
   crops: { col: '面积 ha', top: 10 },
-  grids: { col: '面积 ha', top: 12 },
+  // 网格排行图用**进度**而不是面积：面积不随时间变 ⇒ 回放时图是僵的（进度会动，播放才看得出东西在变）
+  grids: { col: '进度 %', top: 12 },
+  // 情景推演：**没选点**时按"受益面积"排行（选了点则被前后对照图接管，见 renderDrawerChart）
+  scenario: { col: '受益面积 ha', top: 12 },
   focus: { col: '命中', top: 6 },
   units: { col: '到收储点 min', top: 12 },
 };
@@ -233,6 +236,13 @@ export class UI {
       if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
       const grid = pick(ev, '[data-grid]');
       if (grid) { actions.onHighlightGrid?.(grid.dataset.grid); return; }
+      // 情景候选点：点一行 = 在图上选中该点（高亮受影响地块 + 前后对照图 + 图例一起切）
+      const cand = pick(ev, '[data-cand]');
+      if (cand) {
+        const [lng, lat] = cand.dataset.cand.split('|').map(Number);
+        actions.onPickCandidate?.({ lat, lng });
+        return;
+      }
       const crop = pick(ev, '[data-crop]');
       if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
       // 「重点问题」：点一行 = 在图上高亮该问题的命中地块（联合查询的结果直接落到空间上）
@@ -319,6 +329,12 @@ export class UI {
       if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
       const grid = pick(ev, '[data-grid]');
       if (grid) { actions.onHighlightGrid?.(grid.dataset.grid); return; }
+      const cand = pick(ev, '[data-cand]');
+      if (cand) {
+        const [lng, lat] = cand.dataset.cand.split('|').map(Number);
+        actions.onPickCandidate?.({ lat, lng });
+        return;
+      }
       const crop = pick(ev, '[data-crop]');
       if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
       const q = pick(ev, '[data-question]');
@@ -665,7 +681,8 @@ export class UI {
     }
     wrap.classList.remove('hidden');
     hbars(cvs, items, { unit: spec.col });
-    this.drawerChartInfo = { col: spec.col, items };
+    // 带上 kind：'rank' = 排行图（'paired' = 前后对照、'stacked' = 堆叠柱），判据/人都能一眼分辨画的是哪种
+    this.drawerChartInfo = { kind: 'rank', col: spec.col, items };
   }
 
   /**
@@ -895,32 +912,46 @@ export class UI {
       }));
       note = `按作物聚合（收成粒度到季）· 点一行可在图上高亮 · ${list.length} 类`;
     } else if (key === 'scenario') {
+      /*
+       * **候选点排行表**（154 个候选，全部来自离线 `data/scenario.json` —— 页面不做任何聚合）。
+       *
+       * 为什么从"只显示选中的那一个"改成"排行全表"：上一版只能"点哪看哪"，
+       * 用户没法回答"到底该建在哪" —— 而这是情景推演唯一要回答的问题。
+       * 现在：所有候选的指标都成了**列**（受益面积 / 平均节省 / 新建后的 平均·p50·p90·最远 / 盲区），
+       * 点一行 = 在图上选中该候选点（地图高亮 + 前后对照图 + 图例一起切）；
+       * 现状那一列对每个候选都一样，所以写进表注（不占一列）。
+       */
+      // 下标必须留着：编号 B-001 是**离线数据里的位置**，排序不该改变编号（否则编号随排序乱跳）
+      const list = (this.actions?.onScenarioCandidates?.() ?? [])
+        .map((c, i) => ({ c, i }))
+        .sort((x, y) => (y.c.improved_ha || 0) - (x.c.improved_ha || 0));
+      const meta = this.actions?.onScenarioMeta?.() ?? {};
       const sc = this.scenario;
-      if (!sc) {
-        cols = [{ label: '情景推演' }];
-        rows = [{ cells: [{ text: '在地图上点一下，选一个拟建收储点的位置 → 这里给出"新建前/后"的可达性对比（真实路网重算）', cls: 'dim' }] }];
-        note = '未选点（在地图上单击即可）';
-      } else {
-        const { base, cand, meta } = sc;
-        const delta = (a, b, digits = 2) => {
-          const v = b - a;
-          if (Math.abs(v) < 1e-9) return '<span class="dim">持平</span>';
-          // 这几项都是**越小越好**（时间、盲区块数、盲区面积）
-          return `<span class="${v < 0 ? 'ok' : 'bad'}">${v > 0 ? '+' : ''}${v.toFixed(digits)}</span>`;
-        };
-        cols = [{ label: '指标' }, { label: '现状', num: true }, { label: '新建后', num: true }, { label: '变化', num: true }, { label: '说明' }];
-        rows = [
-          ['平均到收储点', base.avg_min, cand.avg_min, delta(base.avg_min, cand.avg_min), '分钟（全体地块平均）'],
-          ['中位 p50', base.p50_min, cand.p50_min, delta(base.p50_min, cand.p50_min), '分钟'],
-          ['p90', base.p90_min, cand.p90_min, delta(base.p90_min, cand.p90_min), '分钟（尾部典型水平）'],
-          ['最远', base.max_min, cand.max_min, delta(base.max_min, cand.max_min), '分钟（最不利地块）'],
-          ['盲区地块', base.blind_parcels, cand.blind_parcels, delta(base.blind_parcels, cand.blind_parcels, 0), `块（> ${meta.blind_threshold_min} 分钟，阈值为现状 p90）`],
-          ['盲区面积', base.blind_ha, cand.blind_ha, delta(base.blind_ha, cand.blind_ha, 1), 'ha'],
-          ['受影响地块', '—', cand.improved_parcels, '', `块 / ${cand.improved_ha} ha（节省 > 0.05 分钟）`],
-        ].map((r) => ({ cells: [r[0], { text: String(r[1]), num: true }, { text: String(r[2]), num: true },
-          { text: String(r[3]), num: true }, { text: r[4], cls: 'dim small' }] }));
-        note = `候选点 ${cand.lon.toFixed(5)}, ${cand.lat.toFixed(5)} · 平均可省 ${cand.avg_gain_min} 分钟/块 · 真实路网重算（离线预计算，${meta.step_m} m 网格）`;
-      }
+      const picked = sc?.cand ?? null;
+      const on = (c) => picked && Math.abs(picked.lon - c.lon) < 1e-9 && Math.abs(picked.lat - c.lat) < 1e-9;
+      cols = [
+        { label: '候选点', mono: true }, { label: '受益面积 ha', num: true }, { label: '平均节省 min', num: true },
+        { label: '新建后 平均', num: true }, { label: 'p50', num: true }, { label: 'p90', num: true },
+        { label: '最远', num: true }, { label: '盲区块', num: true }, { label: '盲区 ha', num: true },
+      ];
+      rows = list.map(({ c, i }) => ({
+        cls: on(c) ? 'high' : '',
+        attrs: ` data-cand="${c.lon.toFixed(5)}|${c.lat.toFixed(5)}" title="点击：在图上选中这个候选点"`,
+        cells: [
+          { text: `${on(c) ? '★ ' : ''}B-${String(i + 1).padStart(3, '0')}`, mono: true },
+          { text: nm(c.improved_ha, 1), num: true },
+          { text: nm(c.avg_gain_min, 2), num: true, cls: c.avg_gain_min >= 0.5 ? 'bad' : '' },
+          { text: nm(c.avg_min, 2), num: true }, { text: nm(c.p50_min, 2), num: true },
+          { text: nm(c.p90_min, 2), num: true }, { text: nm(c.max_min, 2), num: true },
+          { text: String(c.blind_parcels), num: true }, { text: nm(c.blind_ha, 1), num: true },
+        ],
+      }));
+      const base = sc?.base ?? meta.baseline ?? null;
+      const best = list.length ? ` · 受益最大的候选：B-${String(list[0].i + 1).padStart(3, '0')}（${list[0].c.improved_ha} ha，表首行）` : '';
+      note = `${list.length} 个候选点（离线真实路网重算，${meta.step_m ?? '?'} m 网格）· **按受益面积排序**`
+        + (base ? ` · 现状：平均 ${base.avg_min} / p50 ${base.p50_min} / p90 ${base.p90_min} 分，盲区 ${base.blind_parcels} 块 / ${base.blind_ha} ha` : '')
+        + (picked ? ` · 已选 ★（平均可省 ${picked.avg_gain_min} 分钟/块）` : best)
+        + ' · 点一行可在图上选中该候选点';
     } else if (key === 'pivot') {
       /*
        * **静态透视视图**：矩阵、行列合计、总合计全部由离线工具算好（`npm run query --web data/pivot.json`），
