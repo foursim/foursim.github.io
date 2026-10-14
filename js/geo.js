@@ -67,6 +67,16 @@ export const AGG_RULE = {
   disease: { aggClass: 'max', note: '取最严重（最高病级），与告警同口径' },
 };
 
+/**
+ * **农事事件类型**的名称与颜色（`fact_parcel_event.event_type` 是英文枚举）。
+ * 放在这里是因为"页面要用中文图例"和"离线表要存英文码"是两件事，翻译只做一处。
+ */
+export const EVENT_STYLE = {
+  sow: { label: '播种', color: '#6fae4a' },
+  fertilize: { label: '施肥', color: '#c9a23a' },
+  harvest: { label: '收获', color: '#c0603a' },
+};
+
 /** 该地块是否**不参与**某变量的聚合 */
 export function aggSkip(variable, row) {
   const r = AGG_RULE[variable];

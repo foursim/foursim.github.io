@@ -605,6 +605,35 @@ try {
     return n;
   }
 
+  /**
+   * **前后对照**（按经营单元，面积加权）：现状 vs 新建后。
+   *
+   * 数据全部来自本页已有的 `rows` 与候选点的 `improved`（地块索引 → 省多少分钟），不再取别的文件。
+   * 只留"确实有改善"且改善最多的前 12 个单元：全画 62 个单元没人看得完，
+   * 而这张图要回答的是"**省在哪里**" —— 没改善的单元画出来只是噪音。
+   */
+  function buildScenarioCompare(cand) {
+    const gains = new Map(cand.improved ?? []);
+    const acc = new Map();
+    for (const r of rows) {
+      if (!r.unit_id || r.t_min == null) continue;
+      let a = acc.get(r.unit_id);
+      if (!a) { a = { before: 0, after: 0, w: 0, n: 0 }; acc.set(r.unit_id, a); }
+      const w = r.area_ha || 0;
+      const g = gains.get(r.i) ?? 0;
+      a.before += r.t_min * w;
+      // 新建后 = min(现状, 到新点)，所以 after 只会更小 —— 这条不等式是**逐块**成立的
+      a.after += Math.max(0, r.t_min - g) * w;
+      a.w += w;
+      a.n++;
+    }
+    return [...acc.entries()].map(([id, a]) => ({
+      id, label: unitCode(id), n: a.n,
+      before: a.w ? a.before / a.w : 0, after: a.w ? a.after / a.w : 0,
+      gain: a.w ? (a.before - a.after) / a.w : 0,
+    })).filter((x) => x.gain > 0.001).sort((x, y) => y.gain - x.gain).slice(0, 12);
+  }
+
   function pickScenario(latlng) {
     let best = null;
     let bd = Infinity;
@@ -619,6 +648,8 @@ try {
     map.setScenarioGains(best);
     // 图例也要跟着换：否则用户看到一图绿色块，图例却还是"生长进度 %"，等于没法读图
     ui.setScenarioLegend(SCENARIO_BINS);
+    // 前后对照（按单元）：图在「情景推演」抽屉里，跟着选中的点变
+    ui.setScenarioCompare(buildScenarioCompare(best));
     if (!map.visible.scenariofill) {
       map.setLayerVisible('scenariofill', true);
       ui.syncLayer('scenariofill', true);

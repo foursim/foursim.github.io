@@ -1241,7 +1241,7 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
       csvHead:lines[1].split(','), csvLines:lines.length, note:document.getElementById('tb-note').textContent};})()`);
   check('页面「透视视图」也能渲染**对照表**（q12 单产两套口径）：列名与行数照离线 JSON，导出 CSV 同源',
     // 视图数写死是故意的：少一个视图（离线没生成/页面没读）必须当场红
-    list.idx >= 0 && list.kind === 'list' && list.nViews === 6
+    list.idx >= 0 && list.kind === 'list' && list.nViews === 7
       && list.head.join(',') === list.cols.join(',') && list.bodyRows === list.nRows
       && list.csvHead.join(',') === list.cols.join(',') && list.csvLines === list.nRows + 2
       && /只查表/.test(list.note),
@@ -1600,13 +1600,176 @@ const s27c = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   return {n:views.length, idx, title:views[idx].title, rowLabel:views[idx].rowLabel, colLabel:views[idx].colLabel,
     head, nRows:trs.length, firstRow:[...trs[0].children].map(td=>td.textContent.trim()),
     lastRow:[...trs[trs.length-1].children].map(td=>td.textContent.trim()),
-    csvHead:(csv.indexOf(String.fromCharCode(10))>=0?csv.split(String.fromCharCode(10))[1]:''), hasZeroDec:/[0-9]+\.00/.test(csv)};})()`);
+    csvHead:(csv.indexOf(String.fromCharCode(10))>=0?csv.split(String.fromCharCode(10))[1]:''), hasZeroDec:/[0-9]+\.00/.test(csv),
+    // 月份必须**单调递增**（离线已排好序；页面若自己重排过，这里会红）
+    months:trs.map(tr=>tr.children[0].textContent.trim()).filter(x=>/^[0-9]{4}-[0-9]{2}$/.test(x))};})()`);
 check('**农事日历进页面**（离线算好、页面只查表）：13 月 × 3 类型 + 合计行，且合计与离线/交叉验证过的数**对得上**',
   s27c.idx >= 0 && s27c.nRows === 14 && s27c.head.length === 5 && /月份/.test(s27c.head[0])
     && s27c.lastRow[0] === '合计' && /^586,772,801,2159$/.test(s27c.lastRow.slice(1).join(','))
-    && /^\d{4}-\d{2}$/.test(String(s27c.firstRow[0])) && !s27c.hasZeroDec,
-  `${s27c.n} 个视图（选中「${s27c.title}」· ${s27c.nRows - 1} 个月 + 合计行）· 表头 ${(s27c.head ?? []).join('|')}`
+    && /^\d{4}-\d{2}$/.test(String(s27c.firstRow[0])) && !s27c.hasZeroDec
+    && s27c.months.length === 13 && s27c.months.every((m, i) => i === 0 || m > s27c.months[i - 1]),
+  `${s27c.n} 个视图（选中「${s27c.title}」· ${s27c.nRows - 1} 个月 + 合计行，${(s27c.months ?? [])[0]} → ${(s27c.months ?? []).slice(-1)[0]}）· 表头 ${(s27c.head ?? []).join('|')}`
     + ` · 首行 ${(s27c.firstRow ?? []).join('|')} · 末行 ${(s27c.lastRow ?? []).join('|')}`);
+
+
+// ===================== 28. 网格排行图 · 农事日历堆叠柱 =====================
+console.log('\n=== 28. 网格排行图 / 农事日历图 ===');
+await boot(1440, 900);
+// 抽屉里的排行图：统计网格（面积）
+const s28a = await ev(`(async()=>{const a=globalThis.__agri;
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="grids"]').click();
+  const wrap=document.getElementById('dw-chart-wrap');
+  const cvs=document.getElementById('dw-chart'); const ctx=cvs.getContext('2d');
+  const px=ctx.getImageData(0,0,cvs.width,cvs.height).data;
+  let ink=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) ink++;
+  const info=a.ui.drawerChartInfo&&{col:a.ui.drawerChartInfo.col,n:a.ui.drawerChartInfo.items.length,
+    top:a.ui.drawerChartInfo.items[0]?.label, v:a.ui.drawerChartInfo.items[0]?.value};
+  return {shown:!wrap.classList.contains('hidden'), ink, info};})()`);
+check('抽屉里**统计网格**也配了排行图（面积，真画了像素）',
+  s28a.shown && s28a.info && s28a.info.col === '面积 ha' && s28a.info.n > 0 && s28a.ink > 200,
+  `${s28a.info?.n} 个网格，首位 ${s28a.info?.top}=${s28a.info?.v} ha · 着色像素 ${s28a.ink}`);
+
+// 农事日历：视图自带堆叠柱（由离线 JSON 的 chart 字段声明，页面不认 id）
+const s28b = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  document.querySelector('#dw-tabs button[data-tab="pivot"]').click();
+  a.ensurePivot();
+  for(let i=0;i<60 && !ui.pivotData;i++) await new Promise(r=>setTimeout(r,100));
+  const views=ui.pivotData?.views??[];
+  const sel=document.getElementById('pivot-sel');
+  const idx=views.findIndex(v=>v.chart==='stacked');
+  if(idx<0) return {idx};
+  sel.value=String(idx); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  const wrap=document.getElementById('dw-chart-wrap');
+  const cvs=document.getElementById('dw-chart'); const ctx=cvs.getContext('2d');
+  const px=ctx.getImageData(0,0,cvs.width,cvs.height).data;
+  const hex=(r,g,b)=>'#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+  const want={'#6fae4a':0,'#c9a23a':0,'#c0603a':0};
+  let ink=0;
+  for(let i=0;i<px.length;i+=4){
+    if(px[i+3]>0) ink++;
+    const k=hex(px[i],px[i+1],px[i+2]);
+    if(k in want) want[k]++;
+  }
+  const on={shown:!wrap.classList.contains('hidden'), ink, want,
+    info:ui.drawerChartInfo&&{kind:ui.drawerChartInfo.kind, view:ui.drawerChartInfo.view,
+      groups:ui.drawerChartInfo.items.length}};
+  // 切到一个**没有声明图**的视图 ⇒ 图必须收起来（否则留着上一张图就成了"错配的图例"）
+  const plain=views.findIndex(v=>!v.chart);
+  sel.value=String(plain); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  const off={shown:!wrap.classList.contains('hidden'), info:ui.drawerChartInfo};
+  return {on, off, nViews:views.length};})()`);
+check('**农事日历视图自带堆叠柱**（离线声明 chart 字段）：三类颜色都真画出来，切到无图视图就收起',
+  s28b.on && s28b.on.shown && s28b.on.info && s28b.on.info.kind === 'stacked'
+    && s28b.on.info.groups === 13 && s28b.on.ink > 1000
+    && Object.values(s28b.on.want).every((n) => n > 200)
+    && s28b.off.shown === false && s28b.off.info === null,
+  `13 组 · 着色像素 ${s28b.on?.ink} · 播种/施肥/收获三色像素 ${Object.values(s28b.on?.want ?? {}).join('/')}`
+    + ` · 切到无图视图后隐藏=${!s28b.off.shown}`);
+// 新图是新代码路径：留一张截图，人能一眼看（像素数只能证明"画了"，证不了"画对了"）
+// ⚠️ 上面那条判据最后**切到了无图视图**，所以截图前要切回来，否则拍到的是一张没有图的画面
+await ev(`(()=>{const a=globalThis.__agri;const ui=a.ui;
+  const idx=ui.pivotData.views.findIndex(v=>v.chart==='stacked');
+  const sel=document.getElementById('pivot-sel'); sel.value=String(idx);
+  sel.dispatchEvent(new Event('change',{bubbles:true}));
+  return !document.getElementById('dw-chart-wrap').classList.contains('hidden');})()`);
+await shot('dw-chart-农事日历-1440x900');
+
+
+// ===================== 29. 情景前后对照图 =====================
+console.log('\n=== 29. 情景前后对照图 ===');
+await boot(1440, 900);
+const s29 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  // 选"平均改善最多"的候选点（与既有情景判据同一口径，保证可复现）
+  const cand=a.scenario.candidates.reduce((b,c)=>c.avg_gain_min>(b?b.avg_gain_min:-1)?c:b,null);
+  a.pickScenario({lat:cand.lat, lng:cand.lon});
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
+  const wrap=document.getElementById('dw-chart-wrap');
+  const cvs=document.getElementById('dw-chart'); const ctx=cvs.getContext('2d');
+  const px=ctx.getImageData(0,0,cvs.width,cvs.height).data;
+  const hex=(r,g,b)=>'#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+  let ink=0; const colors={};
+  for(let i=0;i<px.length;i+=4){ if(px[i+3]>0) ink++; const k=hex(px[i],px[i+1],px[i+2]); colors[k]=(colors[k]??0)+1; }
+  const info=ui.drawerChartInfo;
+  // —— 独立复算（不复用页面函数）：每个单元的现状/新建后按成员地块**面积加权** ——
+  const gains=new Map(cand.improved);
+  const acc=new Map();
+  for(const r of a.rows){ if(!r.unit_id||r.t_min==null) continue;
+    let x=acc.get(r.unit_id); if(!x){x={before:0,after:0,w:0};acc.set(r.unit_id,x);}
+    const w=r.area_ha||0, g=gains.get(r.i)??0;
+    x.before+=r.t_min*w; x.after+=Math.max(0,r.t_min-g)*w; x.w+=w; }
+  const all=[...acc.entries()].map(([id,x])=>({id, gain:x.w?(x.before-x.after)/x.w:0,
+    before:x.w?x.before/x.w:0, after:x.w?x.after/x.w:0})).filter(x=>x.gain>0.001).sort((p,q)=>q.gain-p.gain);
+  const topAll=all[0];
+  const items=info&&info.items?info.items:[];
+  const first=items[0]||{};
+  const rec=all.find(x=>x.id===first.id)||{};
+  const afterLeBefore=items.every(x=>x.after<=x.before+1e-9);
+  const gainOk=items.every(x=>Math.abs((x.before-x.after)-x.gain)<0.05);
+  const colorsBig=Object.values(colors).filter(n=>n>200).length;
+  return {shown:!wrap.classList.contains('hidden'), ink, colorsBig,
+    kind:info&&info.kind, col:info&&info.col, n:items.length,
+    firstId:first.id, firstGain:first.gain, firstLabel:first.label,
+    rec, topAll, afterLeBefore, gainOk, nUnitsAll:all.length};})()`);
+check('情景**前后对照图**（按经营单元，现状 → 新建后）：画在「情景推演」抽屉里，两种颜色都真画出来',
+  s29.shown && s29.kind === 'paired' && s29.n > 0 && s29.n <= 12 && s29.ink > 500 && s29.colorsBig >= 2,
+  `${s29.n} 个单元（共 ${s29.nUnitsAll} 个有改善）· 着色像素 ${s29.ink} · 两种以上主色 ${s29.colorsBig}`
+    + ` · 首位 ${s29.firstLabel}（省 ${Math.round((s29.firstGain ?? 0) * 10) / 10} min）`);
+check('前后对照的**数**可独立复算，且不变量成立：after ≤ before（逐单元）、首位就是改善最大的那个单元',
+  Math.abs((s29.firstGain ?? -1) - (s29.rec.gain ?? -2)) < 0.05
+    && Math.abs((s29.rec.before ?? 0) - (s29.topAll?.before ?? 0)) < 0.05
+    && s29.topAll && s29.firstId === s29.topAll.id && s29.afterLeBefore && s29.gainOk,
+  `复算 ${s29.firstId}：现状 ${(s29.rec.before ?? 0).toFixed(2)} → 新建后 ${(s29.rec.after ?? 0).toFixed(2)}`
+    + `（页面 ${(s29.topAll?.before ?? 0).toFixed(2)} → ${(s29.topAll?.after ?? 0).toFixed(2)}）`
+    + ` · after ≤ before 全成立=${s29.afterLeBefore} · 首位=最大改善单元 ${s29.firstId === s29.topAll?.id}`);
+await shot('dw-chart-情景前后对照-1440x900');
+
+
+// ===================== 30. 页面 ↔ 离线 CSV 对账（区域逐日 月汇总） =====================
+console.log('\n=== 30. 页面 ↔ 离线表对账（区域逐日月汇总） ===');
+await boot(1440, 900);
+{
+  // 离线产物（先由自研引擎算、再被 DuckDB 逐格核过）—— 拿它当**独立来源**核对页面
+  const csvPath = 'tables/query/q8_区域逐日_按年月汇总.csv';
+  const lines = fs.readFileSync(csvPath, 'utf8').trim().split(/\r?\n/);
+  const csvHead = lines[0].split(',');
+  const csvRow1 = lines[1].split(',');
+  const page = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+    a.ensurePivot();
+    for(let i=0;i<60 && !ui.pivotData;i++) await new Promise(r=>setTimeout(r,100));
+    const views=ui.pivotData?.views??[];
+    const idx=views.findIndex(v=>v.id==='q8');
+    if(idx<0) return {n:views.length, idx};
+    document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+    const sel=document.getElementById('pivot-sel');
+    sel.value=String(idx); sel.dispatchEvent(new Event('change',{bubbles:true}));
+    const tbl=document.querySelector('#tb-body .tbl');
+    const head=[...tbl.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    const trs=[...tbl.querySelectorAll('tbody tr')];
+    const r1=[...trs[0].children].map(td=>td.textContent.trim());
+    const csv=ui.pivotCsvText();
+    return {n:views.length, idx, title:views[idx]?.title, nRows:trs.length, head, r1,
+      csvLines:csv.trim().split(String.fromCharCode(10)).length};})()`);
+  const num = (x) => Number(String(x).replace(/[^0-9.eE+-]/g, ''));
+  const same = csvRow1.map((v, i) => Math.abs(num(v) - num(page.r1?.[i])) <= Math.max(1e-6, Math.abs(num(v)) * 1e-9));
+  check('页面「区域逐日（月汇总）」与**离线 CSV 逐格对账**（页面的数不是页面自己算的，两边同源可比）',
+    page.idx >= 0 && page.nRows === lines.length - 1 && page.head.join(',') === csvHead.join(',')
+      && same.every(Boolean) && page.csvLines === lines.length + 1,
+    `离线 ${lines.length - 1} 行 × ${csvHead.length} 列 · 页面 ${page.nRows} 行；首行 `
+      + csvHead.map((h, i) => `${h}=${csvRow1[i]}${same[i] ? '✓' : `✗(${page.r1?.[i]})`}`).slice(0, 3).join(' ')
+      + ` · 视图 ${page.n} 个`);
+}
+
+
+// "不画双地图"的**空间依据**：地图区劈半后每张还剩多少（量出来，不是估的）
+const mapW1440 = await ev(`document.getElementById('map').clientWidth`);
+await boot(1024, 640);
+const mapW1024 = await ev(`document.getElementById('map').clientWidth`);
+check('**不画"双地图"**的空间依据（实测）：最小尺寸下劈半每张只剩不到 200px ⇒ 前后对照改用条形图',
+  mapW1024 / 2 < 250 && mapW1440 / 2 < 420,
+  `1440×900 地图区 ${mapW1440}px ⇒ 劈半 ${Math.round(mapW1440 / 2)}px · `
+    + `1024×640 ⇒ ${mapW1024}px、劈半 ${Math.round(mapW1024 / 2)}px（已定：前后对照改用条形图）`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

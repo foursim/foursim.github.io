@@ -113,6 +113,103 @@ export function hbars(canvas, items, { unit = '', rowH = 16, labelW = null } = {
   return items;
 }
 
+/**
+ * **竖直堆叠柱**：一列一组（如"月"），每段一类（如 播种/施肥/收获）。
+ *
+ * 与 `bars()`（一条按比例分段的横条）的分工：那个看**构成**，这个看**时间形态** ——
+ * "农忙窗口"是后者（哪几个月柱子最高、里面是哪一类最多）。
+ * 图例画在图内左上角：堆叠图没有图例就只能靠猜颜色。
+ */
+export function stackedBars(canvas, groups, series, { height = 150, label = (s) => s } = {}) {
+  const { ctx, w } = prepare(canvas, height);
+  const fg = cssVar('--fg', '#12263f');
+  const dimText = cssVar('--dim', '#5b6b7f');
+  const padX = 6;
+  const padTop = 18;
+  const padBottom = 16;
+  const plotH = Math.max(20, height - padTop - padBottom);
+  const totals = groups.map((g) => series.reduce((t, s) => t + (Number(g.values[s.key]) || 0), 0));
+  const vmax = Math.max(...totals, 1);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  // 图例（图内左上角，一行摆不下就换行）
+  let lx = padX;
+  let ly = 4;
+  for (const s of series) {
+    const t = String(s.label ?? s.key);
+    const tw = ctx.measureText(t).width;
+    if (lx + 12 + tw > w) { lx = padX; ly += 13; }
+    ctx.fillStyle = s.color;
+    ctx.fillRect(lx, ly, 9, 9);
+    ctx.fillStyle = dimText;
+    ctx.fillText(t, lx + 12, ly + 9);
+    lx += 12 + tw + 12;
+  }
+  const slot = (w - padX * 2) / groups.length;
+  const bw = Math.max(3, Math.min(26, slot - 4));
+  groups.forEach((g, i) => {
+    const x = padX + i * slot + (slot - bw) / 2;
+    let y = padTop + plotH;
+    for (const s of series) {
+      const v = Number(g.values[s.key]) || 0;
+      if (v <= 0) continue;
+      const hh = Math.max(1, (plotH * v) / vmax);
+      ctx.fillStyle = s.color;
+      ctx.fillRect(x, y - hh, bw, hh);
+      y -= hh;
+    }
+    // 柱子顶上的合计（只标最高的三根，否则 13 个数字糊成一片）
+    ctx.fillStyle = dimText;
+    ctx.textAlign = 'center';
+    ctx.fillText(String(g.label), x + bw / 2, height - 4);
+    ctx.textAlign = 'left';
+  });
+  return { vmax, totals };
+}
+
+/**
+ * **前后成对条形**：每一项两根（现状 / 新建后），**共用同一标尺**。
+ *
+ * 为什么不画两张地图并排（实测，见判据"不画双地图的空间依据"）：地图区 1440×900 下 **794px**、
+ * 1024×640 下 **378px**，一分为二后每张只剩 **397px / 189px** —— 最小尺寸下地块碎成米粒；
+ * 而且两张图要同步视野、图例、高亮三套状态。这张图要回答的是"**省在哪里、省多少**"，条形图更直接。
+ */
+export function pairedBars(canvas, items, { unit = 'min', rowH = 19, labelW = null } = {}) {
+  const h = Math.max(rowH + 4, items.length * rowH + 18);
+  const { ctx, w } = prepare(canvas, h);
+  const fg = cssVar('--fg', '#12263f');
+  const dimText = cssVar('--dim', '#5b6b7f');
+  const cBefore = cssVar('--dim', '#9aa7b4');
+  const cAfter = cssVar('--brand', '#1a4f8a');
+  const lw = labelW ?? Math.min(150, Math.max(64, Math.round(w * 0.24)));
+  const vw = 78;
+  const barW = Math.max(8, w - lw - vw - 4);
+  const vmax = Math.max(...items.map((it) => it.before), 1e-9);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  // 图例：两根条的含义（不写就只能靠颜色猜）
+  ctx.fillStyle = cBefore;
+  ctx.fillRect(0, 4, 10, 8);
+  ctx.fillStyle = dimText;
+  ctx.fillText('现状', 14, 8);
+  ctx.fillStyle = cAfter;
+  ctx.fillRect(52, 4, 10, 8);
+  ctx.fillStyle = dimText;
+  ctx.fillText('新建后', 66, 8);
+  items.forEach((it, i) => {
+    const y = i * rowH + rowH / 2 + 12;
+    ctx.fillStyle = dimText;
+    ctx.fillText(String(it.label).slice(0, 16), 0, y);
+    ctx.fillStyle = cBefore;
+    ctx.fillRect(lw, y - 6, Math.max(1, (barW * it.before) / vmax), 4);
+    ctx.fillStyle = cAfter;
+    ctx.fillRect(lw, y + 1, Math.max(1, (barW * it.after) / vmax), 4);
+    ctx.fillStyle = fg;
+    ctx.fillText(`省 ${Math.round(it.gain * 10) / 10}`, lw + barW + 4, y);
+  });
+  return items;
+}
+
 /** 水平色带图例（用与地图同一份标度：CSS 渐变由 geo.js 生成） */
 export function colorbar(el, gradient, lo, hi) {
   el.innerHTML = gradient

@@ -7,9 +7,9 @@
  * 3. **底部留白按 CSS 上限**（`--logbar-max` 那套思路）——面板的 max-height 不依赖 JS 实测，
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
-import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote } from './geo.js';
+import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
 import { THEME, cssVar } from './theme.js';
-import { sparkline, bars, colorbar, hbars } from './charts.js';
+import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars } from './charts.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -36,6 +36,7 @@ const LAYERS = [
  */
 const CHART_SPEC = {
   crops: { col: '面积 ha', top: 10 },
+  grids: { col: '面积 ha', top: 12 },
   focus: { col: '命中', top: 6 },
   units: { col: '到收储点 min', top: 12 },
 };
@@ -640,6 +641,13 @@ export class UI {
     const wrap = this.refs['dw-chart-wrap'];
     const cvs = this.refs['dw-chart'];
     if (!wrap || !cvs) return;
+    // 情景推演的**前后对照**：选过候选点才有，图跟着"当前选中的那个点"走
+    if (this.drawerTab === 'scenario' && this.scenarioCompare) {
+      wrap.classList.remove('hidden');
+      pairedBars(cvs, this.scenarioCompare, { unit: 'min' });
+      this.drawerChartInfo = { kind: 'paired', col: '到收储点 min（现状 → 新建后）', items: this.scenarioCompare };
+      return;
+    }
     const spec = CHART_SPEC[this.drawerTab];
     const ci = spec ? cols.findIndex((c) => c.label === spec.col) : -1;
     const text = (c) => String((typeof c === 'object' && c !== null ? c.text : c) ?? '').replace(/<[^>]*>/g, '');
@@ -711,6 +719,12 @@ export class UI {
         ? `取消高亮（当前：${text}）；也可以再点一次同一行`
         : '当前没有高亮';
     }
+  }
+
+  /** 情景"前后对照"（按经营单元；`main.js` 选点后算好传进来，本类不做聚合） */
+  setScenarioCompare(rows) {
+    this.scenarioCompare = rows && rows.length ? rows : null;
+    this.renderDrawer();
   }
 
   setScenario(sc) {
@@ -1062,6 +1076,38 @@ export class UI {
     this.drawerCols = outCols;
     this.drawerRows = out;
     this.renderDrawerChart(outCols, out);
+    // 透视视图自带的图（离线声明 chart 字段）—— 放在排行图**之后**：两边都用同一条画布，谁最后画谁上
+    this.renderPivotChart();
+  }
+
+  /**
+   * 透视视图自带的图（`data/pivot.json` 里 `chart: 'stacked'` 的那种）。
+   *
+   * **页面不认视图 id**（不写 `if (v.id === 'q13')`）：要不要画图、画成什么，由离线工具在 JSON 里声明。
+   * 这样以后再加带图的视图，页面一行都不用改。
+   */
+  renderPivotChart() {
+    const wrap = this.refs['dw-chart-wrap'];
+    const cvs = this.refs['dw-chart'];
+    if (!wrap || !cvs) return;
+    if (this.drawerTab !== 'pivot') return false;
+    const v = (this.pivotData?.views ?? [])[Math.min(this.pivotView, (this.pivotData?.views ?? []).length - 1)];
+    if (!v || v.chart !== 'stacked' || !v.rowKeys?.length) return false;
+    const groups = v.rowKeys.map((rk, i) => {
+      const values = {};
+      v.colKeys.forEach((ck, ci) => { values[ck] = Number(v.matrix[i][ci]) || 0; });
+      // x 轴只留"年-月"的月月两位 + 换年时补上年份，否则 13 个 "2024-10" 会挤在一起
+      const [yy, mm] = String(rk).split('-');
+      const prev = i > 0 ? String(v.rowKeys[i - 1]).split('-')[0] : null;
+      return { label: prev === yy ? mm : `${yy.slice(2)}-${mm}`, values };
+    });
+    const series = v.colKeys.map((ck) => ({
+      key: ck, label: EVENT_STYLE[ck]?.label ?? ck, color: EVENT_STYLE[ck]?.color ?? cssVar('--brand', '#1a4f8a'),
+    }));
+    wrap.classList.remove('hidden');
+    stackedBars(cvs, groups, series, { height: 150 });
+    this.drawerChartInfo = { kind: 'stacked', view: v.id, col: series.map((s) => s.label).join('/'), items: groups };
+    return true;
   }
 
   toast(text, kind = 'info') {

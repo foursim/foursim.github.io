@@ -217,7 +217,7 @@ const AGGS = {
  * - `flags`：格子上"口径混杂"之类的标记（见 `mixBy`），配 `notes` 说明；
  * - `preserve`：合计值（供判据做**守恒**校验）。
  */
-function pivot(rows, { rowDims, colDim, value, agg = 'mean', mixBy = null }) {
+function pivot(rows, { rowDims, colDim, value, agg = 'mean', mixBy = null, sortKeys = null, sortCols = null }) {
   const fn = AGGS[agg];
   if (!fn) throw new Error(`不支持的聚合：${agg}`);
   const rowKeys = [];
@@ -251,6 +251,17 @@ function pivot(rows, { rowDims, colDim, value, agg = 'mean', mixBy = null }) {
       }
     }
   }
+  /*
+   * **时间维必须按时间排**：`rowKeys/colKeys` 默认是"首次出现顺序"，对"月/年"这种维度就是乱的
+   * —— 实测农事日历显示成 2024-10, 2025-07, 2025-10, 2024-07…（x 轴跳着走），q1 的年份列是 2025|2026|2024。
+   * 零填充的编码（`2024-07` / `202410` / `2025`）按字典序排就等于按时间排，所以不必引日期库。
+   * ⚠️ 排序必须放在**算 matrix / rowTotals / colTotals 之前**：那些都是按键的**下标**织起来的，
+   * 排在后面就是"键换了位置、值没换"（判据当场报 2024-04 行合计 227 ≠ 57）。
+   * 默认**不动**（网格/作物/分区这类无序维保持原样），要排的维度自己声明。
+   */
+  const asc = (a, b) => String(a).localeCompare(String(b));
+  if (sortKeys === 'asc') rowKeys.sort(asc);
+  if (sortCols === 'asc') colKeys.sort(asc);
   const matrix = rowKeys.map((rk) => colKeys.map((ck) => {
     const v = cell.get(`${rk}\u0000${ck}`);
     return v && v.length ? fn(v) : '';
@@ -265,7 +276,7 @@ function pivot(rows, { rowDims, colDim, value, agg = 'mean', mixBy = null }) {
   });
   const grandAll = [...cell.values()].flat();
   return {
-    rowDims, colDim, value, agg, mixBy,
+    rowDims, colDim, value, agg, mixBy, sortKeys, sortCols,
     rowKeys, colKeys,
     cells: (rk, ck) => cell.get(`${rk}\u0000${ck}`) ?? [],
     matrix, rowTotals, colTotals,
@@ -310,7 +321,7 @@ const PRESETS = [
           + '；口径：**每季等权**（不是面积加权 —— 要面积加权就用 q3/q10 的面积口径自己算 Σ产量/Σ面积）'
           + (s.renamed.length ? `（重名列加前缀：${s.renamed.join('、')}）` : ''),
         // 口径（yield_basis）**进行维**：一个格子只可能是同一种口径 ⇒ 结构上就杜绝了"跨口径平均"
-        pivot: { rowDims: ['crop_name_zh', 'yield_basis'], colDim: 'season_year', value: 'yield_t_ha', agg: 'mean', mixBy: 'yield_basis' },
+        pivot: { rowDims: ['crop_name_zh', 'yield_basis'], colDim: 'season_year', value: 'yield_t_ha', agg: 'mean', mixBy: 'yield_basis', sortCols: 'asc' },
         unit: 't/ha',
       };
     },
@@ -324,7 +335,7 @@ const PRESETS = [
       return {
         kind: 'pivot', rows: s.rows, unit: '0~1',
         note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}`,
-        pivot: { rowDims: ['unit_id'], colDim: 'decade_key', value: 'progress_mean', agg: 'mean' },
+        pivot: { rowDims: ['unit_id'], colDim: 'decade_key', value: 'progress_mean', agg: 'mean', sortCols: 'asc' },
       };
     },
   },
@@ -350,7 +361,7 @@ const PRESETS = [
       return {
         kind: 'pivot', rows: s.rows, unit: '见变量单位',
         note: `连接 ${s.name} ⟕ ${s.specs.map((x) => x.table).join(' ⟕ ')}（变量单位随行携带，宽表混合单位，看数请对照 dim_variable）`,
-        pivot: { rowDims: ['phenomenon_time'], colDim: 'variable_code', value: 'result_value', agg: 'mean' },
+        pivot: { rowDims: ['phenomenon_time'], colDim: 'variable_code', value: 'result_value', agg: 'mean', sortKeys: 'asc' },
       };
     },
   },
@@ -635,7 +646,7 @@ const PRESETS = [
       return {
         kind: 'pivot', rows, unit: '次',
         note: `fact_parcel_event 按**月 × 类型**展开：${src.length} 条事件（q9 是同年按年汇总，这里看月内分布）`,
-        pivot: { rowDims: ['ym'], colDim: 'event_type', value: 'one', agg: 'count' },
+        pivot: { rowDims: ['ym'], colDim: 'event_type', value: 'one', agg: 'count', sortKeys: 'asc' },
       };
     },
   },
@@ -835,7 +846,11 @@ if (webOut && results.length) {
    * 目前只放 q12「单产两套口径」—— 它回答的是"同一个数，等权与面积加权差多少"，
    * 放进页面比只在离线 CSV 里更容易被看见（口径问题最怕"没人看"）。
    */
-  const LIST_PICK = ['q12'];
+  // 哪些视图自带图：农事日历是"时间形态"，表看数值、柱图看农忙窗口
+  const CHART_VIEW = { q13: 'stacked' };
+  // 对照表：q12（两套单产口径）+ q8（区域逐日的月汇总）——
+  // 后者是**唯一还没进页面**的那张事实表的汇总（天气/进度/病害的月度背景），能看数据也能当判据靶子
+  const LIST_PICK = ['q12', 'q8'];
   const listViews = LIST_PICK.map((id) => {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'list') return null;
@@ -855,6 +870,8 @@ if (webOut && results.length) {
     const rd = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
     return {
       id: r.id, title: r.title, question: r.question, note: r.spec.note,
+      // 带图与否由**离线侧声明**：页面只认 `chart` 字段，不认 id（加视图不用改页面）
+      chart: CHART_VIEW[id] ?? null,
       rowLabel: LABEL[id][0], colLabel: LABEL[id][1],
       unit: r.unit ?? '', agg: r.pv.agg, value: r.pv.value, decimals: dec,
       rowKeys: r.pv.rowKeys, colKeys: r.pv.colKeys,
@@ -1109,6 +1126,30 @@ if (webOut) {
     `${q.pv.rowKeys.length} 个月 × ${q.pv.colKeys.length} 类 = ${q.pv.rowKeys.length * q.pv.colKeys.length} 格，总 ${q.pv.grand} 次`
       + `（事件表 ${ev.length} 行）· 列合计 ${q.pv.colKeys.map((ck, ci) => `${ck} ${q.pv.colTotals[ci]}`).join(' / ')}`
       + (cellBad.length ? ` · 不一致 ${cellBad.slice(0, 3).join('、')}` : ''));
+}
+
+{
+  /*
+   * **时间维必须单调**（防回归）：`rowKeys/colKeys` 默认是"首次出现顺序"，
+   * 对时间维就是乱的（农事日历的月份会跳着走）。但又不能全局强排 —— 作物/网格这类无序维排了反而丢分组。
+   * 所以逐视图验：凡是**整条键**都形如 年 / 年月 / 年月旬 的，必须严格递增。
+   */
+  const TIMEISH = /^[0-9]{4}(-[0-9]{1,2})*$/;
+  const bad = [];
+  let checked = [];
+  for (const q of results) {
+    if (q.kind !== 'pivot') continue;
+    for (const [what, keys] of [['行', q.pv.rowKeys], ['列', q.pv.colKeys]]) {
+      const all = keys.map(String);
+      if (all.length < 2 || !all.every((k) => TIMEISH.test(k))) continue;
+      const sorted = [...all].sort((a, b) => a.localeCompare(b));
+      checked.push(`${q.id}${what}`);
+      if (all.join('|') !== sorted.join('|')) bad.push(`${q.id}.${what}`);
+    }
+  }
+  check('**时间维按时间排**（年 / 年月 / 年月旬 这类键必须单调递增）',
+    bad.length === 0,
+    bad.length ? `乱的：${bad.join('、')}` : `已验 ${checked.join('、')}（其余透视的行列键不是纯时间格式，这条判据覆盖不到）`);
 }
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
