@@ -51,6 +51,33 @@ export function scenarioColor(gain) {
   return out;
 }
 
+/**
+ * **聚合到"单元 / 网格"时的口径**（表格与地图必须共用这一处）。
+ *
+ * 为什么单列一份：原来表格算"单元进度"时排除了 `gddNeed = 0` 的地块（牧草/果园不播种，谈进度没意义），
+ * 而地图的 `regionValue` 把全部地块都算进去 ⇒ **同一个单元，表里一个数、图上按另一个数着色**。
+ * 这种漂移不会自己暴露（两边都"看起来合理"），所以把规则抽出来共用，并加判据逐单元对账。
+ *
+ * - `skip`：哪些地块不参与该变量的聚合；
+ * - `aggClass`：分类型变量怎么合 —— `max` = 取最严重（与"最高病级"列、告警口径一致），
+ *   `area` = 取面积最大的那一类（作物/土地利用这类"构成"语义用这个）。
+ */
+export const AGG_RULE = {
+  progress: { skip: (row) => !(row.gddNeed > 0) },
+  disease: { aggClass: 'max' },
+};
+
+/** 该地块是否**不参与**某变量的聚合 */
+export function aggSkip(variable, row) {
+  const r = AGG_RULE[variable];
+  return !!(r && r.skip && r.skip(row));
+}
+
+/** 分类型变量的聚合方式（默认按面积最大） */
+export function aggClassMode(variable) {
+  return (AGG_RULE[variable] && AGG_RULE[variable].aggClass) || 'area';
+}
+
 export const VARIABLES = {
   /* P2 经营单元 / P4 统计网格：颜色只用来**区分单元**（不是数值），所以是哈希色相 */
   unit: {

@@ -10,7 +10,7 @@ import { simulate, levelOf, CROPS } from './agro.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
 import { cssVar, THEME } from './theme.js';
-import { VARIABLES, legendItems, fmtDay, colorOf, scenarioColor, SCENARIO_BINS } from './geo.js';
+import { VARIABLES, legendItems, fmtDay, colorOf, scenarioColor, SCENARIO_BINS, aggSkip, aggClassMode } from './geo.js';
 
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
 
@@ -362,8 +362,10 @@ try {
       a.area += r.area_ha;
       a.w += get(r, 'water', day) * r.area_ha;
       a.f += get(r, 'fert', day) * r.area_ha;
-      if (r.gddNeed > 0) { a.p += get(r, 'progress', day) * r.area_ha; a.pw += r.area_ha; }
-      a.disease = Math.max(a.disease, get(r, 'disease', day));
+      // 进度只对**播种作物**有意义（牧草/果园 gddNeed=0 不参与）—— 口径与地图共用 AGG_RULE
+      if (!aggSkip('progress', r)) { a.p += get(r, 'progress', day) * r.area_ha; a.pw += r.area_ha; }
+      // 病害同样按 AGG_RULE：`max` = 取最严重（与"最高病级"列、告警口径一致）
+      if (aggClassMode('disease') === 'max') a.disease = Math.max(a.disease, get(r, 'disease', day));
       if (r.t_min != null) a.tMin = a.tMin == null ? r.t_min : Math.max(a.tMin, r.t_min);
     }
     const unitProps = new Map(unitsFC.features.map((f) => [f.properties.unit_id, f.properties]));
@@ -583,6 +585,8 @@ try {
     // **同屏对比**：把"每个地块省多少分钟"接到地图上，并自动打开情景着图层
     // （原来只有右侧表格的聚合对比，看不出"省在哪里"）
     map.setScenarioGains(best);
+    // 图例也要跟着换：否则用户看到一图绿色块，图例却还是"生长进度 %"，等于没法读图
+    ui.setScenarioLegend(SCENARIO_BINS);
     if (!map.visible.scenariofill) {
       map.setLayerVisible('scenariofill', true);
       ui.syncLayer('scenariofill', true);
@@ -634,6 +638,7 @@ try {
       onPause: () => { state.playing = false; ui.setPlaying(false); },
       onSpeed: (d) => { state.daysPerSec = d; ui.setSpeed(d); },
       onLayer: async (name, on) => {
+        if (name === 'scenariofill') ui.setScenarioLegend(on ? SCENARIO_BINS : null);
         // 分区样点按需加载：12000+ 点约 2.3 MB，不该压在首屏
         if (name === 'zones' && on && !map.zoneLayer) {
           ui.toast('正在加载分区样点（约 2 MB）…');
@@ -654,6 +659,8 @@ try {
       onNeedPivot: () => ensurePivot(),
       // 图层勾选框的初始状态要跟地图一致（maps 的默认值不全是开）
       onLayerState: (name) => !!map.visible[name],
+      // 关掉情景着色 ⇒ 图例回到当前指标的图例
+      onScenarioLegend: (on) => ui.setScenarioLegend(on ? SCENARIO_BINS : null),
       // 页面里所有导出的下载都走这一处（透视视图导出复用同一套：纯前端 Blob，无后端）
       onDownload: (text, name) => download(new Blob([text], { type: 'text/csv;charset=utf-8' }), name),
       onExportCsv: () => exportCsv(),

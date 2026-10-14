@@ -12,7 +12,7 @@
  * 501 个多边形 + 1576 条路：用 `preferCanvas: true` 走 canvas 渲染，
  * 播放时每帧只调 `setStyle`，**不重建几何**（重建才是卡顿与"点击丢失"的来源）。
  */
-import { VARIABLES, colorOf, scenarioColor } from './geo.js';
+import { VARIABLES, colorOf, scenarioColor, aggSkip, aggClassMode } from './geo.js';
 import { mapTokens } from './theme.js';
 
 /**
@@ -272,7 +272,9 @@ export class AgriMap {
    */
   unitStyle(feature) {
     const base = { color: this.token.unitLine, weight: 1.6, opacity: 0.55, dashArray: '8 4' };
-    if (!this.visible?.unitfill) return { ...base, fill: false };
+    // 关掉时**显式**把 fillOpacity 归零：只写 `fill: false` 会让旧透明度留在 options 里，
+    // 状态读不出来（判据/人都分不清"关了"还是"透明地开着"）
+    if (!this.visible?.unitfill) return { ...base, fill: false, fillOpacity: 0 };
     const v = this.unitValue(feature.properties.unit_id);
     const spec = VARIABLES[this.variable];
     const fillColor = v === null || v === undefined
@@ -287,7 +289,7 @@ export class AgriMap {
    */
   gridStyle(feature) {
     const base = { color: this.token.gridLine, weight: 1, opacity: 0.5, dashArray: '2 6' };
-    if (!this.visible?.gridfill) return { ...base, fill: false };
+    if (!this.visible?.gridfill) return { ...base, fill: false, fillOpacity: 0 };
     const v = this.gridValue(feature.properties.grid_id);
     const spec = VARIABLES[this.variable];
     const fillColor = v === null || v === undefined
@@ -314,18 +316,25 @@ export class AgriMap {
   regionValue(field, id) {
     const spec = VARIABLES[this.variable];
     const isCat = spec.type === 'class' || spec.type === 'categorical';
+    const mode = aggClassMode(this.variable);
     let num = 0;
     let den = 0;
+    let bestNumeric = null;
     const weights = new Map();
     for (const row of this.rows) {
       if (row[field] !== id) continue;
+      // 口径由 geo.js 的 AGG_RULE 统一声明（表与地图共用，防止"表一个数、图另一种颜色"）
+      if (aggSkip(this.variable, row)) continue;
       const v = this.get(row, this.variable, this.day);
       const w = row.area_ha || 0;
       if (v === null || v === undefined || Number.isNaN(Number(v))) continue;
-      if (isCat) weights.set(v, (weights.get(v) ?? 0) + w);
-      else { num += Number(v) * w; den += w; }
+      if (isCat) {
+        weights.set(v, (weights.get(v) ?? 0) + w);
+        if (mode === 'max') bestNumeric = bestNumeric === null ? Number(v) : Math.max(bestNumeric, Number(v));
+      } else { num += Number(v) * w; den += w; }
     }
     if (isCat) {
+      if (mode === 'max') return bestNumeric;
       let best = null;
       let bw = -1;
       for (const [k, w] of weights) if (w > bw) { bw = w; best = k; }

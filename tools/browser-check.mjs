@@ -1265,13 +1265,20 @@ const s23 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
   const after=ids.map(st);
   // 独立复算：面积加权均值（判据侧自己算一遍，不复用页面里的 unitValue）
   const spec=window.__agri.VARIABLES? null:null;
-  const recompute=(uid)=>{let num=0,den=0;
+  // 独立复算：按 geo.js 里**声明过的口径**（AGG_RULE）自己实现一遍
+  // —— progress 排除不播种的地块（gddNeed=0）、disease 取最严重、其余按面积加权
+  const recompute=(uid)=>{let num=0,den=0,max=null;
     for(const row of a.rows){ if(row.unit_id!==uid) continue;
+      if(m.variable==='progress' && !(row.gddNeed>0)) continue;
       const v=a.get(row,m.variable,m.day); const w=row.area_ha||0;
-      if(v!==null&&v!==undefined&&!Number.isNaN(Number(v))){num+=Number(v)*w;den+=w;} }
-    return den>0?num/den:null;};
+      if(v===null||v===undefined||Number.isNaN(Number(v))) continue;
+      if(m.variable==='disease'){ max=max===null?Number(v):Math.max(max,Number(v)); }
+      else { num+=Number(v)*w; den+=w; } }
+    return m.variable==='disease'?max:(den>0?num/den:null);};
   const re=ids.map(recompute);
-  const expectColors=re.map(v=>a.colorOf[m.variable](v));
+  // ⚠️ null（该单元/网格里没有可聚合的地块，例如全是牧草）页面画的是"无数据灰"，
+  // 判据不能把 null 送进色带（那会得到色带最低档的深色 ⇒ 假失败）
+  const expectColors=re.map(v=>v===null||v===undefined?'#8a949e':a.colorOf[m.variable](v));
   const colorsBefore=ids.map(st).map(o=>o.color);
   const day0=a.state.day;
   a.setDay(Math.min(a.model.days.length-1, day0+40));   // 换一天
@@ -1298,8 +1305,8 @@ check('「单元着色」开关存在，打开后单元面**按当前指标着�
     && s23.after.every((o, i) => o.color === s23.expectColors[i]),
   `${s23.nUnits} 个单元；抽样 ${s23.ids.length} 个：填充 ${s23.after.map((o) => o.op).join('/')} · 颜色 ${s23.after.map((o) => o.color).join('/')} vs 期望 ${s23.expectColors.join('/')}`);
 check('单元取值 = 成员地块的**面积加权均值**（判据自己算一遍，不复用页面函数）',
-  s23.vals.every((v, i) => v !== null && Math.abs(v - s23.re[i]) < 1e-9),
-  s23.vals.map((v, i) => `${(v ?? NaN).toFixed(4)}≈${(s23.re[i] ?? NaN).toFixed(4)}`).join(' '));
+  s23.vals.every((v, i) => (v === null ? s23.re[i] === null : Math.abs(v - s23.re[i]) < 1e-9)),
+  s23.vals.map((v, i) => `${v === null ? '无数据' : v.toFixed(4)}≈${s23.re[i] === null ? '无数据' : s23.re[i].toFixed(4)}`).join(' '));
 check('单元着色**跟随当前帧**：换一天后颜色随之变化（不是停在打开那一刻）',
   s23.colorsAfter.some((c, i) => c !== s23.colorsBefore[i]),
   `第 ${s23.day0} 天 → 第 ${s23.day1} 天：${s23.colorsBefore.join('/')} → ${s23.colorsAfter.join('/')}`);
@@ -1381,13 +1388,20 @@ const s25 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
   if(cb){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
   const vals=ids.map(g=>m.gridValue(g));
   const after=ids.map(st);
-  const recompute=(gid)=>{let num=0,den=0;
+  // 独立复算：按 geo.js 里**声明过的口径**（AGG_RULE）自己实现一遍
+  // —— progress 排除不播种的地块（gddNeed=0）、disease 取最严重、其余按面积加权
+  const recompute=(gid)=>{let num=0,den=0,max=null;
     for(const row of a.rows){ if(row.grid_id!==gid) continue;
+      if(m.variable==='progress' && !(row.gddNeed>0)) continue;
       const v=a.get(row,m.variable,m.day); const w=row.area_ha||0;
-      if(v!==null&&v!==undefined&&!Number.isNaN(Number(v))){num+=Number(v)*w;den+=w;} }
-    return den>0?num/den:null;};
+      if(v===null||v===undefined||Number.isNaN(Number(v))) continue;
+      if(m.variable==='disease'){ max=max===null?Number(v):Math.max(max,Number(v)); }
+      else { num+=Number(v)*w; den+=w; } }
+    return m.variable==='disease'?max:(den>0?num/den:null);};
   const re=ids.map(recompute);
-  const expectColors=re.map(v=>a.colorOf[m.variable](v));
+  // ⚠️ null（该单元/网格里没有可聚合的地块，例如全是牧草）页面画的是"无数据灰"，
+  // 判据不能把 null 送进色带（那会得到色带最低档的深色 ⇒ 假失败）
+  const expectColors=re.map(v=>v===null||v===undefined?'#8a949e':a.colorOf[m.variable](v));
   const parcelOp=m.parcelLayer.getLayers()[0].options.fillOpacity;
   const day0=a.state.day;
   const c0=ids.map(st).map(o=>o.color);
@@ -1405,8 +1419,8 @@ check('「网格着色」开关存在（217 个网格），打开后按当前指
     && s25.after.every((o, i) => o.color === s25.expectColors[i]),
   `${s25.nGrids} 个网格；抽样 ${s25.after.length} 个：填充 ${s25.after.map((o) => o.op).join('/')} · 颜色 ${s25.after.map((o) => o.color).join('/')} vs 期望 ${s25.expectColors.join('/')}`);
 check('网格取值与 P2 单元**同一套聚合**（面积加权；判据自己算一遍）',
-  s25.vals.every((v, i) => v !== null && Math.abs(v - s25.re[i]) < 1e-9),
-  s25.vals.map((v, i) => `${(v ?? NaN).toFixed(4)}≈${(s25.re[i] ?? NaN).toFixed(4)}`).join(' '));
+  s25.vals.every((v, i) => (v === null ? s25.re[i] === null : Math.abs(v - s25.re[i]) < 1e-9)),
+  s25.vals.map((v, i) => `${v === null ? '无数据' : v.toFixed(4)}≈${s25.re[i] === null ? '无数据' : s25.re[i].toFixed(4)}`).join(' '));
 check('网格着色**跟随当前帧**（换一天颜色随之变化）',
   s25.colors1.some((c, i) => c !== s25.colors0[i]),
   `第 ${s25.colors0.join('/')} → ${s25.colors1.join('/')}`);
@@ -1417,6 +1431,82 @@ check('关掉回到网格线（fill=false）；地块填充也跟着调暗/恢�
 check('网格图层**不可交互**（与单元层同理：不能吃掉"点地块"）',
   s25.interactive === false, `interactive=${s25.interactive}`);
 await shot('gridfill-on-1440x900');
+
+
+// ===================== 26. 叠加层同开 · 表↔图口径 · 情景图例 =====================
+console.log('\n=== 26. 叠加层同开 / 表图口径 / 情景图例 ===');
+await boot(1440, 900);
+const s26 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
+  const cb=(n)=>document.querySelector('input[data-layer="'+n+'"]');
+  const on=(n,v)=>{const el=cb(n); if(!el) return; el.checked=v; el.dispatchEvent(new Event('change',{bubbles:true}));};
+  const parcelOp=()=>m.parcelLayer.getLayers()[0].options.fillOpacity;
+  const unitOp=()=>m.unitLayer.getLayers()[0].options.fillOpacity||0;
+  const gridOp=()=>m.gridLayer.getLayers()[0].options.fillOpacity||0;
+  on('scenariofill', false);
+  on('unitfill', false); on('gridfill', false);
+  const base={p:parcelOp(), u:unitOp(), g:gridOp()};
+  on('unitfill', true); on('gridfill', true);          // **两个叠加层同时开**
+  const both={p:parcelOp(), u:unitOp(), g:gridOp(),
+    uFill:!!m.unitLayer.getLayers()[0].options.fill, gFill:!!m.gridLayer.getLayers()[0].options.fill};
+  on('gridfill', false);                                // 只关一个
+  const onlyUnit={p:parcelOp(), u:unitOp(), g:gridOp(),
+    uFill:!!m.unitLayer.getLayers()[0].options.fill, gFill:!!m.gridLayer.getLayers()[0].options.fill};
+  on('unitfill', false);                                // 全关
+  const none={p:parcelOp(), u:unitOp(), g:gridOp(),
+    uFill:!!m.unitLayer.getLayers()[0].options.fill, gFill:!!m.gridLayer.getLayers()[0].options.fill};
+
+  // 表 ↔ 图：同一个单元，表格的进度/水肥/病级与地图聚合值必须一致
+  const u0=(()=>{document.querySelector('#tb-tabs button[data-tab="units"]').click();
+    const tr=document.querySelector('#tb-body .tbl tbody tr'); return tr;})();
+  const cells=[...document.querySelectorAll('#tb-body .tbl tbody tr')].slice(0,5).map(tr=>({
+    id:tr.getAttribute('data-unit'), tds:[...tr.children].map(td=>td.textContent.trim())}));
+  const cmp=cells.map(c=>{
+    const id=c.id;
+    const tProg=Number(c.tds[4])/100, tWater=Number(c.tds[6])/100, tFert=Number(c.tds[7])/100, tDis=Number(c.tds[5]);
+    return {id, tProg, tWater, tFert, tDis,
+      mWater:m.unitValueFor?null:null};
+  });
+  // 用同一套聚合在别处复算（判据侧独立算，不复用 unitValue）
+  const rec=(id,varName)=>{let num=0,den=0,max=null;
+    for(const row of a.rows){ if(row.unit_id!==id) continue;
+      if(varName==='progress' && !(row.gddNeed>0)) continue;
+      const v=a.get(row,varName,m.day); const w=row.area_ha||0;
+      if(v===null||v===undefined||Number.isNaN(Number(v))) continue;
+      if(varName==='disease'){ max=max===null?Number(v):Math.max(max,Number(v)); }
+      else { num+=Number(v)*w; den+=w; } }
+    return varName==='disease'?max:(den>0?num/den:null);};
+  // ⚠️ 容差要按**显示精度**定：表里是"1 位小数的百分比"，比到 1e-6 是拿显示值要求全精度（假失败）
+  const TOL=0.001;   // 0.1% ⇒ 覆盖"1 位小数百分比"的舍入
+  const tableVsMap=cmp.map(c=>{const d={p:Math.abs(c.tProg-rec(c.id,'progress')),w:Math.abs(c.tWater-rec(c.id,'water')),
+    f:Math.abs(c.tFert-rec(c.id,'fert')),dis:Math.abs(c.tDis-rec(c.id,'disease'))};
+    return {id:c.id, ok:d.p<TOL&&d.w<TOL&&d.f<TOL&&d.dis<0.5, worst:Math.max(d.p,d.w,d.f)};});
+  return {base, both, onlyUnit, none, tableVsMap,
+    legendVar:document.getElementById('legend').textContent.slice(0,40),
+    legendTitle:document.getElementById('legend-title').textContent};})()`);
+check('**两个叠加层同时开**（P2 单元 + P4 网格）都填色、地块保持调暗；只关一个另一个不受影响；全关恢复',
+  s26.both.uFill === true && s26.both.gFill === true && s26.both.u > 0 && s26.both.g > 0
+    && s26.both.p < 0.4 && s26.onlyUnit.uFill === true && s26.onlyUnit.gFill === false
+    && s26.none.p > 0.7 && s26.none.uFill === false && s26.none.gFill === false,
+  `地块填充 ${s26.base.p} → 同开 ${s26.both.p} → 只留单元 ${s26.onlyUnit.p} → 全关 ${s26.none.p}`
+    + ` · 单元填充 同开 ${s26.both.u}/只留单元 ${s26.onlyUnit.u}/全关 ${s26.none.u} · 网格 ${s26.both.g}/全关 ${s26.none.g}`);
+check('**表 ↔ 图口径一致**：同一个经营单元，表格的进度/水分/养分/最高病级与地图聚合值逐项相同',
+  s26.tableVsMap.length > 0 && s26.tableVsMap.every((x) => x.ok),
+  `${s26.tableVsMap.filter((x) => x.ok).length}/${s26.tableVsMap.length} 个单元一致（抽样首 5 个，最大偏差 ${Math.max(...s26.tableVsMap.map((x) => x.worst)).toExponential(1)}）`);
+
+// 情景图例：选点后图例要换成"节省分钟"档
+const s26b = await ev(`(()=>{const a=globalThis.__agri;
+  const cand=a.scenario.candidates.reduce((b,c)=>c.avg_gain_min>(b?b.avg_gain_min:-1)?c:b, null);
+  a.pickScenario({lat:cand.lat, lng:cand.lon});
+  const on={title:document.getElementById('legend-title').textContent,
+    txt:document.getElementById('legend').textContent.replace(/\s+/g,' ').slice(0,80)};
+  const cb=document.querySelector('input[data-layer="scenariofill"]');
+  cb.checked=false; cb.dispatchEvent(new Event('change',{bubbles:true}));
+  const off={title:document.getElementById('legend-title').textContent,
+    txt:document.getElementById('legend').textContent.replace(/\s+/g,' ').slice(0,60)};
+  return {on, off};})()`);
+check('选点后**图例换成"情景对比：节省分钟"**（5 档 + 基本没改善），关掉图层恢复指标图例',
+  /节省/.test(s26b.on.title) && /基本没改善/.test(s26b.on.txt) && !/节省/.test(s26b.off.title),
+  `选点后图例标题「${s26b.on.title}」· 关闭后「${s26b.off.title}」`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

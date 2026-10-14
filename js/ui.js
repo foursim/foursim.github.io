@@ -378,7 +378,23 @@ export class UI {
     this.renderDetail();
   }
 
+  /**
+   * 切换图例到"情景对比"档（选点后由 main.js 调用；传 null 恢复指标图例）。
+   * 不做这件事的后果：地图上一片绿色块，图例却写着"生长进度 %"，读者没法把它读成"节省分钟"。
+   */
+  setScenarioLegend(bins) {
+    this.scenarioLegend = bins && bins.length ? bins : null;
+    this.renderLegend();
+  }
+
   renderLegend() {
+    if (this.scenarioLegend) {
+      this.refs['legend-title'].textContent = '（情景对比：到收储点节省）';
+      this.setHtml('legend', this.scenarioLegend.map((b) => (
+        `<div class="lg-row"><i style="background:${b.color}"></i><span>${b.label}</span></div>`
+      )).join('') + '<div class="lg-row"><i style="background:#eef1f4"></i><span>基本没改善（< 0.05 分）</span></div>');
+      return;
+    }
     const spec = VARIABLES[this.variable];
     this.refs['legend-title'].textContent = spec.unit ? `（${spec.unit}）` : '';
     const items = legendItems(this.variable);
