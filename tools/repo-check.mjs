@@ -74,5 +74,34 @@ const check = (label, ok, detail = '') => {
     ext.length === 0, ext.length ? `外链：${ext.join(',')}` : `扫描 ${files.length} 个文件：只有本地引用`);
 }
 
+// ---------- 5. CSS 里引用的**本地文件**必须存在 ----------
+{
+  /*
+   * 起因：vendored 的 `leaflet.css` 里有三处 `url(images/…)`，而仓库里没有那些图片 ——
+   * 平时不触发（我们只用 circleMarker/divIcon），但属于"同源 404 隐患"。这条判据保证：
+   * 任何人再往 CSS 里写一个指向缺失文件的 `url(...)`，构建/校验阶段就会红。
+   * 跳过：`data:`（内联）、`#…`（SVG 片段引用，如老 IE 的 VML behavior）、`http(s):`（外部，另有纯静态判据管）。
+   */
+  const cssFiles = ['style.css', ...fs.readdirSync('vendor', { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .flatMap((d) => fs.readdirSync(path.join('vendor', d.name))
+      .filter((f) => f.endsWith('.css'))
+      .map((f) => path.join('vendor', d.name, f)))];
+  const missing = [];
+  for (const f of cssFiles) {
+    const dir = path.dirname(f);
+    // 先去掉 CSS 注释再扫：注释里写的示例（比如说明"这里原本引用 images/xxx"）不是活引用
+    const css = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of css.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g)) {
+      const u = m[1].trim();
+      if (/^(data:|#|https?:|\/\/)/.test(u)) continue;
+      const target = path.join(dir, u.split('?')[0]);
+      if (!fs.existsSync(target)) missing.push(`${f} → ${u}`);
+    }
+  }
+  check('CSS 里引用的**本地文件都存在**（同源 404 隐患：vendored leaflet 曾引用 3 张不存在的图）',
+    missing.length === 0, missing.length ? missing.join('；') : `扫描 ${cssFiles.length} 个 CSS：全部可解析`);
+}
+
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 process.exit(fail ? 1 : 0);

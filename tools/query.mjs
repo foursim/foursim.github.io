@@ -452,6 +452,40 @@ const PRESETS = [
    * （= SQL 的 AVG 忽略 NULL）。q10 曾因为把空值算进均值分母而差了整整 2 倍。
    */
   {
+    id: 'q12',
+    title: '单产两套口径对照（季等权 vs 面积加权）',
+    question: '同一作物同一年，"每季一票"与"每公顷一票"的单产差多少？（面积加权 = Σ总产 ÷ Σ面积）',
+    build: (T) => {
+      const s = star(T, 'fact_parcel_season');   // 已连上 dim_parcel（面积）与 dim_crop（单产口径）
+      const agg = new Map();
+      for (const r of s.rows) {
+        const k = `${r.crop_name_zh} · ${r.yield_basis} · ${r.season_year}`;
+        if (!agg.has(k)) {
+          agg.set(k, { k, n: 0, yt: 0, nyt: 0, ha: 0, yha: 0, nyha: 0 });
+        }
+        const a = agg.get(k);
+        a.n += 1;
+        const yt = r.yield_t;                    // 求和：空值当 0（= SQL 的 SUM 忽略 NULL）
+        if (yt !== '' && yt !== null && yt !== undefined && !Number.isNaN(Number(yt))) { a.yt += Number(yt); a.nyt += 1; }
+        a.ha += Number(r.area_ha) || 0;
+        const v = r.yield_t_ha;                  // 均值：跳过空值（= SQL 的 AVG 忽略 NULL）
+        if (v !== '' && v !== null && v !== undefined && !Number.isNaN(Number(v))) { a.yha += Number(v); a.nyha += 1; }
+      }
+      const out = [...agg.values()].sort((x, y) => x.k.localeCompare(y.k)).map((a) => ({
+        key: a.k, n_seasons: a.n, area_ha: round(a.ha, 6),
+        // ⚠️ 全是空值时保持"空"：0 与 NULL 语义不同（0 = 真·零收获，空 = 没有记录）
+        yield_t_total: a.nyt ? round(a.yt, 6) : '',
+        yield_t_ha_eq: a.nyha ? round(a.yha / a.nyha, 6) : '',
+        yield_t_ha_area: a.nyt && a.ha ? round(a.yt / a.ha, 6) : '',
+      }));
+      return {
+        kind: 'list', rows: out, unit: 't / ha / t·ha⁻¹',
+        note: '口径对照：`yield_t_ha_eq` = 每季等权（q1 的场景平均就是它）；`yield_t_ha_area` = Σ总产 ÷ Σ面积（面积加权）',
+        listCols: ['key', 'n_seasons', 'area_ha', 'yield_t_total', 'yield_t_ha_eq', 'yield_t_ha_area'],
+      };
+    },
+  },
+  {
     id: 'q8',
     title: '区域逐日 → 按年月汇总',
     question: '每个月的水热与进度（降水合计 / 湿度均值 / 进度均值 / 病级峰值）',
@@ -507,7 +541,7 @@ const PRESETS = [
       }
       const out = [...agg.values()].sort((x, y) => x.year.localeCompare(y.year)).map((a) => ({
         year: a.year, sow: a.sow, fertilize: a.fertilize, harvest: a.harvest, total: a.total,
-        yield_t_ha_sum: round(a.ysum, 6), n_yield: a.ny,
+        yield_t_ha_sum: a.ny ? round(a.ysum, 6) : '', n_yield: a.ny,
       }));
       return {
         kind: 'list', rows: out, unit: '次 / t·ha⁻¹',
@@ -525,10 +559,11 @@ const PRESETS = [
       const agg = new Map();
       for (const r of rows) {
         const k = String(r.crop_code);
-        if (!agg.has(k)) agg.set(k, { crop_code: k, n: 0, yt: 0, yha: 0, nyha: 0, dis: 0 });
+        if (!agg.has(k)) agg.set(k, { crop_code: k, n: 0, yt: 0, nyt: 0, yha: 0, nyha: 0, dis: 0 });
         const a = agg.get(k);
         a.n += 1;                                        // 季数 = 全部季（含没有单产记录的）
-        a.yt += Number(r.yield_t) || 0;                  // 合计：空值当 0 累加，与 SUM 语义一致
+        const ytv = r.yield_t;                           // 合计：空值当 0 累加，与 SUM 语义一致
+        if (ytv !== '' && ytv !== null && ytv !== undefined && !Number.isNaN(Number(ytv))) { a.yt += Number(ytv); a.nyt += 1; }
         /*
          * ⚠️ 均值必须**忽略空值**：把空值当 0 计进分母，均值会被整体压下去。
          * 这个错（正好差 2 倍）是交叉验证抓出来的 —— 自研侧 2.89 t/ha vs DuckDB 5.78 t/ha，
@@ -539,7 +574,7 @@ const PRESETS = [
         a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
       }
       const out = [...agg.values()].sort((x, y) => x.crop_code.localeCompare(y.crop_code)).map((a) => ({
-        crop_code: a.crop_code, n_seasons: a.n, yield_t_total: round(a.yt, 6),
+        crop_code: a.crop_code, n_seasons: a.n, yield_t_total: a.nyt ? round(a.yt, 6) : '',
         yield_t_ha_avg: a.nyha ? round(a.yha / a.nyha, 6) : '', disease_max: a.dis,
       }));
       return {
@@ -881,6 +916,20 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
   check('均值型汇总**忽略空值**（空值算 0 会把均值压下去；这条独立复算，不依赖另一套引擎在场）',
     bad.length === 0 && p10.rows.length > 0,
     bad.length ? `${bad.length} 类不符：${bad.map((r) => r.crop_code).join(',')}` : `${p10.rows.length} 类作物的平均单产与"非空值均值"一致`);
+}
+
+{
+  /*
+   * 单产两套口径的判据：① 面积加权必须等于 Σ总产 ÷ Σ面积（独立复算，不依赖另一套引擎）；
+   * ② 与"季等权"**确实不同**（若两者恒等，说明面积加权没生效 —— 不过是把等权换个名字）。
+   */
+  const p12 = PRESETS.find((p) => p.id === 'q12').build(T);
+  const need = p12.rows.filter((r) => r.yield_t_ha_eq !== '' && r.yield_t_ha_area !== '');
+  const wrong = need.filter((r) => Math.abs(Number(r.yield_t_ha_area) - Number(r.yield_t_total) / Number(r.area_ha)) > 1e-6);
+  const diff = need.filter((r) => Math.abs(Number(r.yield_t_ha_eq) - Number(r.yield_t_ha_area)) > 1e-9).length;
+  check('单产两套口径：面积加权 == Σ总产 ÷ Σ面积（独立复算），且与季等权**确实不同**（防"换个名字"）',
+    need.length > 0 && wrong.length === 0 && diff >= need.length * 0.5,
+    `${need.length} 个"作物·口径·年"组合：两口径不同 ${diff} 个（${round((diff / Math.max(1, need.length)) * 100, 1)}%）· 复算不符 ${wrong.length}`);
 }
 
 {

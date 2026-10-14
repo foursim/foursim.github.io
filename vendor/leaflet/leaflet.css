@@ -356,12 +356,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
 	border-radius: 5px;
 	}
 .leaflet-control-layers-toggle {
-	background-image: url(images/layers.png);
+	/* 本项目删除：url(images/xxx) 指向的图片没有随仓库本地化（网络不可达无法补图）。
+	   只影响 Leaflet 的**默认标注图标**与**图层控件图标** —— 本项目只用 circleMarker / divIcon，不触发；
+	   若将来要用默认标注，请把官方 dist/images/ 下的图片补进 vendor/leaflet/images/ 并恢复这几行。 */
 	width: 36px;
 	height: 36px;
 	}
 .leaflet-retina .leaflet-control-layers-toggle {
-	background-image: url(images/layers-2x.png);
+	/* 本项目删除：url(images/xxx) 指向的图片没有随仓库本地化（网络不可达无法补图）。
+	   只影响 Leaflet 的**默认标注图标**与**图层控件图标** —— 本项目只用 circleMarker / divIcon，不触发；
+	   若将来要用默认标注，请把官方 dist/images/ 下的图片补进 vendor/leaflet/images/ 并恢复这几行。 */
 	background-size: 26px 26px;
 	}
 .leaflet-touch .leaflet-control-layers-toggle {
@@ -404,7 +408,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 /* Default icon URLs */
 .leaflet-default-icon-path { /* used only in path-guessing heuristic, see L.Icon.Default */
-	background-image: url(images/marker-icon.png);
+	/* 本项目删除：url(images/xxx) 指向的图片没有随仓库本地化（网络不可达无法补图）。
+	   只影响 Leaflet 的**默认标注图标**与**图层控件图标** —— 本项目只用 circleMarker / divIcon，不触发；
+	   若将来要用默认标注，请把官方 dist/images/ 下的图片补进 vendor/leaflet/images/ 并恢复这几行。 */
 	}
 
 

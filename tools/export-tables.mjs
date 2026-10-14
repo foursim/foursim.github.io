@@ -24,6 +24,14 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i
 const DATA = path.resolve(opt('data', 'data'));
 const OUT = path.resolve(opt('out', 'tables'));
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
+/**
+ * `--daily`：额外落盘**地块 × 日**长表（`fact_parcel_daily`，501 地块 × 549 天 ≈ 27.5 万行）。
+ *
+ * 为什么默认不写：它是"要交付给外部系统时才用得上"的重表（约 15 MB），而且完全由确定性模型重算得出来
+ * ⇒ 放进默认导出只会让每次 `data:all` 更慢、仓库更大。用 `npm run export:daily` 按需生成。
+ * 写入方式是**流式**（一个地块一批），不把 27.5 万个对象同时放内存，也不进 Excel 工作簿。
+ */
+const DAILY = argv.includes('--daily');
 
 const readJson = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
 const parcelsFC = readJson('parcels.geojson');
@@ -263,6 +271,8 @@ const COLDEF = {
   progress_p10: D('生长进度 p10', 'crop progress 10th percentile', '1', '0~1', 'O', '看单元内进度离散'),
   progress_p90: D('生长进度 p90', 'crop progress 90th percentile', '1', '0~1', 'O'),
   disease_level_max: D('病害气象等级(最高)', 'max disease level', '级', '1~5', 'M'),
+  disease_index: D('促病指数(连续)', 'disease index (continuous)', '1', '0~4', 'M', '随温湿累积的连续促病指数；分级见 disease_level'),
+  disease_level: D('病害气象等级', 'disease meteorological level', '级', '1~5', 'M', '由 disease_index 按阈值分级（1=不适宜 … 5=极适宜）'),
   disease_parcels_ge3: D('病害≥3级地块数', 'parcels with disease level ≥3', '1', '0~1000', 'M'),
   water_index: D('水分保持指数', 'water retention index', '1', '0~1', 'M'),
   water_index_mean: D('旬均水分保持指数', 'mean water retention index', '1', '0~1', 'M'),
@@ -655,6 +665,32 @@ counts.dim_variable = writeCsv('dim_variable', VAR_COLS, varRows);
       'water_index_mean', 'fertility_index_mean', 'harvested_ha', 'sown_ha', 'source_id', 'synthetic'],
     unitDecade);
   console.log(`[旬表] ${decades.length} 旬 × ${unitMembers.size} 单元 = ${unitDecade.length} 行（国内农业气象旬报口径：上旬/中旬/下旬）`);
+}
+
+// ---------- fact_parcel_daily（地块 × 日：**按需**落盘的长表） ----------
+/** 这张表的列（顺序即 CSV 表头）；全部都要在数据元字典里有登记（下面有判据查这个） */
+const DAILY_COLS = ['parcel_id', 'date_key', 'crop_progress', 'water_index', 'fertility_index',
+  'disease_index', 'disease_level', 'source_id', 'synthetic'];
+if (DAILY) {
+  const file = path.join(OUT, 'fact_parcel_daily.csv');
+  fs.writeFileSync(file, `${DAILY_COLS.join(',')}\n`, 'utf8');
+  let written = 0;
+  // 一个地块一批地追加：不在内存里攒 27.5 万个对象（那样光对象头就上百 MB）
+  for (const r of rows) {
+    const buf = [];
+    model.days.forEach((d, i) => {
+      buf.push([
+        r.id, d,
+        round(r.series.progress[i], 5), round(r.series.water[i], 5), round(r.series.fert[i], 5),
+        round(r.series.disease[i], 4), levelOf(r.series.disease[i]), 'model', 1,
+      ].join(','));
+    });
+    fs.appendFileSync(file, `${buf.join('\n')}\n`, 'utf8');
+    written += buf.length;
+  }
+  counts.fact_parcel_daily = written;
+  console.log(`[按需] fact_parcel_daily：${written} 行（${rows.length} 地块 × ${model.days.length} 天），`
+    + `${(fs.statSync(file).size / 1024 / 1024).toFixed(1)} MB —— 默认不生成，用 npm run export:daily`);
 }
 
 // ---------- meta_dataset（NY/T 4061 的三组元数据 + GB/T 19710 的时空信息） ----------
@@ -1137,7 +1173,40 @@ check('长表里用到的变量都在变量字典里（否则"加变量不用改
 {
   const x = path.join(OUT, '农业监测数据.xlsx');
   const okX = fs.existsSync(x) && fs.statSync(x).size > 100000;
-  check('Excel 工作簿已写出且体积合理（>100 KB，说明真的装了表）', okX,
+  if (DAILY) {
+  /*
+   * 按需表也要有判据（否则"跑过了"就只是一句话）：
+   * ① 行数 = 地块数 × 天数；② 每个地块的天数都齐（抽样逐个数）；③ 表头每列都在数据元字典里；
+   * ④ 值域（进度/水肥 0~1、病级 1~5）。
+   */
+  const f = path.join(OUT, 'fact_parcel_daily.csv');
+  const txt = fs.readFileSync(f, 'utf8');
+  const linesArr = txt.trim().split('\n');
+  const header = linesArr[0].split(',');
+  const body = linesArr.slice(1);
+  const expect = rows.length * model.days.length;
+  const perParcel = new Map();
+  for (const l of body) {
+    const id = l.slice(0, l.indexOf(','));
+    perParcel.set(id, (perParcel.get(id) ?? 0) + 1);
+  }
+  const badDays = [...perParcel.values()].filter((n) => n !== model.days.length).length;
+  let badVal = 0;
+  for (let i = 0; i < body.length; i += 997) {   // 抽样（27 万行不必逐行 parse）
+    const c = body[i].split(',');
+    const [p, w, fe, dl] = [Number(c[2]), Number(c[3]), Number(c[4]), Number(c[6])];
+    if (!(p >= 0 && p <= 1 && w >= 0 && w <= 1 && fe >= 0 && fe <= 1 && dl >= 1 && dl <= 5)) badVal++;
+  }
+  const missingEl = header.filter((c) => !COLDEF[c]);
+  check('按需落盘的 fact_parcel_daily：行数 = 地块 × 天、每地块天数齐、抽样值域合规', 
+    body.length === expect && badDays === 0 && badVal === 0,
+    `${body.length} 行（期望 ${expect}）· 天数不齐的地块 ${badDays} 个 · 抽样越界 ${badVal} 行`);
+  check('按需落盘的表头**每一列都在数据元字典里**（不进 registry 的表也要有列字典）',
+    missingEl.length === 0 && header.join(',') === DAILY_COLS.join(','),
+    missingEl.length ? `未登记：${missingEl.join(',')}` : `${header.length} 列逐列核对通过`);
+}
+
+check('Excel 工作簿已写出且体积合理（>100 KB，说明真的装了表）', okX,
     okX ? `${(fs.statSync(x).size / 1024 / 1024).toFixed(2)} MB / ${registry.length + 1} 个工作表` : '缺失');
 }
 

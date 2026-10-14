@@ -51,8 +51,16 @@ const check = (label, ok, detail = '') => {
   console.log(`${ok ? '  [OK]  ' : '  [FAIL]'} ${label}${detail ? ` — ${detail}` : ''}`);
 };
 const round = (v, d = 3) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10 ** d) / 10 ** d : v);
-/** 浮点比较：两套引擎的求和顺序不同，末位必然有差（用相对容差，不用"四舍五入后相等"这种脆判法） */
+const isEmpty = (v) => v === '' || v === null || v === undefined;
+/**
+ * 浮点比较：两套引擎的求和顺序不同，末位必然有差（用相对容差，不用"四舍五入后相等"这种脆判法）。
+ *
+ * ⚠️ **空 ≠ 0**：`Number('')` 与 `Number(null)` 都是 0，若不先把空值挑出来，
+ * "自研侧出 0、SQL 侧出 NULL"（或反过来）就会被判成相等 —— 那是**语义差异**，必须红。
+ * 空值只和空值相等（例如某作物某年完全没有单产记录：两侧都空 ⇒ 判等是合理的）。
+ */
 const close = (a, b) => {
+  if (isEmpty(a) || isEmpty(b)) return isEmpty(a) && isEmpty(b);
   const x = Number(a);
   const y = Number(b);
   if (Number.isNaN(x) || Number.isNaN(y)) return String(a) === String(b);
@@ -125,6 +133,13 @@ const queries = [
       SUM(${dbl('sown_ha')}) AS sown, AVG(${dbl('progress_mean')}) AS prog,
       AVG(${dbl('progress_area_mean')}) AS progA, MAX(CAST(disease_level_max AS INTEGER)) AS dis
       FROM fact_unit_decade GROUP BY 1 ORDER BY 1` },
+  { id: 'q12', sql: `SELECT s.crop_name_zh || ' · ' || c.yield_basis || ' · ' || CAST(s.season_year AS VARCHAR) AS k,
+      COUNT(*) AS n, SUM(${dbl('p.area_ha')}) AS ha, SUM(${dbl('s.yield_t')}) AS yt,
+      AVG(${dbl('s.yield_t_ha')}) AS yeq,
+      SUM(${dbl('s.yield_t')}) / NULLIF(SUM(${dbl('p.area_ha')}), 0) AS yarea
+      FROM fact_parcel_season s LEFT JOIN dim_parcel p ON p.parcel_id = s.parcel_id
+      LEFT JOIN dim_crop c ON c.crop_code = s.crop_code
+      GROUP BY 1 ORDER BY 1` },
   // 顺带验一个"键列是文本"的事实（不是查询，是核对）
   { id: 'keys', sql: `SELECT DISTINCT admin_code FROM dim_parcel` },
 ];
@@ -309,6 +324,7 @@ compareAgg('q8', '区域逐日 → 年月（降水合计 / 湿度与进度均值
 compareAgg('q9', '农事事件 → 年 × 类型计数');
 compareAgg('q10', '地块季 → 作物（季数 / 总产 / 平均单产 / 病级峰值）');
 compareAgg('q11', '单元 × 旬 → 旬（单元数 / 收获与播种面积 / 进度均值）');
+compareAgg('q12', '单产两套口径（季等权 / Σ总产÷Σ面积）');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`SQL 侧产物：${path.relative(process.cwd(), SQL_DIR)}/（保留下来便于人工核对）`);

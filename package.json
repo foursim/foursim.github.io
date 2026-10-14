@@ -22,6 +22,7 @@
     "data:zones": "node tools/build-zones.mjs --out data",
     "data:scenario": "node tools/scenario.mjs --out data",
   "export:tables": "node tools/export-tables.mjs --data data --out tables",
+    "export:daily": "node tools/export-tables.mjs --data data --out tables --daily",
     "query": "node tools/query.mjs --json tables/query/results-self.json --web data/pivot.json --xlsx tables/query/透视与联合查询.xlsx",
     "query:sql": "node tools/query-sql.mjs",
     "repo:check": "node tools/repo-check.mjs",

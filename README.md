@@ -53,6 +53,7 @@ npm run data:all        # 全流水线：取数（含行政边界/居民点/DEM/
 npm test                # 模型判据 40 条
 npm run test:browser    # 真浏览器验收 116 条（Chrome/Edge，找不到浏览器时自动跳过）
 npm run export:tables   # 单独重跑表格导出（含 31 条导出判据，失败即非 0 退出）
+npm run export:daily    # 按需落盘"地块 × 日"长表（275,049 行 / 13.7 MB；默认不生成，另有 2 条判据）
 
 npm run serve           # 启动静态服务器 → 打开 http://localhost:8080/
 npm run serve:sub       # 同上，但挂在子路径下 → http://localhost:8080/webtrade/
@@ -177,6 +178,8 @@ Excel 版在 `tables/农业监测数据.xlsx`：16 个工作表、冻结首行�
 | **查询结果多 sheet Excel** | `npm run query` 顺带写 `tables/query/透视与联合查询.xlsx`（一张查询一个 sheet + 说明）；用 openpyxl 反向验证过可打开 | 1 条（ZIP 头 + 体积；另有 openpyxl 人工核过） |
 | **交叉验证补齐** | 6 张 `fact_*` 全部纳入（新增 q8/q9；q10/q11 做汇总口径对比），逐行逐列比 | 交叉验证 14 条 |
 | **进度给两套口径** | `fact_unit_decade` 新增 `progress_area_mean`（**每公顷一票**），与原有 `progress_mean`（**每地块一票**）成对；实测 3348 行里 **2006 行（59.9%）两口径不同** —— 单元内小地块多时分开得最明显 | 1 条（都落在 0~1，且**确实不同**，防"加权"写成复制等权列） |
+| **单产两套口径** | 新增 `q12`：同一"作物·口径·年"下给出 `yield_t_ha_eq`（每季等权，q1 用的就是它）与 `yield_t_ha_area`（Σ总产 ÷ Σ面积，面积加权）；实测 6 个组合**100% 不同** | 1 条（面积加权 == Σ总产÷Σ面积 独立复算 + 与等权确实不同）+ 交叉验证逐行逐列 |
+| **`fact_parcel_daily` 按需落盘** | `npm run export:daily`（流式写、不进 Excel、默认不生成）：501 地块 × 549 天 = **275,049 行 / 13.7 MB** | 2 条（行数 = 地块×天、每地块天数齐、抽样值域合规；表头**每列都在数据元字典里**） |
 | **参考单产换真实统计** | `yield_ref` 换成 **Eurostat `apro_cpsh1`（`YLD_HUMD_EU_T_HA`, geo=DE, 2023+2024 均值）**：冬小麦 7.33 / 冬大麦 7.08 / 冬油菜 3.46 / 青贮玉米 43.26 / 啤酒花 2.13 t/ha；新增 `dim_crop.yield_ref_source` 逐类记口径与年份 | 30 条导出判据里含"参考单产有来源且与 Eurostat 抄录值逐项吻合" |
 
 
@@ -193,8 +196,11 @@ Excel 版在 `tables/农业监测数据.xlsx`：16 个工作表、冻结首行�
 ④ **观测长表 → 宽表**（日期 × 变量）⑤ **多条件联合筛选** ⑥ **四层空间钻取链**（乡 → 县两级）
 ⑦ 管理分区 × 作物。
 
-**四条"不许糊过去"的规矩**（全部做成判据）：① 连接不许膨胀行数；② 外键不许有孤儿；
-③ **单产不许跨口径平均**（混口径的格子标 `*`，绝不静默出数）；④ 透视要守恒（单元格合计 == 原列合计）。
+**五条"不许糊过去"的规矩**（全部做成判据）：① 连接不许膨胀行数；② 外键不许有孤儿；
+③ **单产不许跨口径平均**（混口径的格子标 `*`，绝不静默出数）；④ 透视要守恒（单元格合计 == 原列合计）；
+⑤ **空 ≠ 0**：求和时空值当 0（= SQL 的 SUM 忽略 NULL），**均值必须跳过空值**（= SQL 的 AVG 忽略 NULL），
+而"全是空值"时合计要**保持空**而不是写 0（0 是"真·零收获"，空是"没有记录"）。
+第 ⑤ 条是被交叉验证逼出来的：把比较函数的空值语义收紧后**第一次运行**就报出 4 处"自研 0 vs SQL null"。
 
 **交叉验证**（`npm run query:sql`，DuckDB 1.5.6）：**8166 个格子逐格一致**（另含与原生 `PIVOT` 宽表对齐的 3348 格）、
 联合筛选命中集合完全相同、分层去重计数一致。覆盖口径说清楚：`tables/` 下共 **6 张 `fact_*`**，
@@ -460,7 +466,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 > （`npm run serve`、`python -m http.server`、Nginx、对象存储、GitHub Pages 都可以）。
 > 第 5 条保证的是"就算你这么打开了，也看得懂为什么"。
 
-## 判据（模型 40 + 真浏览器 116 + 数据 25 + 导出 31 + 查询 12 + 交叉验证 14 + 仓库卫生 5 = **243 条**）
+## 判据（模型 40 + 真浏览器 116 + 数据 25 + 导出 31 + 查询 13 + 交叉验证 15 + 仓库卫生 6 = **246 条**）
 
 > 数字以**实际跑出来的**为准（每条脚本末尾都会打印"X 通过 / Y 失败"）；下面的分项说明与代码同步，
 > 但**最终的条数请以运行输出为准** —— 文档里的数字是这一轮对齐过的快照。
@@ -572,15 +578,27 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 
 ## 部署（GitHub Pages 项目站）
 
+> 附记：本机的 `github.com:443` **会间歇性完全不通**（`api.github.com` 通常正常，`git push` 报
+> `Connection was reset`）。这不是仓库配置问题 —— 等网络恢复后重跑 `git push` 即可；
+> 期间 `git commit` 照常可用（本地提交不会丢）。
+
+> 另一条踩过的：想给 `vendor/leaflet` 补两张图时，`unpkg` 返回 404、`cdn.jsdelivr.net` 连接被重置、
+> `raw.githubusercontent.com` 域名解析不了 ⇒ 结论是**删掉那三处指向缺图的死引用**（并加判据守住），
+> 而不是伪造图片。**拿不到就如实标注，不编。**
+
 把目录内容推到仓库，Settings → Pages → Deploy from a branch 即可。没有构建产物、没有绝对路径、
 没有 `.js/.css/.json/.geojson` 之外的可执行资源、**运行时零外部请求**（Leaflet 已本地内置）。
 数据总量约 0.8 MB（其中路网 470 KB），加 Leaflet 约 1 MB。
 
 ## 已知限制 / 下一步
 
-- **`vendor/leaflet/leaflet.css` 里引用了两张不存在的图片**（`images/layers.png`、`images/marker-icon.png`）：
-  本项目只用 `circleMarker` / `divIcon`，**不会触发**这两个 404；但若以后启用 Leaflet 默认标注或图层控件，
-  需要把这两张图补进 `vendor/leaflet/images/`（属同源 404 隐患，不是外链）。
+- **`fact_parcel_daily`（地块 × 日，275,049 行 / 13.7 MB）默认不在仓库里**：它完全由确定性模型重算得出，
+  用 `npm run export:daily` 按需生成（已加进 `.gitignore`）。要交付给外部系统时跑一次即可，附带 2 条判据。
+
+- **Leaflet 默认标注/图层控件的图标没有本地化**：`vendor/leaflet/leaflet.css` 里那三处
+  `url(images/…)` 已**删除**（改成说明性注释）—— 本项目只用 `circleMarker` / `divIcon`，不触发这些路径。
+  若以后要用默认标注，把官方 `dist/images/` 的图片补进 `vendor/leaflet/images/` 并恢复那几行即可。
+  这条现在由 `npm run repo:check` 的「**CSS 里引用的本地文件都存在**」判据守住（再写死引用会直接红）。
 
 - **气温是区域量**，不做地块级着色：OSM 不提供每块地的高程，硬编一个地块级温度场就是造假。
   将来接入 DEM（如 Copernicus GLO-30）后可以按高程递减率做出真实的空间差异。

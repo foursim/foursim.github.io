@@ -9,3 +9,5 @@ Thumbs.db
 shots/
 # 取数可续跑缓存（中间产物，不入库）
 data/_soil_samples.json
+# 按需生成的"地块 × 日"长表（约 15 MB，随时可由 npm run export:daily 重算）
+tables/fact_parcel_daily.csv
