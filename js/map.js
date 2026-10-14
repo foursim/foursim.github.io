@@ -12,7 +12,7 @@
  * 501 个多边形 + 1576 条路：用 `preferCanvas: true` 走 canvas 渲染，
  * 播放时每帧只调 `setStyle`，**不重建几何**（重建才是卡顿与"点击丢失"的来源）。
  */
-import { VARIABLES, colorOf } from './geo.js';
+import { VARIABLES, colorOf, scenarioColor } from './geo.js';
 import { mapTokens } from './theme.js';
 
 /**
@@ -43,7 +43,8 @@ export class AgriMap {
     this.variable = 'progress';
     this.day = 0;
     this.visible = { parcels: true, fill: true, roads: true, poi: true, temp: true, iso: true,
-      units: true, unitfill: false, grids: false, zones: false, admin: true, villages: true };
+      units: true, unitfill: false, scenariofill: false, grids: false, gridfill: false,
+      zones: false, admin: true, villages: true };
     /** 表格联动高亮：当前被高亮的地块 `{layer, feature}`（下次高亮前先复原） */
     this.highlighted = [];
     /** 当前高亮的地块下标（外部/判据读它） */
@@ -123,10 +124,13 @@ export class AgriMap {
       interactive: false,
       style: (f) => this.unitStyle(f),
     }).addTo(this.map);
-    /** P4 统计网格线 */
+    /**
+     * P4 统计网格（250 m 规则网格）。与 P2 一样有两种看法：只画网格线（默认）或**按指标着色**。
+     * 网格是**上报口径**（统计汇总常按网格/行政单元走），所以"按网格看某个指标"比按地块看更接近对报表的口径。
+     */
     this.gridLayer = L.geoJSON(grids, {
       interactive: false,
-      style: () => ({ color: this.token.gridLine, weight: 1, opacity: 0.5, fill: false, dashArray: '2 6' }),
+      style: (f) => this.gridStyle(f),
     });
 
     /**
@@ -206,9 +210,37 @@ export class AgriMap {
     this.refresh(); // 地块填充/描边也跟着换
   }
 
+  /**
+   * 情景对比：把"新建收储点后每个地块省多少分钟"接进来（选点后由 main.js 调用）。
+   *
+   * 数据来自 `data/scenario.json` 的 `cand.improved`（离线 `tools/scenario.mjs` 算好，全部 > 0.05 分钟）。
+   * 打开 `scenariofill` 时，地块着色**整体切换**到这套分档（与"按指标着色"互斥，避免两层含义混在一张图上）。
+   */
+  setScenarioGains(cand) {
+    this.scenarioMeta = cand ?? null;
+    this.scenarioGains = new Map((cand?.improved ?? []).map(([i, g]) => [i, g]));
+    this.refresh();
+  }
+
+  /** 某地块的节省分钟（没选点时为 null；选了点但没改善 ⇒ 0） */
+  scenarioGainOf(index) {
+    if (!this.scenarioGains) return null;
+    return this.scenarioGains.get(index) ?? 0;
+  }
+
   /** 当前变量 + 当前日期下，一个地块该是什么颜色 */
   styleFor(feature) {
     const row = this.rows[feature.properties.i];
+    if (this.visible.scenariofill && this.scenarioGains) {
+      const g = this.scenarioGainOf(feature.properties.i);
+      return {
+        color: this.token.parcelStroke,
+        weight: 0.5,
+        opacity: this.visible.parcels ? 0.7 : 0,
+        fillColor: scenarioColor(g) ?? '#eef1f4',   // 浅灰 = 基本没改善（< 0.05 分钟）
+        fillOpacity: this.visible.fill ? 0.88 : 0,
+      };
+    }
     const v = this.get(row, this.variable, this.day);
     const spec = VARIABLES[this.variable];
     const fill = this.variable === 'yield' && !(v > 0)
@@ -224,7 +256,7 @@ export class AgriMap {
        * 都按 0.82 叠着会互相糊掉（实测：单元色与地块色混起来平均只有 2.4/255 的差别，
        * 眼睛基本看不出"哪个单元是什么水平"）。调暗后单元色成为主体，地块仍能看出轮廓与休耕虚线。
        */
-      fillOpacity: this.visible.fill ? (this.visible.unitfill ? 0.26 : 0.82) : 0,
+      fillOpacity: this.visible.fill ? ((this.visible.unitfill || this.visible.gridfill) ? 0.26 : 0.82) : 0,
       // 休耕/未播种用虚线边区分开
       dashArray: row.fallow ? '2 2' : null,
     };
@@ -249,15 +281,44 @@ export class AgriMap {
     return { ...base, fill: true, fillColor, fillOpacity: 0.62 };
   }
 
-  /** 单元取值：数值型按面积加权，分类型按面积最大（成员地块在该单元内的聚合） */
+  /**
+   * 网格样式（与 `unitStyle` 同一套规则，只是聚合键换成 `grid_id`）。
+   * 网格线细一点、填充淡一点：网格是**叠加层**，不该压过地块。
+   */
+  gridStyle(feature) {
+    const base = { color: this.token.gridLine, weight: 1, opacity: 0.5, dashArray: '2 6' };
+    if (!this.visible?.gridfill) return { ...base, fill: false };
+    const v = this.gridValue(feature.properties.grid_id);
+    const spec = VARIABLES[this.variable];
+    const fillColor = v === null || v === undefined
+      ? '#8a949e'
+      : (spec.type === 'class' ? (colorOf[this.variable](v) ?? '#555a55') : colorOf[this.variable](v));
+    return { ...base, fill: true, fillColor, fillOpacity: 0.42 };
+  }
+
+  /** 网格取值（与单元同一套聚合：数值型面积加权，分类型按面积最大） */
+  gridValue(gridId) {
+    return this.regionValue('grid_id', gridId);
+  }
+
+  /** 单元取值（与网格同一套聚合） */
   unitValue(unitId) {
+    return this.regionValue('unit_id', unitId);
+  }
+
+  /**
+   * **通用聚合**：把成员地块聚成一个值（P2 单元 / P4 网格共用）。
+   * 数值型按**面积加权**，分类型按**面积最大**的那一类 —— 两处口径完全一致，避免"同一个指标、
+   * 两个图层算法不同"这种最难发现的不一致。
+   */
+  regionValue(field, id) {
     const spec = VARIABLES[this.variable];
     const isCat = spec.type === 'class' || spec.type === 'categorical';
     let num = 0;
     let den = 0;
     const weights = new Map();
     for (const row of this.rows) {
-      if (row.unit_id !== unitId) continue;
+      if (row[field] !== id) continue;
       const v = this.get(row, this.variable, this.day);
       const w = row.area_ha || 0;
       if (v === null || v === undefined || Number.isNaN(Number(v))) continue;
@@ -280,9 +341,14 @@ export class AgriMap {
       ? (spec.classes.find(([k]) => k === v)?.[1] ?? '—')
       : (spec.type === 'categorical' ? (v ?? '—') : (spec.fmt ? spec.fmt(v) : v));
     const acc = row.t_min != null ? `到收储点 <b>${row.t_min.toFixed(1)} 分</b>（下道 ${row.access_m} m）<br>` : '';
+    const gi = this.visible.scenariofill && this.scenarioGains ? this.rows.indexOf(row) : -1;
+    const gainLine = gi >= 0
+      ? `<span style="color:#2f6b25">情景对比：节省 <b>${this.scenarioGainOf(gi).toFixed(2)} 分</b></span><br>`
+      : '';
     return `<b>${row.cropName ?? '未分类'}</b> ${row.area_ha.toFixed(2)} ha<br>`
       + `${spec.label}：<b>${shown}</b><br>`
       + acc
+      + gainLine
       + `<span class="dim">播种 ${row.sowDay ? `${row.sowDay.slice(4, 6)}/${row.sowDay.slice(6, 8)}` : '—'}`
       + ` · 收获 ${row.harvestDay ? `${row.harvestDay.slice(4, 6)}/${row.harvestDay.slice(6, 8)}` : '—'}</span>`;
   }
@@ -315,6 +381,11 @@ export class AgriMap {
     }
     // 单元着色开关会同时影响**两层**（开：单元填色 + 地块调暗；关：单元回轮廓 + 地块恢复正常）
     // —— 只重画一层会留下"关掉后地块还是暗的"这种残留（判据抓过一次）
+    else if (name === 'scenariofill') this.parcelLayer.setStyle((f) => this.styleFor(f));
+    else if (name === 'gridfill') {
+      this.gridLayer.setStyle((f) => this.gridStyle(f));
+      this.parcelLayer.setStyle((f) => this.styleFor(f));   // 与 unitfill 同理：切换会影响"地块是否调暗"
+    }
     else if (name === 'unitfill') {
       this.unitLayer.setStyle((f) => this.unitStyle(f));
       this.parcelLayer.setStyle((f) => this.styleFor(f));
@@ -327,6 +398,7 @@ export class AgriMap {
     this.parcelLayer.setStyle((f) => this.styleFor(f));
     // 单元着色跟的是"当前指标 + 当前日期"，所以换天/换指标时也要重算（否则颜色会停在旧帧上）
     if (this.unitLayer) this.unitLayer.setStyle((f) => this.unitStyle(f));
+    if (this.gridLayer) this.gridLayer.setStyle((f) => this.gridStyle(f));
     // 高亮是"用户当前的查看选择"，不该被"换一天/换指标"的刷新抹掉：刷新后补回来
     for (const { layer } of this.highlighted) layer.setStyle(this.hlStyle());
     this.drawTemp();

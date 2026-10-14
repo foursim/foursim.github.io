@@ -26,6 +26,7 @@
     "query": "node tools/query.mjs --json tables/query/results-self.json --web data/pivot.json --xlsx tables/query/透视与联合查询.xlsx",
     "query:sql": "node tools/query-sql.mjs",
     "repo:check": "node tools/repo-check.mjs",
+    "ready": "npm run query && npm run query:sql && npm run repo:check",
     "data:check": "node tools/fetch-data.mjs check --out data",
     "serve": "node tools/serve.mjs",
     "serve:sub": "node tools/serve.mjs --prefix webtrade --port 8080",

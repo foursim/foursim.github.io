@@ -10,7 +10,7 @@ import { simulate, levelOf, CROPS } from './agro.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
 import { cssVar, THEME } from './theme.js';
-import { VARIABLES, legendItems, fmtDay, colorOf } from './geo.js';
+import { VARIABLES, legendItems, fmtDay, colorOf, scenarioColor, SCENARIO_BINS } from './geo.js';
 
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
 
@@ -580,6 +580,13 @@ try {
     }
     if (!best) return;
     ui.setScenario({ base: scenarioFile.metadata.baseline, cand: best, meta: scenarioFile.metadata });
+    // **同屏对比**：把"每个地块省多少分钟"接到地图上，并自动打开情景着图层
+    // （原来只有右侧表格的聚合对比，看不出"省在哪里"）
+    map.setScenarioGains(best);
+    if (!map.visible.scenariofill) {
+      map.setLayerVisible('scenariofill', true);
+      ui.syncLayer('scenariofill', true);
+    }
     const n = map.highlight(best.improved.map(([i]) => i));
     hlKey = n ? `scenario:${best.lon},${best.lat}` : null;
     ui.setHighlightInfo(n ? `拟建点受影响地块（${n} 块）` : null);
@@ -645,6 +652,8 @@ try {
         ui.select(row);
       },
       onNeedPivot: () => ensurePivot(),
+      // 图层勾选框的初始状态要跟地图一致（maps 的默认值不全是开）
+      onLayerState: (name) => !!map.visible[name],
       // 页面里所有导出的下载都走这一处（透视视图导出复用同一套：纯前端 Blob，无后端）
       onDownload: (text, name) => download(new Blob([text], { type: 'text/csv;charset=utf-8' }), name),
       onExportCsv: () => exportCsv(),
@@ -723,6 +732,7 @@ try {
 
   // 供工具脚本/调试使用（与旧版本的 __webTrade 同一定位）
   globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, ensurePivot, colorOf,
+    scenarioColor, scenarioBins: SCENARIO_BINS,
     admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key,
     scenario: scenarioFile, pickScenario };
 } catch (err) {

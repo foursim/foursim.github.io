@@ -20,6 +20,8 @@ const LAYERS = [
   ['iso', '等时圈（到收储点）'],
   ['units', 'P2 经营单元'],
   ['unitfill', '单元着色（面积加权，跟当前指标）'],
+  ['scenariofill', '情景对比：到收储点节省（选中候选点后）'],
+  ['gridfill', '网格着色（面积加权，跟当前指标）'],
   ['grids', 'P4 统计网格'],
   ['zones', 'P3 管理分区样点'],
   ['admin', '行政边界（乡/县）'],
@@ -160,7 +162,9 @@ export class UI {
       `<button class="mini" data-var="${k}">${v.label}</button>`
     )).join('');
     this.refs['layer-list'].innerHTML = LAYERS.map(([k, label]) => (
-      `<label class="lyr"><input type="checkbox" data-layer="${k}" checked> ${label}</label>`
+      // ⚠️ 勾选框状态要取自**地图的实际可见性**（maps 默认 grids/zones/unitfill/scenariofill 是关的）：
+      // 一律渲染成 checked 会让 UI 与地图不一致（判据抓过一次：选点前"情景对比"就显示已勾选）
+      `<label class="lyr"><input type="checkbox" data-layer="${k}"${this.layerOn(k) ? ' checked' : ''}> ${label}</label>`
     )).join('');
     this.refs['speed-group'].innerHTML = [[1, '1×'], [4, '4×'], [12, '12×']]
       .map(([d, l]) => `<button class="mini" data-days="${d}">${l}</button>`).join('');
@@ -644,8 +648,13 @@ export class UI {
     const views = this.pivotData?.views ?? [];
     if (!views.length) return '';
     const v = views[Math.min(this.pivotView, views.length - 1)];
-    const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '' : Number(x).toFixed(v.decimals));
     const esc = (x) => (String(x).includes(',') ? `"${String(x).replace(/"/g, '""')}"` : String(x));
+    if (v.kind === 'list') {
+      const lines2 = [v.cols.map(esc).join(',')];
+      for (const row of v.rows) lines2.push(row.map((x) => esc(typeof x === 'number' ? String(x) : x)).join(','));
+      return `# ${v.title} · ${v.note}\n${lines2.join('\n')}\n`;
+    }
+    const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '' : Number(x).toFixed(v.decimals));
     const head = [v.rowLabel, ...v.colKeys, '合计'];
     const lines = [head.map(esc).join(',')];
     v.rowKeys.forEach((rk, i) => lines.push([rk, ...v.matrix[i].map(f), f(v.rowTotals[i])].map(esc).join(',')));
@@ -688,6 +697,17 @@ export class UI {
     this.renderTables();
   }
 
+  /** 某图层当前是否可见（由 main.js 接到地图的真实状态上；取不到就当作可见，保持旧行为） */
+  layerOn(name) {
+    return this.actions?.onLayerState ? !!this.actions.onLayerState(name) : true;
+  }
+
+  /** 同步某个图层勾选框的状态（脚本触发时用：例如选中候选点后自动打开"情景对比着色"） */
+  syncLayer(name, on) {
+    const el = document.querySelector(`input[data-layer="${name}"]`);
+    if (el) el.checked = on;
+  }
+
   /** 离线透视数据到达后调用（数据没到之前这个页签显示"加载中"） */
   setPivot(data) {
     this.pivotData = data ?? null;
@@ -715,7 +735,9 @@ export class UI {
     // 窄屏进透视图时，"导出 CSV"（导地块）可以让位（strip 宽度吃紧）
     this.refs['tablebar']?.classList?.toggle?.('pivot-mode', show);
     if (views.length && sel.options.length !== views.length) {
-      sel.innerHTML = views.map((v, i) => `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`).join('');
+      sel.innerHTML = views.map((v, i) => (v.kind === 'list'
+        ? `<option value="${i}">${v.title.slice(0, 14)}（${v.rows.length} 行）</option>`
+        : `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`)).join('');
     }
     if (views.length) sel.value = String(Math.min(this.pivotView, views.length - 1));
   }
@@ -864,6 +886,13 @@ export class UI {
         note = '静态透视视图 · 离线生成，页面只查表';
       } else {
         const v = views[Math.min(this.pivotView, views.length - 1)];
+        if (v.kind === 'list') {
+          // 对照表：离线算好的几列并排（没有行列合计的概念，直接照抄）
+          cols = v.cols.map((c) => ({ label: c }));
+          rows = v.rows.map((row) => ({ cells: row.map((x) => (typeof x === 'number' ? { text: String(x), num: true } : String(x))) }));
+          note = `${v.title} · ${v.rows.length} 行 × ${v.cols.length} 列 · 离线生成，页面只查表`;
+          return { cols, rows, note };
+        }
         const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '—' : Number(x).toFixed(v.decimals));
         cols = [{ label: v.rowLabel }, ...v.colKeys.map((ck) => ({ label: ck, num: true })), { label: '合计', num: true }];
         rows = v.rowKeys.map((rk, ri) => ({

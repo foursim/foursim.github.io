@@ -30,6 +30,27 @@ function mix(a, b, t) {
  * 气温就属于这一类：OSM 不给我们每个地块的高程，硬编一个地块级温度场就是造假。
  * 所以气温渲染成区域圆 + 指标卡，地块级空间差异只留给真能算出来的量（进度/病害/水肥/作物）。
  */
+/**
+ * **情景对比配色**：新建收储点后"到收储点节省多少分钟"的分档。
+ *
+ * 分档下界与离线工具的 `improved` 同口径（只列 > 0.05 分钟的改善；`scenarioColor(0)` 返回 null
+ * ⇒ 地图上用"基本没改善"的浅灰）。颜色用与主色系相配的绿色梯度：越深省得越多。
+ */
+export const SCENARIO_BINS = [
+  { min: 0.05, color: '#e8f2e4', label: '0.05–0.5 分' },
+  { min: 0.5, color: '#b7dcaa', label: '0.5–1 分' },
+  { min: 1, color: '#7cc062', label: '1–2 分' },
+  { min: 2, color: '#3f8f2f', label: '2–4 分' },
+  { min: 4, color: '#1f5c18', label: '> 4 分' },
+];
+/** 情景对比色（null = 基本没改善，调用方自己决定画什么） */
+export function scenarioColor(gain) {
+  if (gain === null || gain === undefined || Number.isNaN(Number(gain))) return null;
+  let out = null;
+  for (const b of SCENARIO_BINS) if (Number(gain) >= b.min) out = b.color;
+  return out;
+}
+
 export const VARIABLES = {
   /* P2 经营单元 / P4 统计网格：颜色只用来**区分单元**（不是数值），所以是哈希色相 */
   unit: {

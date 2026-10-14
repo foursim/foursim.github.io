@@ -237,8 +237,17 @@ for (const [lon, lat] of candidates) {
     if (v == null || baseMin[i] == null) return;
     if (v > BLIND_MIN) blind.push(i);
     const gain = baseMin[i] - v;
-    if (gain > 0.05) { n++; gainSum += gain; }
-    if (gain > 1) improved.push([i, Math.round(gain * 100) / 100]);
+    if (gain > 0.05) {
+      n++;
+      gainSum += gain;
+      /*
+       * **存全部改善 > 0.05 分钟的地块**（原来只存 > 1 分钟的前 200 条）。
+       * 为什么改：① 6/154 个候选撞到 200 上限，而被截掉的恰恰是**最能改善**的那几个；
+       * ② 只存 > 1 分钟会让"地图上看到的改善块数"与 `improved_parcels` 对不上（差 0.05~1 分钟那一档）。
+       * 现在两侧同口径 ⇒ 自检里 `improved.length === improved_parcels` 才有意义。
+       */
+      improved.push([i, Math.round(gain * 100) / 100]);
+    }
   });
   improved.sort((a, b) => b[1] - a[1]);
   out.push({
@@ -254,8 +263,8 @@ for (const [lon, lat] of candidates) {
     improved_parcels: n,
     improved_ha: Math.round(t.reduce((a, v, i) => a + (v != null && baseMin[i] != null && baseMin[i] - v > 0.05 ? areas[i] : 0), 0) * 10) / 10,
     avg_gain_min: n ? Math.round((gainSum / n) * 100) / 100 : 0,
-    // 受影响最大的地块（浏览器里高亮用），最多留 200 个
-    improved: improved.slice(0, 200),
+    // 全部受影响地块（按节省时间降序）：浏览器用它做"情景对比着色"与高亮
+    improved,
   });
 }
 

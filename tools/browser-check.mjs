@@ -1225,6 +1225,27 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
     && s22.ctrlHiddenOtherTab === true && s22.btnInDrawer === true,
   `抽屉未开时：选择器隐藏=${s22.hiddenElsewhere}、导出按钮隐藏=${s22.btnHiddenElsewhere}；`
     + `抽屉别的页签仍隐藏=${s22.ctrlHiddenOtherTab}；抽屉透视页签两个都可见=${s22.btnInDrawer}`);
+{
+  // 对照表视图（q12 单产两套口径）：离线 JSON 里的 list 视图要能按"几列并排"渲染，并且导出也对
+  const list = await ev(`(()=>{const a=globalThis.__agri;const sel=document.getElementById('pivot-sel');
+    document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+    const idx=a.ui.pivotData.views.findIndex(v=>v.kind==='list');
+    sel.value=String(idx); sel.dispatchEvent(new Event('change',{bubbles:true}));
+    const th=[...document.querySelectorAll('#tb-body .tbl thead th')].map(x=>x.textContent.trim());
+    const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+    const csv=a.ui.pivotCsvText();
+    const lines=csv.trim().split(String.fromCharCode(10));
+    const v=a.ui.pivotData.views[idx];
+    return {idx, kind:v.kind, nViews:a.ui.pivotData.views.length, cols:v.cols, nCols:v.cols.length,
+      nRows:v.rows.length, head:th, bodyRows:trs.length, firstCell:trs.length?trs[0].children[0].textContent:'',
+      csvHead:lines[1].split(','), csvLines:lines.length, note:document.getElementById('tb-note').textContent};})()`);
+  check('页面「透视视图」也能渲染**对照表**（q12 单产两套口径）：列名与行数照离线 JSON，导出 CSV 同源',
+    list.idx >= 0 && list.kind === 'list' && list.nViews === 5
+      && list.head.join(',') === list.cols.join(',') && list.bodyRows === list.nRows
+      && list.csvHead.join(',') === list.cols.join(',') && list.csvLines === list.nRows + 2
+      && /只查表/.test(list.note),
+    `第 ${list.idx + 1}/${list.nViews} 个视图：${list.nRows} 行 × ${list.nCols} 列（表头 ${list.head.slice(0, 3).join('/')}…）· CSV ${list.csvLines - 2} 行数据`);
+}
 await shot('pivot-1440x900');
 
 
@@ -1296,6 +1317,106 @@ await sleep(500);
 await shot('units-fill-on-1440x900');
 await ev(`(()=>{const cb=document.querySelector('input[data-layer="unitfill"]');cb.checked=false;cb.dispatchEvent(new Event('change',{bubbles:true}));})()`);
 await shot('units-fill-1440x900');
+
+
+// ===================== 24. 情景对比同屏（按"到收储点节省分钟"着色） =====================
+console.log('\n=== 24. 情景对比同屏 ===');
+await boot(1440, 900);
+const s24 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
+  const cb=document.querySelector('input[data-layer="scenariofill"]');
+  const present=!!cb;
+  const cand=a.scenario.candidates.reduce((b,c)=>c.avg_gain_min>(b?b.avg_gain_min:-1)?c:b, null);
+  const onBefore=cb.checked;
+  a.pickScenario({lat:cand.lat, lng:cand.lon});   // 选点
+  const onAfter=cb.checked;
+  const gains=new Map(cand.improved.map(([i,g])=>[i,g]));
+  const sample=[...gains.keys()].slice(0,3);
+  const layers=m.parcelLayer.getLayers();
+  const colors=sample.map(i=>layers[i].options.fillColor);
+  const expect=sample.map(i=>a.scenarioColor(gains.get(i)));
+  const noGainIdx=[...a.rows.keys()].find(i=>!gains.has(i));
+  const noneColor=layers[noGainIdx].options.fillColor;
+  const noneExpect=a.scenarioColor(0);
+  const painted=layers.filter(l=>l.options.fillColor && l.options.fillColor!=='#eef1f4').length;
+  const tip=m.tipFor(a.rows[sample[0]]);
+  const tipOk=tip.includes('节省');
+  cb.checked=false; cb.dispatchEvent(new Event('change',{bubbles:true}));
+  const offColor=layers[sample[0]].options.fillColor;
+  const metricColor=a.colorOf[m.variable](a.get(a.rows[sample[0]], m.variable, m.day));
+  return {present, onBefore, onAfter, sample, colors, expect, noneColor, noneExpect, painted,
+    improved:cand.improved.length, improvedParcels:cand.improved_parcels, avgGain:cand.avg_gain_min,
+    tipOk, offColor, metricColor, nBins:a.scenarioBins.length};})()`);
+check('选中候选点后**自动打开**「情景对比」图层（并把勾选框同步过来）',
+  s24.present && s24.onBefore === false && s24.onAfter === true,
+  `勾选框存在=${s24.present} · 选点前 ${s24.onBefore} → 选点后 ${s24.onAfter}`);
+check('地块按**节省分钟**分档着色：抽样颜色 == `scenarioColor(节省)`（判据独立取离线 gain 再算色）',
+  s24.colors.every((c, i) => c === s24.expect[i]) && s24.colors.every((c) => !!c),
+  `抽样 ${s24.sample.length} 块：${s24.colors.join('/')} vs 期望 ${s24.expect.join('/')}（共 ${s24.nBins} 档）`);
+check('没改善的地块用"基本没改善"的浅灰（`scenarioColor(0)` 为 null ⇒ 不该混进绿色梯度）',
+  s24.noneExpect === null && s24.noneColor === '#eef1f4',
+  `无改善地块颜色 ${s24.noneColor} · scenarioColor(0)=${String(s24.noneExpect)}`);
+check('着色块数 == 离线文件里的受影响块数（**存全后** `improved.length == improved_parcels`）',
+  s24.painted === s24.improved && s24.improved === s24.improvedParcels,
+  `地图着色 ${s24.painted} 块 · improved ${s24.improved} · improved_parcels ${s24.improvedParcels}（平均省 ${s24.avgGain} 分/块）`);
+check('情景模式下 tooltip 说明节省分钟；关掉图层**回到按指标着色**',
+  s24.tipOk === true && s24.offColor === s24.metricColor && s24.offColor !== s24.colors[0],
+  `tooltip 含"节省"=${s24.tipOk} · 关闭后颜色 ${s24.offColor} == 指标色 ${s24.metricColor}`);
+await shot('scenario-fill-1440x900');
+
+
+// ===================== 25. 按 P4 统计网格看地图 =====================
+console.log('\n=== 25. 按 P4 统计网格看地图（面积加权着色） ===');
+await boot(1440, 900);
+const s25 = await ev(`(()=>{const a=globalThis.__agri;const m=a.map;
+  // 先确保情景着色关掉（它是"整体切换"，会覆盖指标色）
+  const cs=document.querySelector('input[data-layer="scenariofill"]');
+  if(cs.checked){cs.checked=false; cs.dispatchEvent(new Event('change',{bubbles:true}));}
+  const layers=m.gridLayer.getLayers();
+  const ids=layers.slice(0,3).map(x=>x.feature.properties.grid_id);
+  const st=(gid)=>{const l=layers.find(x=>x.feature.properties.grid_id===gid);const o=l.options;
+    return {fill:!!o.fill, op:o.fillOpacity, color:o.fillColor};};
+  const cb=document.querySelector('input[data-layer="gridfill"]');
+  const before=ids.map(st);
+  const checkedBefore=cb?cb.checked:null;
+  if(cb){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+  const vals=ids.map(g=>m.gridValue(g));
+  const after=ids.map(st);
+  const recompute=(gid)=>{let num=0,den=0;
+    for(const row of a.rows){ if(row.grid_id!==gid) continue;
+      const v=a.get(row,m.variable,m.day); const w=row.area_ha||0;
+      if(v!==null&&v!==undefined&&!Number.isNaN(Number(v))){num+=Number(v)*w;den+=w;} }
+    return den>0?num/den:null;};
+  const re=ids.map(recompute);
+  const expectColors=re.map(v=>a.colorOf[m.variable](v));
+  const parcelOp=m.parcelLayer.getLayers()[0].options.fillOpacity;
+  const day0=a.state.day;
+  const c0=ids.map(st).map(o=>o.color);
+  a.setDay(Math.min(a.model.days.length-1, day0+40));
+  const c1=ids.map(st).map(o=>o.color);
+  a.setDay(day0);
+  if(cb){cb.checked=false; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+  const off=ids.map(st);
+  const parcelOpOff=m.parcelLayer.getLayers()[0].options.fillOpacity;
+  return {present:!!cb, nGrids:layers.length, checkedBefore, before, after, vals, re, expectColors,
+    colors0:c0, colors1:c1, off, parcelOp, parcelOpOff, interactive:m.gridLayer.options.interactive};})()`);
+check('「网格着色」开关存在（217 个网格），打开后按当前指标着色，颜色与判据侧独立复算一致',
+  s25.present && s25.nGrids === 217 && s25.checkedBefore === false
+    && s25.after.every((o) => o.fill === true && o.op > 0)
+    && s25.after.every((o, i) => o.color === s25.expectColors[i]),
+  `${s25.nGrids} 个网格；抽样 ${s25.after.length} 个：填充 ${s25.after.map((o) => o.op).join('/')} · 颜色 ${s25.after.map((o) => o.color).join('/')} vs 期望 ${s25.expectColors.join('/')}`);
+check('网格取值与 P2 单元**同一套聚合**（面积加权；判据自己算一遍）',
+  s25.vals.every((v, i) => v !== null && Math.abs(v - s25.re[i]) < 1e-9),
+  s25.vals.map((v, i) => `${(v ?? NaN).toFixed(4)}≈${(s25.re[i] ?? NaN).toFixed(4)}`).join(' '));
+check('网格着色**跟随当前帧**（换一天颜色随之变化）',
+  s25.colors1.some((c, i) => c !== s25.colors0[i]),
+  `第 ${s25.colors0.join('/')} → ${s25.colors1.join('/')}`);
+check('关掉回到网格线（fill=false）；地块填充也跟着调暗/恢复（与 P2 同一套叠加层规则）',
+  s25.before.every((o) => o.fill === false) && s25.off.every((o) => o.fill === false)
+    && s25.parcelOp < 0.4 && s25.parcelOpOff > 0.7,
+  `默认 fill=${s25.before.map((o) => o.fill).join('/')} · 关闭后 fill=${s25.off.map((o) => o.fill).join('/')} · 地块填充 ${s25.parcelOp} → ${s25.parcelOpOff}`);
+check('网格图层**不可交互**（与单元层同理：不能吃掉"点地块"）',
+  s25.interactive === false, `interactive=${s25.interactive}`);
+await shot('gridfill-on-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

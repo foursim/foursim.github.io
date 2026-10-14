@@ -806,6 +806,22 @@ if (webOut && results.length) {
   const LABEL = {
     q1: ['作物 · 口径', '年'], q3: ['统计网格', '作物'], q2: ['经营单元', '旬'], q7: ['管理分区', '作物'],
   };
+  /*
+   * 除了透视矩阵，页面上还值得看**对照表**（不是矩阵，而是几列并排）：
+   * 目前只放 q12「单产两套口径」—— 它回答的是"同一个数，等权与面积加权差多少"，
+   * 放进页面比只在离线 CSV 里更容易被看见（口径问题最怕"没人看"）。
+   */
+  const LIST_PICK = ['q12'];
+  const listViews = LIST_PICK.map((id) => {
+    const r = results.find((x) => x.id === id);
+    if (!r || r.kind !== 'list') return null;
+    return {
+      id: r.id, title: r.title, question: r.question, note: r.spec.note, kind: 'list',
+      unit: r.unit ?? '', cols: r.spec.listCols,
+      rows: r.spec.rows.map((row) => r.spec.listCols.map((c) => row[c])),
+      n: r.spec.rows.length,
+    };
+  }).filter(Boolean);
   const views = PICK.map((id) => {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'pivot') return null;
@@ -821,7 +837,7 @@ if (webOut && results.length) {
       rowTotals: r.pv.rowTotals.map(rd), colTotals: r.pv.colTotals.map(rd), grand: rd(r.pv.grand),
       n: r.pv.n,
     };
-  }).filter(Boolean);
+  }).filter(Boolean).concat(listViews);
   const payload = {
     dataset: 'Wolnzach 乡镇农业监测（模拟）× 透视视图',
     generated_at: new Date().toISOString(),
@@ -830,7 +846,12 @@ if (webOut && results.length) {
   };
   const file = path.resolve(webOut);
   fs.writeFileSync(file, JSON.stringify(payload), 'utf8');
-  console.log(`[写出] ${webOut}（${views.length} 个静态透视视图：${views.map((v) => `${v.id} ${v.rowKeys.length}×${v.colKeys.length}`).join(' / ')}，${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+  // ⚠️ 视图有两种形态（矩阵 / 对照表）：打印时不能一律读 `rowKeys`（list 视图没有它，
+  // 曾经在这里抛 TypeError —— 文件其实已写出，但**后面的判据全没跑**，是最阴的失败形态）
+  const desc = (v) => (v.kind === 'list'
+    ? `${v.id} ${v.rows.length}×${v.cols.length}`
+    : `${v.id} ${v.rowKeys.length}×${v.colKeys.length}`);
+  console.log(`[写出] ${webOut}（${views.length} 个静态视图：${views.map(desc).join(' / ')}，${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
 }
 
 // ===================== 判据 =====================
@@ -958,7 +979,19 @@ if (webOut) {
   // **逐格**比（原来只比行列数与总合计：格子的舍入偏差抓不到，等于没验精度同源）
   const bad = payload.views.filter((v) => {
     const src = results.find((x) => x.id === v.id);
-    if (!src || !v.matrix.length) return true;
+    if (!src) return true;
+    if (v.kind === 'list') {
+      // 对照表：逐格比字符串（数字按 1e-6 相对容差）
+      return v.rows.some((row, i) => row.some((x, j) => {
+        const a2 = src.spec.rows[i]?.[src.spec.listCols[j]];
+        if (a2 === '' || a2 === null || a2 === undefined) return !(x === '' || x === null);
+        const na = Number(a2);
+        const nx = Number(x);
+        if (Number.isNaN(na) || Number.isNaN(nx)) return String(a2) !== String(x);
+        return Math.abs(na - nx) > 0.0005;
+      }));
+    }
+    if (!v.matrix.length) return true;
     if (src.pv.rowKeys.length !== v.rowKeys.length || src.pv.colKeys.length !== v.colKeys.length) return true;
     return v.matrix.some((row, i) => row.some((x, j) => {
       const a = src.pv.matrix[i]?.[j];
@@ -966,9 +999,11 @@ if (webOut) {
       return Math.abs(Number(a) - Number(x)) > 0.0005;   // 3 位小数的舍入余量
     }));
   });
-  check('页面用的**静态透视**与自研结果**逐格同源**（3 位小数口径一致；页面只查表，绝不再算一遍）',
+  const cellCount = (v) => (v.kind === 'list' ? v.rows.length * v.cols.length : v.matrix.length * v.colKeys.length);
+  check('页面用的**静态视图**（矩阵 + 对照表）与自研结果**逐格同源**（页面只查表，绝不再算一遍）',
     payload.views.length >= 3 && bad.length === 0,
-    `${payload.views.length} 个视图 · ${payload.views.reduce((a, v) => a + v.matrix.length * v.colKeys.length, 0)} 个格子${bad.length ? `，不一致：${bad.map((v) => v.id).join(',')}` : '全部一致'}`);
+    `${payload.views.length} 个视图 · ${payload.views.reduce((a, v) => a + cellCount(v), 0)} 个格子`
+      + `${bad.length ? `，不一致：${bad.map((v) => v.id).join(',')}` : '全部一致'}`);
 }
 
 {
@@ -976,6 +1011,44 @@ if (webOut) {
   const csv = files.filter((f) => f.endsWith('.csv')).length;
   check('查询产物已写出（每个预置查询一份 CSV + 一份可读 Markdown 汇总）',
     csv >= PRESETS.length && files.includes('透视与联合查询.md'), `${OUT}：${csv} 个 CSV + ${files.includes('透视与联合查询.md') ? 1 : 0} 个 md`);
+}
+
+{
+  /*
+   * **事件表 vs 季表的收获单产核对**：`fact_parcel_event` 的收获事件带 `yield_t_ha`，
+   * `fact_parcel_season` 也带 —— 同一地块、同一收获日，两处必须一致（描述的是同一次收获）。
+   * 这条以前没人核过：交叉验证对事件表只做了计数与合计，单产这一列从没跟季表对上过。
+   */
+  const events = T.get('fact_parcel_event').rows.filter((r) => r.event_type === 'harvest');
+  const seasons = T.get('fact_parcel_season').rows;
+  const byParcelDay = new Map(events.map((e) => [`${e.parcel_id}|${e.event_day}`, e]));
+  const parcelsWithSeason = new Set(seasons.map((r) => r.parcel_id));
+  const miss = [];
+  const bad = [];
+  for (const r of seasons) {
+    if (!r.harvest_day) continue;                      // 有收获日的季才该有收获事件
+    const e = byParcelDay.get(`${r.parcel_id}|${r.harvest_day}`);
+    if (!e) { miss.push(`${r.parcel_id}@${r.harvest_day}`); continue; }
+    const ea = e.yield_t_ha === '' || e.yield_t_ha === null || e.yield_t_ha === undefined;
+    const eb = r.yield_t_ha === '' || r.yield_t_ha === null || r.yield_t_ha === undefined;
+    if (ea || eb) { if (ea !== eb) bad.push(`${r.parcel_id}@${r.harvest_day}: 一处为空、一处有值`); continue; }
+    if (Math.abs(Number(e.yield_t_ha) - Number(r.yield_t_ha)) > 1e-6 * Math.max(1, Math.abs(Number(r.yield_t_ha)))) {
+      bad.push(`${r.parcel_id}@${r.harvest_day}: ${e.yield_t_ha} vs ${r.yield_t_ha}`);
+    }
+  }
+  /*
+   * 方向是**单向**的：有收获日的季 ⇒ 必须有对应收获事件（且单产一致）；
+   * 反过来事件可以多于季 —— 实测多出来的 372 条**全部**是牧草这类"只收不种"的地块
+   * （它们没有季表行，所以不是"漏了匹配"，而是口径差异）。下面把这条解释也**当成断言**验一遍，
+   * 免得"解释"只是嘴上说说。
+   */
+  const unmatched = events.filter((e) => !seasons.some((r) => r.parcel_id === e.parcel_id && r.harvest_day === e.event_day));
+  const unexplained = unmatched.filter((e) => parcelsWithSeason.has(e.parcel_id));
+  check('事件表与季表的收获单产**单向必须全中**（有收获日的季 ⇒ 事件存在且单产一致），差额要能解释',
+    seasons.some((r) => r.harvest_day) && miss.length + bad.length === 0 && unexplained.length === 0,
+    `${seasons.filter((r) => r.harvest_day).length} 个有收获日的季：缺事件 ${miss.length} · 数值不符 ${bad.length}`
+      + `；反向事件多出 ${unmatched.length} 条（全部属于"只收不种"的无季地块，另有 ${unexplained.length} 条无法解释）`
+      + (bad.length ? `（例：${bad[0]}）` : ''));
 }
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
