@@ -616,6 +616,29 @@ const PRESETS = [
       };
     },
   },
+  /*
+   * q9 把事件表按**年**压了一层，这里按**月**再压一层：
+   * 农忙窗口是以月为单位的（哪个月在播种、哪个月在收），按年看不出来。
+   * `count` 聚合要一列数值，所以补一列常量 1 —— 引擎对空值/非数值一律跳过，不能拿月份的字符串去数。
+   */
+  {
+    id: 'q13',
+    title: '农事日历：月 × 事件类型（次）',
+    question: '播种 / 施肥 / 收获在一年里各挤在哪几个月（农忙窗口；也是"到收储点忙不过来"的时间形态）',
+    build: (T) => {
+      const src = T.get('fact_parcel_event').rows;
+      const rows = src.map((r) => ({
+        ym: `${String(r.event_day).slice(0, 4)}-${String(r.event_day).slice(4, 6)}`,
+        event_type: r.event_type,
+        one: 1,
+      }));
+      return {
+        kind: 'pivot', rows, unit: '次',
+        note: `fact_parcel_event 按**月 × 类型**展开：${src.length} 条事件（q9 是同年按年汇总，这里看月内分布）`,
+        pivot: { rowDims: ['ym'], colDim: 'event_type', value: 'one', agg: 'count' },
+      };
+    },
+  },
 ];
 
 // ===================== 输出 =====================
@@ -802,9 +825,10 @@ if (webOut && results.length) {
    * 透视是离线工具的事，页面只 fetch 这份 JSON 然后把矩阵画成表 —— 和 `data/scenario.json` 一个思路。
    * 这份 JSON 由 `npm run query` 从 `tables/*.csv` 生成，与 `tables/query/*.csv` 是同一批结果的两种形态。
    */
-  const PICK = ['q1', 'q3', 'q2', 'q7'];
+  const PICK = ['q1', 'q3', 'q2', 'q7', 'q13'];
   const LABEL = {
     q1: ['作物 · 口径', '年'], q3: ['统计网格', '作物'], q2: ['经营单元', '旬'], q7: ['管理分区', '作物'],
+    q13: ['月份', '事件类型'],
   };
   /*
    * 除了透视矩阵，页面上还值得看**对照表**（不是矩阵，而是几列并排）：
@@ -826,7 +850,8 @@ if (webOut && results.length) {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'pivot') return null;
     // 显示位数（页面用）与**存储精度**分开：存的与 CSV 一样是 3 位小数，免得三种形态互相对不上
-    const dec = r.pv.value === 'progress_mean' ? 3 : 2;
+    // 计数列不给小数：13.00 次读起来像"精确到 0.01 次"，整数就是整数
+    const dec = r.pv.agg === 'count' ? 0 : (r.pv.value === 'progress_mean' ? 3 : 2);
     const rd = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
     return {
       id: r.id, title: r.title, question: r.question, note: r.spec.note,
@@ -1049,6 +1074,41 @@ if (webOut) {
     `${seasons.filter((r) => r.harvest_day).length} 个有收获日的季：缺事件 ${miss.length} · 数值不符 ${bad.length}`
       + `；反向事件多出 ${unmatched.length} 条（全部属于"只收不种"的无季地块，另有 ${unexplained.length} 条无法解释）`
       + (bad.length ? `（例：${bad[0]}）` : ''));
+}
+
+{
+  /*
+   * **农事日历的判据**：总数、按月、三类型三个口径都要对得上，且月×类型矩阵逐格与"直接筛出来数一遍"一致。
+   * 透视最容易出的错是"行合计与列的构成对不上"（少算了一类、或某个月被漏掉），所以两边都算。
+   */
+  const q = results.find((x) => x.id === 'q13');
+  const ev = T.get('fact_parcel_event').rows;
+  const mn = new Map();
+  const ty = new Map();
+  for (const r of ev) {
+    const ym = `${String(r.event_day).slice(0, 4)}-${String(r.event_day).slice(4, 6)}`;
+    mn.set(ym, (mn.get(ym) ?? 0) + 1);
+    ty.set(r.event_type, (ty.get(r.event_type) ?? 0) + 1);
+  }
+  const cellBad = [];
+  q.pv.rowKeys.forEach((rk, ri) => {
+    let sum = 0;
+    q.pv.colKeys.forEach((ck, ci) => {
+      const v = q.pv.matrix[ri][ci];
+      const n = Number(v === '' || v === null || v === undefined ? 0 : v);
+      sum += n;
+      if (n !== ev.filter((r) => `${String(r.event_day).slice(0, 4)}-${String(r.event_day).slice(4, 6)}` === rk && r.event_type === ck).length) {
+        cellBad.push(`${rk}/${ck}`);
+      }
+    });
+    if (sum !== (mn.get(rk) ?? 0)) cellBad.push(`${rk} 行合计 ${sum} ≠ ${mn.get(rk)}`);
+  });
+  check('农事日历：**月×类型逐格**与直接筛出来数一遍一致，且行合计 = 该月事件数、列合计 = 该类型事件数',
+    q.pv.grand === ev.length && cellBad.length === 0
+      && q.pv.colKeys.every((ck, ci) => Number(q.pv.colTotals[ci]) === (ty.get(ck) ?? 0)),
+    `${q.pv.rowKeys.length} 个月 × ${q.pv.colKeys.length} 类 = ${q.pv.rowKeys.length * q.pv.colKeys.length} 格，总 ${q.pv.grand} 次`
+      + `（事件表 ${ev.length} 行）· 列合计 ${q.pv.colKeys.map((ck, ci) => `${ck} ${q.pv.colTotals[ci]}`).join(' / ')}`
+      + (cellBad.length ? ` · 不一致 ${cellBad.slice(0, 3).join('、')}` : ''));
 }
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

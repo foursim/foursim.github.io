@@ -375,12 +375,14 @@ try {
       crop: unitProps.get(id)?.dominant_crop ?? '',
       area: a.area,
       n: a.n,
-      progress: a.pw ? a.p / a.pw : 0,
+      // 全是牧草/果园（pw=0）⇒ 进度**无数据**（null ⇒ 表格显示"—"，地图画"无数据灰"）
+      // 写 0 会被读成"一点没长"，那是另一个意思
+      progress: a.pw ? a.p / a.pw : null,
       disease: a.disease,
       water: a.area ? a.w / a.area : 0,
       fert: a.area ? a.f / a.area : 0,
       tMin: a.tMin,
-    })).sort((x, y) => (y.disease - x.disease) || (x.progress - y.progress));
+    })).sort((x, y) => (y.disease - x.disease) || ((x.progress ?? 1) - (y.progress ?? 1)));
 
     // —— 作物与收成：按作物聚合（休耕单列，不然面积对不上账）——
     const cAcc = new Map();
@@ -403,9 +405,39 @@ try {
       yieldHa: c.yArea ? c.ySum / c.yArea : 0, yieldT: c.t, basis: c.basis, ref: c.ref,
     })).sort((x, y) => y.area - x.area);
 
+    // —— P4 统计网格：**换空间键、不换口径**（同一个 AGG_RULE，只是按 grid_id 分组）——
+    const gAcc = new Map();
+    for (const r of rows) {
+      if (!r.grid_id) continue;
+      let a = gAcc.get(r.grid_id);
+      if (!a) {
+        a = { n: 0, area: 0, w: 0, f: 0, p: 0, pw: 0, disease: 1, tMin: null, crops: new Map() };
+        gAcc.set(r.grid_id, a);
+      }
+      a.n++;
+      a.area += r.area_ha;
+      a.w += get(r, 'water', day) * r.area_ha;
+      a.f += get(r, 'fert', day) * r.area_ha;
+      if (!aggSkip('progress', r)) { a.p += get(r, 'progress', day) * r.area_ha; a.pw += r.area_ha; }
+      if (aggClassMode('disease') === 'max') a.disease = Math.max(a.disease, get(r, 'disease', day));
+      if (r.t_min != null) a.tMin = a.tMin == null ? r.t_min : Math.max(a.tMin, r.t_min);
+      const ck = r.fallow ? 'FALLOW' : (r.crop ?? null);
+      if (ck) a.crops.set(ck, (a.crops.get(ck) ?? 0) + r.area_ha);
+    }
+    const gridRows = [...gAcc.entries()].map(([id, a]) => {
+      let bc = null;
+      let bw = -1;
+      for (const [k, w] of a.crops) if (w > bw) { bw = w; bc = k; }
+      return {
+        id, code: id, crop: bc ? CROP_NAME(bc) : '', n: a.n, area: a.area,
+        progress: a.pw ? a.p / a.pw : null, disease: a.disease,
+        water: a.area ? a.w / a.area : 0, fert: a.area ? a.f / a.area : 0, tMin: a.tMin,
+      };
+    }).sort((x, y) => (y.area - x.area) || (x.code < y.code ? -1 : 1));
+
     return {
-      sig: `${day}|${unitRows.length}|${cropRows.length}`,
-      units: unitRows, crops: cropRows,
+      sig: `${day}|${unitRows.length}|${gridRows.length}|${cropRows.length}`,
+      units: unitRows, grids: gridRows, crops: cropRows,
       questions: buildQuestions(day),
     };
   }
@@ -693,6 +725,12 @@ try {
         const idx = rows.filter((r) => r.unit_id === unitId).map((r) => r.i);
         const n = highlightGroup(`unit:${unitId}`, idx, `经营单元 ${unitId}`);
         if (hlKey) ui.toast(`${unitId}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
+      },
+      /** 点"统计网格"一行 ⇒ 与单元同一套高亮（只换空间键为 grid_id） */
+      onHighlightGrid: (gridId) => {
+        const idx = rows.filter((r) => r.grid_id === gridId).map((r) => r.i);
+        const n = highlightGroup(`grid:${gridId}`, idx, `统计网格 ${gridId}`);
+        if (hlKey) ui.toast(`${gridId}：${n} 个地块已高亮（再点一次这一行可取消）`, 'ok');
       },
       onHighlightCrop: (cropCode) => {
         const idx = rows.filter((r) => (r.fallow ? 'FALLOW' : (r.crop ?? 'UNKNOWN')) === cropCode).map((r) => r.i);

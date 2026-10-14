@@ -1240,7 +1240,8 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
       nRows:v.rows.length, head:th, bodyRows:trs.length, firstCell:trs.length?trs[0].children[0].textContent:'',
       csvHead:lines[1].split(','), csvLines:lines.length, note:document.getElementById('tb-note').textContent};})()`);
   check('页面「透视视图」也能渲染**对照表**（q12 单产两套口径）：列名与行数照离线 JSON，导出 CSV 同源',
-    list.idx >= 0 && list.kind === 'list' && list.nViews === 5
+    // 视图数写死是故意的：少一个视图（离线没生成/页面没读）必须当场红
+    list.idx >= 0 && list.kind === 'list' && list.nViews === 6
       && list.head.join(',') === list.cols.join(',') && list.bodyRows === list.nRows
       && list.csvHead.join(',') === list.cols.join(',') && list.csvLines === list.nRows + 2
       && /只查表/.test(list.note),
@@ -1507,6 +1508,105 @@ const s26b = await ev(`(()=>{const a=globalThis.__agri;
 check('选点后**图例换成"情景对比：节省分钟"**（5 档 + 基本没改善），关掉图层恢复指标图例',
   /节省/.test(s26b.on.title) && /基本没改善/.test(s26b.on.txt) && !/节省/.test(s26b.off.title),
   `选点后图例标题「${s26b.on.title}」· 关闭后「${s26b.off.title}」`);
+
+
+// ===================== 27. 口径说明上页面 · P4 统计网格表 =====================
+console.log('\n=== 27. 口径说明 / P4 统计网格表 ===');
+await boot(1440, 900);
+const s27 = await ev(`(()=>{const a=globalThis.__agri;const ui=a.ui;const m=a.map;
+  // 注意转义：这里必须写两个反斜杠，Node 的模板字符串会吃掉一个，否则浏览器收到的是替换字母 s 的 /s+/
+  const lg=()=>document.getElementById('legend').textContent.replace(/\s+/g,' ').trim();
+  const notes={};
+  for(const v of ['progress','disease','crop','water']){ ui.setVariable(v); a.state.variable=v; m.setVariable(v); notes[v]=lg(); }
+  ui.setVariable('progress'); a.state.variable='progress'; m.setVariable('progress');
+
+  // 统计网格表：页签存在、行数、抽样值、面积守恒
+  const tab=[...document.querySelectorAll('#tb-tabs button[data-tab]')].map(b=>b.dataset.tab);
+  const moreTab=[...document.querySelectorAll('#tb-more option')].map(o=>o.value);
+  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  const unitNote=document.querySelector('#tb-note').textContent.replace(/\s+/g,' ');
+  document.querySelector('#tb-tabs button[data-tab="grids"]').click();
+  const trs=[...document.querySelectorAll('#tb-body .tbl tbody tr')];
+  const note=document.querySelector('#tb-note')?document.querySelector('#tb-note').textContent.replace(/\s+/g,' '):'';
+  const parse=(t)=>Number(String(t).replace(/[^0-9.-]/g,''));
+  const rows=trs.map(tr=>({id:tr.getAttribute('data-grid'),
+    tds:[...tr.children].map(td=>td.textContent.trim())}));
+  const gridIds=new Set(a.rows.filter(r=>r.grid_id).map(r=>r.grid_id));
+  const rec=(gid)=>{let num=0,den=0,area=0,n=0,max=null,crops=new Map();
+    for(const row of a.rows){ if(row.grid_id!==gid) continue;
+      n++; area+=row.area_ha;
+      const w=row.area_ha||0;
+      const ck=row.fallow?'FALLOW':(row.crop??null); if(ck) crops.set(ck,(crops.get(ck)??0)+w);
+      if(row.gddNeed>0){ num+=Number(a.get(row,'progress',m.day))*w; den+=w; }
+      max=Math.max(max===null?-1:max, Number(a.get(row,'disease',m.day))); }
+    let bc=null,bw=-1; for(const [k,w] of crops) if(w>bw){bw=w;bc=k;}
+    return {n,area,prog:den>0?num/den:null,dis:max,crop:bc};};
+  const sample=rows.slice(0,6).map(r=>{const e=rec(r.id);return {id:r.id,
+    got:{area:parse(r.tds[2]),n:Number(r.tds[3]),prog:parse(r.tds[4])/100,dis:Number(r.tds[5])},
+    exp:{area:e.area,n:e.n,prog:e.prog,dis:e.dis},
+    areaOk:Math.abs(parse(r.tds[2])-e.area)<0.06, nOk:Number(r.tds[3])===e.n,
+    // 该网格全是牧草/果园时进度**无数据** ⇒ 表格显示"—"（写 0 会被读成"一点没长"）
+    progOk:e.prog===null?r.tds[4]==='—':Math.abs(parse(r.tds[4])/100-e.prog)<0.001,
+    disOk:Number(r.tds[5])===e.dis};});
+  const sumArea=rows.reduce((t,r)=>t+parse(r.tds[2]),0);
+  const sumN=rows.reduce((t,r)=>t+Number(r.tds[3]),0);
+
+  // 点一行 ⇒ 高亮该网格的地块
+  const first=trs[0]; const gid=first.getAttribute('data-grid');
+  first.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  const hlN=m.highlighted.length;
+  const expectN=a.rows.filter(r=>r.grid_id===gid).length;
+  return {notes, tab, moreTab, n:rows.length, distinct:gridIds.size, note, unitNote,
+    sample, sumArea, sumN, totalArea:a.rows.reduce((t,r)=>t+r.area_ha,0), hlN, expectN};})()`);
+
+check('图例下面写明**聚合口径**，且随变量变（进度=排除不播种、病级=取最严重、作物=面积最大的那一类、水分=面积加权）',
+  /排除不播种/.test(s27.notes.progress) && /最严重/.test(s27.notes.disease)
+    && /面积最大的那一类/.test(s27.notes.crop) && /面积加权（按地块面积）/.test(s27.notes.water),
+  `水分图例尾注「${s27.notes.water.slice(-24)}」· 进度尾注「${s27.notes.progress.slice(-24)}」`);
+check('经营单元表与网格表的**表注都写明口径**（与图例同一份规则，不另写一套）',
+  /排除不播种/.test(s27.unitNote) && /排除不播种/.test(s27.note),
+  `单元表注「${s27.unitNote.slice(0, 46)}…」· 网格表注「${s27.note.slice(0, 40)}…」`);
+
+check('**P4 统计网格表**：页签存在（8 个页签，窄屏下拉同步），行数 = 有地块的网格数',
+  s27.tab.includes('grids') && s27.moreTab.includes('grids') && s27.n === s27.distinct,
+  `页签 ${s27.tab.length} 个 · 表格 ${s27.n} 行 = 有地块的网格 ${s27.distinct} 个`);
+check('网格表取值与按 grid_id 的独立复算一致（面积/地块数/进度/最高病级，抽样 6 个网格）',
+  s27.sample.length === 6 && s27.sample.every((x) => x.areaOk && x.nOk && x.progOk && x.disOk),
+  `${s27.sample.filter((x) => x.areaOk && x.nOk && x.progOk && x.disOk).length}/6 一致 · 失败项 ${JSON.stringify((s27.sample.find((x) => !(x.areaOk && x.nOk && x.progOk && x.disOk)) || {}).id)} 实测 ${JSON.stringify((s27.sample.find((x) => !(x.areaOk && x.nOk && x.progOk && x.disOk)) || {}).got)} 期望 ${JSON.stringify((s27.sample.find((x) => !(x.areaOk && x.nOk && x.progOk && x.disOk)) || {}).exp)}`);
+check('**两条空间路径对账**：Σ网格面积 ≈ Σ全部地块面积（换个空间键不丢数、不重复计）',
+  Math.abs(s27.sumArea - s27.totalArea) < 0.2 * s27.n && s27.sumN === 501,
+  `网格求和 ${s27.sumArea.toFixed(1)} ha ≈ 地块求和 ${s27.totalArea.toFixed(1)} ha · 地块数 ${s27.sumN}/501`);
+check('点网格一行 ⇒ 在图上高亮该网格的成员地块（与单元同一套高亮通道）',
+  s27.hlN === s27.expectN && s27.hlN > 0,
+  `${s27.hlN} 个地块已高亮 = 该网格成员数 ${s27.expectN}`);
+
+
+// 端到端：新视图（农事日历）真的到了页面上（离线算好、页面只查表）
+const s27c = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  // 透视视图是**懒加载**的：ensurePivot() 只把请求发出去（自己返回 undefined），要等数据落回来
+  a.ensurePivot();
+  for(let i=0;i<60 && !ui.pivotData;i++) await new Promise((r)=>setTimeout(r,100));
+  const views=ui.pivotData?.views??[];
+  const idx=views.findIndex(v=>/农事日历/.test(v.title||''));
+  if(idx<0) return {n:views.length, idx};
+  // 先切到「透视视图」页签：表格是按**当前页签**渲染的，停在别的页签上读到的是别的表
+  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+  const sel=document.getElementById('pivot-sel');
+  sel.value=String(idx); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  const tbl=document.querySelector('#tb-body .tbl');
+  const head=[...tbl.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+  const trs=[...tbl.querySelectorAll('tbody tr')];
+  const csv=ui.pivotCsvText();
+  return {n:views.length, idx, title:views[idx].title, rowLabel:views[idx].rowLabel, colLabel:views[idx].colLabel,
+    head, nRows:trs.length, firstRow:[...trs[0].children].map(td=>td.textContent.trim()),
+    lastRow:[...trs[trs.length-1].children].map(td=>td.textContent.trim()),
+    csvHead:(csv.indexOf(String.fromCharCode(10))>=0?csv.split(String.fromCharCode(10))[1]:''), hasZeroDec:/[0-9]+\.00/.test(csv)};})()`);
+check('**农事日历进页面**（离线算好、页面只查表）：13 月 × 3 类型 + 合计行，且合计与离线/交叉验证过的数**对得上**',
+  s27c.idx >= 0 && s27c.nRows === 14 && s27c.head.length === 5 && /月份/.test(s27c.head[0])
+    && s27c.lastRow[0] === '合计' && /^586,772,801,2159$/.test(s27c.lastRow.slice(1).join(','))
+    && /^\d{4}-\d{2}$/.test(String(s27c.firstRow[0])) && !s27c.hasZeroDec,
+  `${s27c.n} 个视图（选中「${s27c.title}」· ${s27c.nRows - 1} 个月 + 合计行）· 表头 ${(s27c.head ?? []).join('|')}`
+    + ` · 首行 ${(s27c.firstRow ?? []).join('|')} · 末行 ${(s27c.lastRow ?? []).join('|')}`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

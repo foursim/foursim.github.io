@@ -7,7 +7,7 @@
  * 3. **底部留白按 CSS 上限**（`--logbar-max` 那套思路）——面板的 max-height 不依赖 JS 实测，
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
-import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf } from './geo.js';
+import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote } from './geo.js';
 import { THEME, cssVar } from './theme.js';
 import { sparkline, bars, colorbar, hbars } from './charts.js';
 
@@ -49,6 +49,7 @@ const TABLE_TABS = [
   ['focus', '重点问题'],
   ['frame', '当前帧指标'],
   ['units', '经营单元'],
+  ['grids', '统计网格'],
   ['crops', '作物与收成'],
   ['alarms', '告警明细'],
   ['scenario', '情景推演'],
@@ -229,6 +230,8 @@ export class UI {
       if (parcel) { actions.onFocusParcel(Number(parcel.dataset.parcel)); return; }
       const unit = pick(ev, '[data-unit]');
       if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
+      const grid = pick(ev, '[data-grid]');
+      if (grid) { actions.onHighlightGrid?.(grid.dataset.grid); return; }
       const crop = pick(ev, '[data-crop]');
       if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
       // 「重点问题」：点一行 = 在图上高亮该问题的命中地块（联合查询的结果直接落到空间上）
@@ -313,6 +316,8 @@ export class UI {
       if (parcel) { actions.onFocusParcel(Number(parcel.dataset.parcel)); return; }
       const unit = pick(ev, '[data-unit]');
       if (unit) { actions.onHighlightUnit?.(unit.dataset.unit); return; }
+      const grid = pick(ev, '[data-grid]');
+      if (grid) { actions.onHighlightGrid?.(grid.dataset.grid); return; }
       const crop = pick(ev, '[data-crop]');
       if (crop) { actions.onHighlightCrop?.(crop.dataset.crop); return; }
       const q = pick(ev, '[data-question]');
@@ -402,9 +407,10 @@ export class UI {
     const rows = items.map((it) => (
       `<div class="lg-row"><i style="background:${it.color}"></i><span>${it.label}</span></div>`
     )).join('');
-    this.setHtml('legend', grad
+    // 口径直接写在图例下面：地图是"面积加权、排除不播种"算出来的，读者得知道这件事
+    this.setHtml('legend', (grad
       ? `${rows}<div id="legend-bar"></div>`
-      : rows);
+      : rows) + `<div class="lg-note">${aggNote(this.variable)}</div>`);
     if (grad) colorbar(document.getElementById('legend-bar'), grad, items[0].label, items[items.length - 1].label);
   }
 
@@ -825,6 +831,23 @@ export class UI {
         };
       });
       note = `区域日值 · ${fmtDay(this.model.days[d])} · 逐日`;
+    } else if (key === 'grids') {
+      const list = t.grids ?? [];
+      cols = [{ label: '网格编码', mono: true }, { label: '主导作物' }, { label: '面积 ha', num: true },
+        { label: '地块', num: true }, { label: '进度 %', num: true }, { label: '最高病级', num: true },
+        { label: '水分 %', num: true }, { label: '养分 %', num: true }, { label: '到收储点 min', num: true }];
+      rows = list.map((g) => ({
+        cls: g.disease >= 4 ? 'high' : (g.disease >= 3 ? 'mid' : ''),
+        attrs: ` data-grid="${g.id}" title="点击：在图上高亮这个网格的地块"`,
+        cells: [{ text: g.code, mono: true }, g.crop || '—',
+          { text: nm(g.area, 1), num: true }, { text: g.n, num: true },
+          { text: g.progress == null ? '—' : nm(g.progress * 100, 1), num: true },
+          { text: g.disease, num: true, cls: g.disease >= 3 ? 'bad' : '' },
+          { text: nm(g.water * 100, 1), num: true }, { text: nm(g.fert * 100, 1), num: true },
+          { text: nm(g.tMin, 1), num: true }],
+      }));
+      note = `${list.length} 个统计网格（P4，250 m 规则网格）· 与经营单元**同一套口径**（进度：${aggNote('progress')}；`
+        + `病级：${aggNote('disease')}）· 点一行可在图上高亮 · ${fmtDay(this.model.days[d])}`;
     } else if (key === 'units') {
       const list = t.units ?? [];
       cols = [{ label: '单元编码', mono: true }, { label: '主导作物' }, { label: '面积 ha', num: true },
@@ -835,12 +858,14 @@ export class UI {
         attrs: ` data-unit="${u.id}" title="点击：在图上高亮这个单元的地块"`,
         cells: [{ text: u.code, mono: true }, u.crop || '—',
           { text: nm(u.area, 1), num: true }, { text: u.n, num: true },
-          { text: nm(u.progress * 100, 1), num: true },
+          // ⚠️ 不能先乘 100 再判空：`null * 100 === 0`，会把"无数据"渲染成"0.0%"（两个意思）
+          { text: u.progress == null ? '—' : nm(u.progress * 100, 1), num: true },
           { text: u.disease, num: true, cls: u.disease >= 3 ? 'bad' : '' },
           { text: nm(u.water * 100, 1), num: true }, { text: nm(u.fert * 100, 1), num: true },
           { text: nm(u.tMin, 1), num: true }],
       }));
-      note = `${list.length} 个经营单元（P2）· 面积加权 · 点一行可在图上高亮 · ${fmtDay(this.model.days[d])}`;
+      note = `${list.length} 个经营单元（P2）· 进度：${aggNote('progress')} · 病级：${aggNote('disease')}`
+        + ` · 点一行可在图上高亮 · ${fmtDay(this.model.days[d])}`;
     } else if (key === 'crops') {
       const list = t.crops ?? [];
       cols = [{ label: '作物' }, { label: '地块数', num: true }, { label: '面积 ha', num: true },

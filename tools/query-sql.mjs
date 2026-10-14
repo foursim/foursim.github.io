@@ -140,6 +140,9 @@ const queries = [
       FROM fact_parcel_season s LEFT JOIN dim_parcel p ON p.parcel_id = s.parcel_id
       LEFT JOIN dim_crop c ON c.crop_code = s.crop_code
       GROUP BY 1 ORDER BY 1` },
+  // 农事日历：与自研 q13 逐格比（月 × 事件类型计数；月份键由 event_day 前 6 位拼出来）
+  { id: 'q13', sql: `SELECT substr(event_day, 1, 4) || '-' || substr(event_day, 5, 2) AS ym, event_type, COUNT(*) AS val
+      FROM fact_parcel_event GROUP BY 1, 2` },
   // 顺带验一个"键列是文本"的事实（不是查询，是核对）
   { id: 'keys', sql: `SELECT DISTINCT admin_code FROM dim_parcel` },
 ];
@@ -239,6 +242,7 @@ comparePivot('q2', selfQ('q2'), { label: '单元 × 旬 进度矩阵' });
 comparePivot('q3', selfQ('q3'), { label: '网格 × 作物 面积' });
 comparePivot('q4', selfQ('q4'), { label: '日期 × 变量 观测' });
 comparePivot('q7', selfQ('q7'), { label: '分区 × 作物（走 SQL JOIN）' });
+comparePivot('q13', selfQ('q13'), { label: '月 × 事件类型（农事日历）' });
 
 {
   // DuckDB 原生 PIVOT 出来的宽表，和自研的矩阵比（比"长表聚合"更能暴露实现差异）

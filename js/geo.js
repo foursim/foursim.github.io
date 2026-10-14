@@ -63,14 +63,29 @@ export function scenarioColor(gain) {
  *   `area` = 取面积最大的那一类（作物/土地利用这类"构成"语义用这个）。
  */
 export const AGG_RULE = {
-  progress: { skip: (row) => !(row.gddNeed > 0) },
-  disease: { aggClass: 'max' },
+  progress: { skip: (row) => !(row.gddNeed > 0), note: '面积加权，排除不播种地块（牧草/果园）' },
+  disease: { aggClass: 'max', note: '取最严重（最高病级），与告警同口径' },
 };
 
 /** 该地块是否**不参与**某变量的聚合 */
 export function aggSkip(variable, row) {
   const r = AGG_RULE[variable];
   return !!(r && r.skip && r.skip(row));
+}
+
+/**
+ * **人话版的聚合口径**（图例与表注用）。
+ *
+ * 说明也从 `AGG_RULE` 出，不在界面里另写一套 —— 否则改了规则忘了改说明，
+ * 页面就成了"写着旧口径的说明书"（比不写更糟）。
+ */
+export function aggNote(variable) {
+  const spec = VARIABLES[variable] || {};
+  const r = AGG_RULE[variable] || {};
+  if (r.note) return r.note;
+  if (spec.type === 'categorical') return '颜色仅用于区分，不代表数值';
+  if (spec.type === 'class') return '取面积最大的那一类';
+  return '面积加权（按地块面积）';
 }
 
 /** 分类型变量的聚合方式（默认按面积最大） */

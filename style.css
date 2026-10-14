@@ -148,6 +148,9 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 /* 图例 */
 .lg-row { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 1px 0; }
 .lg-row i { width: 14px; height: 12px; border-radius: 2px; border: 1px solid var(--line); }
+/* 图例下面的"口径说明"：地图是面积加权算出来的，读者得知道这件事 */
+.lg-note { margin-top: 4px; padding-top: 3px; border-top: 1px dashed var(--line);
+  font-size: 11px; color: var(--dim); line-height: 1.35; }
 .cbar { height: 10px; border-radius: 3px; margin: 6px 0 2px; }
 .cbar-lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
 .lyr { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 0; cursor: pointer; }
