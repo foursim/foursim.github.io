@@ -301,6 +301,12 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 #tb-more { display: none; }
 @media (max-width: 1240px) {
   #tb-more { display: inline-block; }
+  /* 透视视图这一行在最窄的桌面尺寸下会多出"视图选择器 + 导出视图"两个控件：
+     不收窄就会把操作行顶成两行、把表体挤到 3 行以下（实测 95px < 96px） */
+  #pivot-sel { max-width: 108px; }
+  #btn-pivot-csv { padding: 2px 6px; }
+  /* 窄屏进透视图时，"导出 CSV"（导地块）让位给"导出视图" —— 按钮总数为 5 个不变，操作行不会多出一行 */
+  #tablebar.pivot-mode #btn-export-csv { display: none; }
   #tablebar .tb-tabs button:nth-child(n+4) { display: none; }
 }
 .tbl th.sortable { cursor: pointer; user-select: none; }

@@ -122,7 +122,8 @@ const queries = [
       AVG(${dbl('yield_t_ha')}) AS yha, MAX(CAST(disease_level_max AS INTEGER)) AS dis
       FROM fact_parcel_season GROUP BY 1 ORDER BY 1` },
   { id: 'q11', sql: `SELECT decade_key, COUNT(DISTINCT unit_id) AS units, SUM(${dbl('harvested_ha')}) AS harv,
-      SUM(${dbl('sown_ha')}) AS sown, AVG(${dbl('progress_mean')}) AS prog, MAX(CAST(disease_level_max AS INTEGER)) AS dis
+      SUM(${dbl('sown_ha')}) AS sown, AVG(${dbl('progress_mean')}) AS prog,
+      AVG(${dbl('progress_area_mean')}) AS progA, MAX(CAST(disease_level_max AS INTEGER)) AS dis
       FROM fact_unit_decade GROUP BY 1 ORDER BY 1` },
   // 顺带验一个"键列是文本"的事实（不是查询，是核对）
   { id: 'keys', sql: `SELECT DISTINCT admin_code FROM dim_parcel` },

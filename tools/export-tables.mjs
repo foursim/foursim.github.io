@@ -256,8 +256,10 @@ const COLDEF = {
   soil_wetness_root: D('根区土壤湿度', 'root-zone soil wetness', '1', '0~1', 'M'),
   soil_wetness_mean: D('旬均根区土壤湿度', 'mean root-zone soil wetness', '1', '0~1', 'M'),
   crop_progress: D('作物生长进度', 'crop growth progress', '1', '0~1', 'M'),
-  progress_mean: D('旬均生长进度', 'mean crop progress', '1', '0~1', 'M',
-    '单元内**按地块等权**平均（与 water_index_mean / fertility_index_mean 的**面积加权**口径不同 —— 比之前先看权重口径）'),
+  progress_mean: D('旬均生长进度(等权)', 'mean crop progress (per parcel)', '1', '0~1', 'M',
+    '单元内**按地块等权**平均＝每块地一票（看"有几块地落后"）；面积口径见 progress_area_mean'),
+  progress_area_mean: D('旬均生长进度(面积加权)', 'mean crop progress (area weighted)', '1', '0~1', 'M',
+    '单元内**按面积加权**平均＝每公顷一票（看"有多少面积落后"）；与 water_index_mean / fertility_index_mean 同口径'),
   progress_p10: D('生长进度 p10', 'crop progress 10th percentile', '1', '0~1', 'O', '看单元内进度离散'),
   progress_p90: D('生长进度 p90', 'crop progress 90th percentile', '1', '0~1', 'O'),
   disease_level_max: D('病害气象等级(最高)', 'max disease level', '级', '1~5', 'M'),
@@ -598,6 +600,14 @@ counts.dim_variable = writeCsv('dim_variable', VAR_COLS, varRows);
       const wSum = arable.reduce((a, i) => a + rows[i].series.water[last] * rows[i].area_ha, 0);
       const fSum = arable.reduce((a, i) => a + rows[i].series.fert[last] * rows[i].area_ha, 0);
       const prog = arable.map((i) => rows[i].series.progress[last]);
+      /*
+       * 进度给**两套口径**（等权 / 面积加权），因为它们的差本身就是信息：
+       * 等权 = 每块地一票（"有几块地落后"），面积加权 = 每公顷一票（"有多少面积落后"）。
+       * 单元里小地块多时两者会明显分开 —— 之前只给了等权版，名字却叫"旬均"，容易被误读成面积口径
+       * （water_index_mean / fertility_index_mean 本来就是面积加权，三列混在一起看很容易串）。
+       */
+      const progAreaDen = arable.reduce((a, i) => a + rows[i].area_ha, 0);
+      const progAreaSum = arable.reduce((a, i) => a + rows[i].series.progress[last] * rows[i].area_ha, 0);
       let disMax = 1;
       let disGe3 = 0;
       for (const i of members) {
@@ -624,6 +634,7 @@ counts.dim_variable = writeCsv('dim_variable', VAR_COLS, varRows);
         precip_sum_mm: round(dc.idx.reduce((a, d) => a + R.PREC[d], 0), 1),
         soil_wetness_mean: round(dc.idx.reduce((a, d) => a + R.GWETROOT[d], 0) / dc.idx.length, 3),
         progress_mean: round(prog.reduce((a, v) => a + v, 0) / (prog.length || 1), 3),
+        progress_area_mean: round(progAreaDen ? progAreaSum / progAreaDen : 0, 3),
         progress_p10: pctOf(prog, 0.1),
         progress_p90: pctOf(prog, 0.9),
         disease_level_max: disMax,
@@ -640,7 +651,7 @@ counts.dim_variable = writeCsv('dim_variable', VAR_COLS, varRows);
   counts.fact_unit_decade = writeCsv('fact_unit_decade',
     ['decade_key', 'decade_seq', 'date_start', 'date_end', 'days', 'unit_id', 'unit_code', 'grid_id',
       'dominant_crop', 'area_ha', 'n_parcels', 'temp_mean_c', 'precip_sum_mm', 'soil_wetness_mean',
-      'progress_mean', 'progress_p10', 'progress_p90', 'disease_level_max', 'disease_parcels_ge3',
+      'progress_mean', 'progress_area_mean', 'progress_p10', 'progress_p90', 'disease_level_max', 'disease_parcels_ge3',
       'water_index_mean', 'fertility_index_mean', 'harvested_ha', 'sown_ha', 'source_id', 'synthetic'],
     unitDecade);
   console.log(`[旬表] ${decades.length} 旬 × ${unitMembers.size} 单元 = ${unitDecade.length} 行（国内农业气象旬报口径：上旬/中旬/下旬）`);
@@ -1068,7 +1079,24 @@ check('数据元字典覆盖**每一张表的每一列**（防止"表加了列�
   const vars = new Set(table('dim_variable').map((r) => r.variable_code));
   const used = new Set(table('fact_observation').map((r) => r.variable_code));
   const missing = [...used].filter((v) => !vars.has(v));
-  check('长表里用到的变量都在变量字典里（否则"加变量不用改表"就断了）',
+  {
+  /*
+   * 两套进度口径的判据：
+   * ① 都在 [0,1]；② **确实不同**（若逐行相等，说明"面积加权"其实是把等权列复制了一遍 —— 这类
+   *    "看起来加了口径、其实没加权"的写法最难发现，因为数字本身都合理）。
+   */
+  // ⚠️ `table()` 返回的是**按列名索引的对象**（不是数组）：这里必须按名字取，
+  // 用数字下标会取到 undefined ⇒ NaN ⇒ 差值判断恒为 false ⇒ 判据"假绿"（我自己踩过一次）
+  const rows2 = table('fact_unit_decade');
+  const badRange = rows2.filter((r) => Number(r.progress_mean) < 0 || Number(r.progress_mean) > 1
+    || Number(r.progress_area_mean) < 0 || Number(r.progress_area_mean) > 1);
+  const diff = rows2.filter((r) => Math.abs(Number(r.progress_mean) - Number(r.progress_area_mean)) > 1e-9).length;
+  check('进度给**两套口径**（等权 / 面积加权）：都落在 0~1，且确实不同（防"加权"写成复制等权列）',
+    badRange.length === 0 && diff >= rows2.length * 0.1,
+    `${rows2.length} 行中 ${diff} 行两口径不同（${round((diff / rows2.length) * 100, 1)}%）· 越界 ${badRange.length}`);
+}
+
+check('长表里用到的变量都在变量字典里（否则"加变量不用改表"就断了）',
     missing.length === 0 && used.size >= 6, missing.join(',') || `${used.size} 个变量 / 字典 ${vars.size} 个`);
 }
 

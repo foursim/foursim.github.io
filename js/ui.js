@@ -140,7 +140,8 @@ export class UI {
       'tablebar', 'btn-export-csv', 'btn-export-png',
       'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
-      'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel'];
+      'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel', 'btn-pivot-csv',
+      'tablebar'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
 
@@ -199,6 +200,12 @@ export class UI {
     });
     refs['tb-more'].addEventListener('change', (ev) => {
       if (ev.target.value) this.setTable(ev.target.value);
+    });
+    // 抽屉里的"导出视图"：无论抽屉页签，按钮只在该页签出现（visible 由 renderPivotSel 控制）
+    refs['btn-pivot-csv'].addEventListener('click', () => {
+      const text = this.pivotCsvText();
+      const v = this.pivotData?.views?.[this.pivotView] ?? {};
+      if (text) this.actions?.onDownload?.(text, `透视视图_${v.id ?? 'view'}.csv`);
     });
     refs['pivot-sel'].addEventListener('change', (ev) => {
       this.pivotView = Number(ev.target.value) || 0;
@@ -626,6 +633,27 @@ export class UI {
     this.drawerChartInfo = { col: spec.col, items };
   }
 
+  /**
+   * 当前透视视图的 CSV 文本（行维 + 各列 + 合计；末行是列合计 + 总合计）。
+   *
+   * 抽成纯函数是为了**可判据**：判据直接拿它和离线 JSON 对账，而不必去接浏览器的下载流程。
+   * 页面里不做任何聚合 —— 数字全部来自 `data/pivot.json`（离线工具算好的）。
+   */
+  pivotCsvText() {
+    const views = this.pivotData?.views ?? [];
+    if (!views.length) return '';
+    const v = views[Math.min(this.pivotView, views.length - 1)];
+    const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '' : Number(x).toFixed(v.decimals));
+    const esc = (x) => (String(x).includes(',') ? `"${String(x).replace(/"/g, '""')}"` : String(x));
+    const head = [v.rowLabel, ...v.colKeys, '合计'];
+    const lines = [head.map(esc).join(',')];
+    v.rowKeys.forEach((rk, i) => lines.push([rk, ...v.matrix[i].map(f), f(v.rowTotals[i])].map(esc).join(',')));
+    lines.push(['合计', ...v.colTotals.map(f), f(v.grand)].map(esc).join(','));
+    // 第一行注释性的口径说明：文件名之外，CSV 自己也带得上口径（离开页面还说得清）
+    return `# ${v.title} · ${v.agg}(${v.value}) ${v.unit} · 离线生成自 tables/*.csv；口径见 tables/query/透视与联合查询.md\n`
+      + `${lines.join('\n')}\n`;
+  }
+
   /** 「导出结果」要导的东西（列 + 筛选排序后的行 + 表名） */
   drawerResult() {
     const label = (TABLE_TABS.find(([k]) => k === this.drawerTab) ?? [null, this.drawerTab])[1];
@@ -674,7 +702,17 @@ export class UI {
     if (!sel) return;
     const views = this.pivotData?.views ?? [];
     const on = this.activeTable === 'pivot' || (this.drawerOpen && this.drawerTab === 'pivot');
-    sel.classList.toggle('hidden', !on || views.length === 0);
+    /*
+     * 控件放哪儿：**都放抽屉**。strip 在 1024×640 下只有 ~370px 宽（左右面板各占一块），
+     * 放选择器或导出按钮都会多占一行、把表体挤到 3 行以下（实测 95px < 96px）。
+     * 分工：strip = 预览（表 + 口径说明）；抽屉 = 全行视图 + 控件。所以在抽屉的透视页签里才出现。
+     */
+    const show = on && views.length > 0;
+    const inDrawer = show && this.drawerOpen && this.drawerTab === 'pivot';
+    sel.classList.toggle('hidden', !inDrawer);
+    this.refs['btn-pivot-csv']?.classList?.toggle?.('hidden', !inDrawer);
+    // 窄屏进透视图时，"导出 CSV"（导地块）可以让位（strip 宽度吃紧）
+    this.refs['tablebar']?.classList?.toggle?.('pivot-mode', show);
     if (views.length && sel.options.length !== views.length) {
       sel.innerHTML = views.map((v, i) => `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`).join('');
     }
@@ -899,6 +937,8 @@ export class UI {
     for (const b of this.refs['dw-tabs'].querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === this.drawerTab);
     }
+    // 透视控件跟的是"抽屉的页签"，所以每次重画抽屉都要重算一次显隐（漏了就会"切过去控件不出现"）
+    this.renderPivotSel();
     const { cols, rows, note } = this.buildTable(this.drawerTab);
     /*
      * **列选择**：先投影出"要显示的列"。

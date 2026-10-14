@@ -39,7 +39,7 @@
         <button id="btn-drawer" class="mini" title="打开数据视图：全行表格 + 筛选 + 排序（左侧地图仍可见）">数据视图</button>
         <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">清除高亮</button>
         <!-- 透视视图选择器：只在「透视视图」页签下出现（矩阵与合计都由离线工具算好，页面只查表） -->
-        <select id="pivot-sel" class="mini hidden" title="切换透视视图（离线生成，页面只查表）" aria-label="透视视图"></select>
+
         <span id="tb-note" class="tb-note"></span>
         <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
         <button id="btn-export-png" class="mini" title="导出地图 PNG（含标题、日期与图例）">导出 PNG</button>
@@ -96,6 +96,14 @@
       <div class="dw-tools">
         <input id="dw-filter" type="search" placeholder="筛选关键字…" aria-label="筛选">
         <button id="btn-dw-cols" class="mini" title="选择要显示哪些列（会记住选择）">列</button>
+        <!--
+          透视视图的两个控件都放在**抽屉**里：
+          strip 在 1024×640 下只有 ~370px 宽（左右面板各占一块），塞不下选择器 + 导出按钮
+          （实测会多占一行、把表体挤到 95px < 96px）。这也符合本项目的分工：
+          **strip 是预览（只显示当前视图 + 口径），抽屉是全行视图与控件所在的地方**。
+        -->
+        <select id="pivot-sel" class="mini hidden" title="切换透视视图（离线生成，页面只查表）" aria-label="透视视图"></select>
+        <button id="btn-pivot-csv" class="mini hidden" title="导出当前透视视图（行列合计都在，CSV）">导出视图</button>
         <button id="btn-dw-export" class="mini" title="导出当前视图（含筛选与排序后的行）">导出结果</button>
         <button id="btn-dw-csv" class="mini" title="导出当前帧全部地块数据（CSV）">导出地块</button>
         <button id="drawer-close" class="mini" aria-label="关闭数据视图">×</button>

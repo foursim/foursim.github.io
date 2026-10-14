@@ -887,20 +887,44 @@ check('「导出结果」导的是**当前视图**（筛选后的行数，不是
   s19Exp.ok ? `${s19Exp.rows} 行（视图 ${s19Exp.shown} 行）· 列头 ${String(s19Exp.header).slice(0, 30)}` : '没捕获到 Blob');
 // 底部条在窄列宽下按钮不换行
 await boot(1024, 640);
+// ⚠️ 测量前先**回到默认页签**：页签切换会改变这一行的高度与按钮数量（透视页签会多出选择器 + 导出按钮），
+// 停在哪一页取决于上一个检查 —— 不归位的话，这条"空间预算"判据的结果就是不可复现的
+await ev(`document.querySelector('#tb-tabs button[data-tab="focus"]').click()`);
+await sleep(250);
 const s19Strip = await ev(`(()=>{const bs=[...document.querySelectorAll('#tablebar .tb-actions button')]
     .filter(b=>getComputedStyle(b).display!=='none');
+  const act=document.querySelector('#tablebar .tb-actions'), note=document.getElementById('tb-note');
   return {n:bs.length, heights:bs.map(b=>Math.round(b.getBoundingClientRect().height)),
     labels:bs.map(b=>b.textContent.trim()), rows:new Set(bs.map(b=>Math.round(b.getBoundingClientRect().top))).size,
-    headH:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height)};})()`);
+    headH:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height),
+    // 调试用：到底是谁把这一行挤到换行（判据失败时看它）
+    widths:bs.map(b=>Math.round(b.getBoundingClientRect().width)), actW:Math.round(act.getBoundingClientRect().width),
+    actScroll:act.scrollWidth, noteW:note?Math.round(note.getBoundingClientRect().width):-1,
+    tabsW:Math.round(document.getElementById('tb-tabs').getBoundingClientRect().width),
+    selW:Math.round((document.getElementById('pivot-sel')||{getBoundingClientRect:()=>({width:-1})}).getBoundingClientRect().width)};})()`);
 check('表格区按钮在 1024×640 下不换行（说明文案先被截断，按钮不许折行）',
   s19Strip.heights.every((h) => h < 32) && s19Strip.rows <= 2,
-  `${s19Strip.n} 个按钮（${s19Strip.labels.join('/')}）占用行数 ${s19Strip.rows} · 表头 ${s19Strip.headH}px`);
+  `${s19Strip.n} 个按钮（${s19Strip.labels.join('/')}）占用行数 ${s19Strip.rows} · 表头 ${s19Strip.headH}px`
+    + ` · 按钮宽 ${s19Strip.widths.join('/')} · 操作行 ${s19Strip.actW}（scroll ${s19Strip.actScroll}）· 便签 ${s19Strip.noteW} · 页签 ${s19Strip.tabsW} · 选择器 ${s19Strip.selW}`);
 const s19Body = await ev(`(()=>{const t=document.getElementById('tablebar'),b=document.getElementById('tb-body');
   // 只数【可见】页签：被 display:none 收起的按钮 rect 是 0，把它们算进来会得到"2 行"的假失败
   const vis=[...document.querySelectorAll('#tb-tabs button')].filter(x=>x.getBoundingClientRect().height>0);
   return {strip:Math.round(t.getBoundingClientRect().height), head:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height),
     body:Math.round(b.getBoundingClientRect().height), tabRows:new Set(vis.map(x=>Math.round(x.getBoundingClientRect().top))).size,
     visTabs:vis.length};})()`);
+// 最坏情况：切到「透视视图」（多一个视图选择器 + 一个导出按钮）再量一次 —— 这才是这一行真正吃紧的状态
+await ev(`document.querySelector('#tb-tabs button[data-tab="pivot"]').click()`);
+await sleep(700);
+const s19Pivot = await ev(`(()=>{const b=document.getElementById('tb-body');
+  const bs=[...document.querySelectorAll('#tablebar .tb-actions button')].filter(x=>getComputedStyle(x).display!=='none');
+  return {head:Math.round(document.querySelector('.tb-head').getBoundingClientRect().height),
+    body:Math.round(b.getBoundingClientRect().height), n:bs.length,
+    rows:new Set(bs.map(x=>Math.round(x.getBoundingClientRect().top))).size};})()`);
+check('1024×640 的**最坏情况**（切到「透视视图」、多出选择器与导出按钮）也不许把表体挤到 3 行以下',
+  s19Pivot.head <= 80 && s19Pivot.body >= 96,
+  `透视页签：表头 ${s19Pivot.head}px · 表体 ${s19Pivot.body}px · ${s19Pivot.n} 个按钮占 ${s19Pivot.rows} 行`);
+await ev(`document.querySelector('#tb-tabs button[data-tab="focus"]').click()`);
+await sleep(200);
 check('1024×640：页签不折行、表头不吞掉表体（表体 ≥ 96px ≈ 3 行）',
   s19Body.tabRows === 1 && s19Body.head <= 80 && s19Body.body >= 96,
   `页签 ${s19Body.tabRows} 行 · 表头 ${s19Body.head}px · 表体 ${s19Body.body}px（表格区 ${s19Body.strip}px）`);
@@ -1152,11 +1176,28 @@ const s22 = await ev(`(async()=>{
   const second=snap();
   const reqs=[...new Set(performance.getEntriesByType('resource').filter(r=>r.name.includes('pivot.json')).map(r=>new URL(r.name).origin))];
   // 选择器只在「透视视图」页签出现：切到别的页签必须隐藏
-  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  // 控件都放在抽屉里：抽屉没开时两个都该隐藏
   const hiddenElsewhere=sel.classList.contains('hidden');
-  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+  const btnHiddenElsewhere=document.getElementById('btn-pivot-csv').classList.contains('hidden');
+  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();   // 回到透视页
+  // 打开抽屉 → 切到别的页签（仍隐藏）→ 再切到"透视视图"（两个控件都出现）
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="units"]').click();
+  const ctrlHiddenOtherTab=sel.classList.contains('hidden')
+    && document.getElementById('btn-pivot-csv').classList.contains('hidden');
+  document.querySelector('#dw-tabs button[data-tab="pivot"]').click();
+  const btnInDrawer=!document.getElementById('btn-pivot-csv').classList.contains('hidden')
+    && !sel.classList.contains('hidden');
+  // 导出当前视图的 CSV 文本：与离线 JSON 逐项对账（页面只查表，导出也不许另算一遍）
+  const btn=document.getElementById('btn-pivot-csv');
+  const csvLines=a.ui.pivotCsvText().trim().split(String.fromCharCode(10));
+  const csvHead=csvLines[1].split(',');
+  const csvLast=csvLines[csvLines.length-1].split(',');
+  const csv={nLines:csvLines.length, note:csvLines[0].startsWith('#'), headFirst:csvHead[0],
+    headLast:csvHead[csvHead.length-1], nCol:csvHead.length, lastFirst:csvLast[0],
+    lastNum:csvLast[csvLast.length-1], btnVisible:!btn.classList.contains('hidden')};
   const v=a.ui.pivotData?a.ui.pivotData.views:null;
-  return {views:v?v.length:0, origins:reqs, origin:location.origin, hiddenElsewhere,
+  return {views:v?v.length:0, origins:reqs, origin:location.origin, hiddenElsewhere, btnHiddenElsewhere, ctrlHiddenOtherTab, btnInDrawer, csv,
     v0:v?{r:v[0].rowKeys.length,c:v[0].colKeys.length,grand:v[0].grand,agg:v[0].agg,value:v[0].value,unit:v[0].unit,dec:v[0].decimals}:null,
     v1:v?{r:v[1].rowKeys.length,c:v[1].colKeys.length,grand:v[1].grand,agg:v[1].agg,dec:v[1].decimals}:null,
     first, second};})()`);
@@ -1174,6 +1215,16 @@ check('**逐格求和 == 离线总合计**（渲染没错行错列），且合�
 check('仍**纯静态**：透视数据是同源静态文件；选择器只在「透视视图」页签出现（别的页签不留噪音）',
   s22.origins.length === 1 && s22.origins[0] === s22.origin && s22.hiddenElsewhere === true,
   `请求来源 ${s22.origins.join(',') || '（未取到）'} · 其他页签隐藏=${s22.hiddenElsewhere}`);
+check('**导出当前视图 CSV**：带口径注释 + 行维/全部列/合计表头，末行是列合计与总合计（与离线 JSON 逐项对齐）',
+  s22.csv.note && !!s22.csv.headFirst && s22.csv.headLast === '合计' && s22.csv.nCol === s22.v1.c + 2
+    && s22.csv.nLines === s22.v1.r + 3 && s22.csv.lastFirst === '合计'
+    && Math.abs(Number(s22.csv.lastNum) - Number(s22.v1.grand)) <= 0.005,
+  `${s22.csv.nLines} 行（1 注释 + 1 表头 + ${s22.v1.r} 数据 + 1 合计）· ${s22.csv.nCol} 列 · 末格 ${s22.csv.lastNum} vs 离线 ${s22.v1.grand}`);
+check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视页签出现**：抽屉未开隐藏、抽屉别的页签也隐藏',
+  s22.hiddenElsewhere === true && s22.btnHiddenElsewhere === true
+    && s22.ctrlHiddenOtherTab === true && s22.btnInDrawer === true,
+  `抽屉未开时：选择器隐藏=${s22.hiddenElsewhere}、导出按钮隐藏=${s22.btnHiddenElsewhere}；`
+    + `抽屉别的页签仍隐藏=${s22.ctrlHiddenOtherTab}；抽屉透视页签两个都可见=${s22.btnInDrawer}`);
 await shot('pivot-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

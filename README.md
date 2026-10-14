@@ -30,7 +30,7 @@ tools/fetch-data.mjs  取数与**数据合理性校验**（parcels / roads / poi
 tools/build-access.mjs 可达性分析（离线）：路网建图 + 多源 Dijkstra + 等时圈
 tools/build-units.mjs  三层空间单元：P2 经营单元（连片作业片区）+ P4 统计网格（250 m）
 tools/build-zones.mjs  P3 管理分区（**演示**）：25 m 网格采样 + k-means
-tools/export-tables.mjs 导出维度/事实/元数据表（CSV + Excel + schema.json + 数据元字典），并跑 30 条导出判据
+tools/export-tables.mjs 导出维度/事实/元数据表（CSV + Excel + schema.json + 数据元字典），并跑 31 条导出判据
 js/theme.js            三套政企配色的令牌与切换（CSS 变量 + data-theme）
 tools/xlsx.mjs         极简 XLSX 写出器（**零依赖**：ZIP + 最小 XML；用 openpyxl 反向验证过）
 tables/                **16 张表**（dim_* 维度 / fact_* 事实 / meta_dataset）+ schema.json + 数据字典.md
@@ -41,17 +41,18 @@ data/units.json|units.geojson  P2 经营单元 62 个（含"地块→单元/网�
 data/grids.geojson     P4 统计网格 217 格（250 m，编码可复现）
 data/zones.geojson|zones.json  P3 管理分区：363 块地 / 12833 样点 / 744 个分区（演示）
 tools/agro-smoke.mjs  模型判据（40 条，node）
-tools/browser-check.mjs 真浏览器验收（113 条，CDP 真实鼠标；找不到浏览器时跳过）
+tools/browser-check.mjs 真浏览器验收（116 条，CDP 真实鼠标；找不到浏览器时跳过）
 ```
 
 ## 快速开始
 
 ```bash
-npm run data:all        # 全流水线：取数（含行政边界/居民点/DEM/土壤）→ 可达性/经营单元/分区/情景 → 校验 → 导出 16 张表 → 透视查询 → 仓库卫生（一条命令跑完）
+npm run data:all        # 全流水线：取数（含行政边界/居民点/DEM/土壤）→ 可达性/经营单元/分区/情景 → 校验 → 导出 16 张表
+                        #            → 透视查询（含与 DuckDB 的交叉验证，没装 DuckDB 会自动跳过）→ 仓库卫生
                         #   = parcels → roads → poi → weather → access → units → zones → check → export:tables
 npm test                # 模型判据 40 条
-npm run test:browser    # 真浏览器验收 113 条（Chrome/Edge，找不到浏览器时自动跳过）
-npm run export:tables   # 单独重跑表格导出（含 30 条导出判据，失败即非 0 退出）
+npm run test:browser    # 真浏览器验收 116 条（Chrome/Edge，找不到浏览器时自动跳过）
+npm run export:tables   # 单独重跑表格导出（含 31 条导出判据，失败即非 0 退出）
 
 npm run serve           # 启动静态服务器 → 打开 http://localhost:8080/
 npm run serve:sub       # 同上，但挂在子路径下 → http://localhost:8080/webtrade/
@@ -171,9 +172,11 @@ Excel 版在 `tables/农业监测数据.xlsx`：16 个工作表、冻结首行�
 
 | 补齐项 | 做法 | 判据 |
 |---|---|---|
-| **页面上的静态透视视图** | 底部条第 7 个页签；矩阵由 `npm run query --web data/pivot.json` **离线**算好（4 个视图，31 KB），页面只 `fetch` + 画表；选择器只在透视页签出现、懒加载 | 4 条（行列数对齐、切换视图、**逐格求和 == 离线合计**、仍纯静态） |
+| **页面上的静态透视视图** | 底部条第 7 个页签；矩阵由 `npm run query --web data/pivot.json` **离线**算好（4 个视图，31 KB），页面只 `fetch` + 画表；懒加载 | 6 条（行列数对齐、切换视图、**逐格求和 == 离线合计**、仍纯静态、**导出当前视图 CSV 与离线 JSON 逐项对齐**、控件只在抽屉的透视页签出现） |
+| **透视控件放哪儿（量出来的）** | **都放抽屉**：1024×640 下 strip 只有 **~370px**（左右面板各占一块），实测多一个控件就多占一行、把表体挤到 **95px < 96px**（"表体至少 3 行"的底线）⇒ strip 只做预览（表 + 口径说明），选择器与"导出视图"放抽屉 | 1 条（1024 的**最坏情况**：切到透视页签也不许把表体挤到 3 行以下） |
 | **查询结果多 sheet Excel** | `npm run query` 顺带写 `tables/query/透视与联合查询.xlsx`（一张查询一个 sheet + 说明）；用 openpyxl 反向验证过可打开 | 1 条（ZIP 头 + 体积；另有 openpyxl 人工核过） |
 | **交叉验证补齐** | 6 张 `fact_*` 全部纳入（新增 q8/q9；q10/q11 做汇总口径对比），逐行逐列比 | 交叉验证 14 条 |
+| **进度给两套口径** | `fact_unit_decade` 新增 `progress_area_mean`（**每公顷一票**），与原有 `progress_mean`（**每地块一票**）成对；实测 3348 行里 **2006 行（59.9%）两口径不同** —— 单元内小地块多时分开得最明显 | 1 条（都落在 0~1，且**确实不同**，防"加权"写成复制等权列） |
 | **参考单产换真实统计** | `yield_ref` 换成 **Eurostat `apro_cpsh1`（`YLD_HUMD_EU_T_HA`, geo=DE, 2023+2024 均值）**：冬小麦 7.33 / 冬大麦 7.08 / 冬油菜 3.46 / 青贮玉米 43.26 / 啤酒花 2.13 t/ha；新增 `dim_crop.yield_ref_source` 逐类记口径与年份 | 30 条导出判据里含"参考单产有来源且与 Eurostat 抄录值逐项吻合" |
 
 
@@ -457,7 +460,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 > （`npm run serve`、`python -m http.server`、Nginx、对象存储、GitHub Pages 都可以）。
 > 第 5 条保证的是"就算你这么打开了，也看得懂为什么"。
 
-## 判据（模型 40 + 真浏览器 113 + 数据 25 + 导出 30 + 查询 12 + 交叉验证 14 + 仓库卫生 5 = **239 条**）
+## 判据（模型 40 + 真浏览器 116 + 数据 25 + 导出 31 + 查询 12 + 交叉验证 14 + 仓库卫生 5 = **243 条**）
 
 > 数字以**实际跑出来的**为准（每条脚本末尾都会打印"X 通过 / Y 失败"）；下面的分项说明与代码同步，
 > 但**最终的条数请以运行输出为准** —— 文档里的数字是这一轮对齐过的快照。

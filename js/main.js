@@ -645,6 +645,8 @@ try {
         ui.select(row);
       },
       onNeedPivot: () => ensurePivot(),
+      // 页面里所有导出的下载都走这一处（透视视图导出复用同一套：纯前端 Blob，无后端）
+      onDownload: (text, name) => download(new Blob([text], { type: 'text/csv;charset=utf-8' }), name),
       onExportCsv: () => exportCsv(),
       /**
        * 导出**数据视图当前看到的表**（筛选 + 排序后的行）。

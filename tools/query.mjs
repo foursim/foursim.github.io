@@ -558,23 +558,26 @@ const PRESETS = [
       const agg = new Map();
       for (const r of rows) {
         const k = String(r.decade_key);
-        if (!agg.has(k)) agg.set(k, { decade_key: k, units: new Set(), harv: 0, sown: 0, prog: 0, np: 0, dis: 0 });
+        if (!agg.has(k)) agg.set(k, { decade_key: k, units: new Set(), harv: 0, sown: 0, prog: 0, np: 0, progA: 0, npA: 0, dis: 0 });
         const a = agg.get(k);
         a.units.add(String(r.unit_id));
         a.harv += Number(r.harvested_ha) || 0;
         a.sown += Number(r.sown_ha) || 0;
         const pg = r.progress_mean;   // 均值跳过空值（同 q8/q10 的规则）
         if (pg !== '' && pg !== null && pg !== undefined && !Number.isNaN(Number(pg))) { a.prog += Number(pg); a.np += 1; }
+        const pga = r.progress_area_mean;   // 面积加权口径一并汇总（两套口径都能被交叉验证核到）
+        if (pga !== '' && pga !== null && pga !== undefined && !Number.isNaN(Number(pga))) { a.progA += Number(pga); a.npA += 1; }
         a.dis = Math.max(a.dis, Number(r.disease_level_max) || 0);
       }
       const out = [...agg.values()].sort((x, y) => x.decade_key.localeCompare(y.decade_key)).map((a) => ({
         decade_key: a.decade_key, n_units: a.units.size, harvested_ha: round(a.harv, 6),
-        sown_ha: round(a.sown, 6), progress_mean: a.np ? round(a.prog / a.np, 6) : '', disease_max: a.dis,
+        sown_ha: round(a.sown, 6), progress_mean: a.np ? round(a.prog / a.np, 6) : '',
+        progress_area_mean: a.npA ? round(a.progA / a.npA, 6) : '', disease_max: a.dis,
       }));
       return {
         kind: 'list', rows: out, unit: 'ha / 0~1 / 级',
         note: `fact_unit_decade（单元 × 旬）按旬汇总：${out.length} 旬 × ${rows.length} 行`,
-        listCols: ['decade_key', 'n_units', 'harvested_ha', 'sown_ha', 'progress_mean', 'disease_max'],
+        listCols: ['decade_key', 'n_units', 'harvested_ha', 'sown_ha', 'progress_mean', 'progress_area_mean', 'disease_max'],
       };
     },
   },
