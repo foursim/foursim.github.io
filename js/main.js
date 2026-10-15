@@ -7,6 +7,8 @@
  * （各视图各存一份状态，播着播着就对不上了）。
  */
 import { simulate, levelOf, CROPS } from './agro.js';
+import { dataRange } from './charts.js';   // 显示范围怎么算只写一处（charts.js）
+import { PALETTE } from './theme.js';
 import { AgriMap } from './map.js';
 import { UI } from './ui.js';
 import { cssVar, THEME } from './theme.js';
@@ -681,14 +683,48 @@ try {
     const xLabels = [];
     for (let i = 0; i < reg.progress.length; i += step) xLabels.push(fmtDay(model.days[i]));
     const mark = Math.min(xLabels.length - 1, Math.round(state.day / step));
+    const lineSeries = [
+      { label: '生长进度', color: PALETTE.orange, values: sample(reg.progress) },
+      { label: '促病指数', color: PALETTE.vermillion, values: sample(reg.disease) },
+      { label: '水分保持', color: PALETTE.blue, values: sample(reg.waterIdx) },
+      { label: '养分保持', color: PALETTE.green, values: sample(reg.fertIdx) },
+    ];
+    // 纵轴**按数据范围铺满**：4 条曲线都在 0.2~1.0 之间，0 起时它们会被压成四条平线
+    const lineRange = dataRange(lineSeries.flatMap((s) => s.values));
+    // ⚠️ 图注与事实必须一致：`lo` 真的 > 0 才叫"非零基"。
+    // 四条序列一起看时（促病指数跨 0~1）范围本来就收到 0，硬写"非零基"就是撒谎 —— 踩过。
+    const lineZeroBase = lineRange.lo <= 0;
     // ② 饼：作物面积构成（颜色用与地图同一份作物色，避免"图上绿、图里蓝"）
     const CROP_COLOR = Object.fromEntries((VARIABLES.crop.classes ?? []).map(([k, , c]) => [k, c]));
-    const pie = (T.crops ?? []).map((c) => ({ label: c.name, value: c.area, color: CROP_COLOR[c.code] ?? '#8a94a0' }));
+    /*
+     * 饼图：**按成熟做法把"小项"合并成「其他」**（ClicData/Chartio 的默认行为）。
+     * 依据：块数一多，小扇形就细到看不见，还互相挤 —— 与其画 7 块看不清，不如"前 5 块 + 其他"。
+     * ⚠️ 合并只改**显示分组**，不改数值：图注里给出"其他"的百分比，且分组后合计必须等于原来的合计（有判据）。
+     */
+    const pieRaw = (T.crops ?? []).map((c) => ({ label: c.name, value: c.area, color: CROP_COLOR[c.code] ?? '#8a94a0' }))
+      .sort((x, y) => y.value - x.value);
+    const PIE_MAX = 6;
+    const pie = pieRaw.length > PIE_MAX
+      ? [...pieRaw.slice(0, PIE_MAX - 1), {
+        label: `其他（${pieRaw.length - PIE_MAX + 1} 类）`,
+        value: pieRaw.slice(PIE_MAX - 1).reduce((a, x) => a + x.value, 0),
+        color: PALETTE.grey,
+      }]
+      : pieRaw;
+    const pieSum = pie.reduce((a, x) => a + x.value, 0);
+    const pieRest = pieRaw.slice(PIE_MAX - 1).reduce((a, x) => a + x.value, 0);
     // ③ 柱：经营单元按面积前 12
-    // 标签用**短码**：完整码是 `09186162-U-0001`，画到 x 轴上会被截成 `09186162-U`
-    // ⇒ 12 根柱子的标签长得一模一样（这一版真踩过）
-    const column = [...(T.units ?? [])].sort((a, b) => b.area - a.area).slice(0, 12)
-      .map((u) => ({ label: u.code.split('-').slice(1).join('') || u.code, value: u.area }));
+    /*
+     * 标签用**短码**：完整码是 `09186162-U-0001`，画到 x 轴上会被截成 `09186162-U`
+     * ⇒ 12 根柱子的标签长得一模一样（这一版真踩过）。
+     *
+     * ⚠️ 指标要选"**真有差距**"的那个：上一版画的是**面积**，而面积前 12 名的单元是 29.5~30.6 ha
+     * ——柱子一样高，图等于白画（"0 基不截轴"保证了诚实，但诚实不等于有用）。
+     * 改画**到收储点最远的 12 个单元**（5~12 分钟，差距肉眼可见，而且它本身就是"该管的单元"）。
+     */
+    const column = [...(T.units ?? [])].filter((u) => u.tMin != null)
+      .sort((a, b) => b.tMin - a.tMin).slice(0, 12)
+      .map((u) => ({ label: u.code.split('-').slice(1).join('') || u.code, value: u.tMin }));
     // ④ 雷达：**当前选中的地块所属单元**（没有选中就取病级最高的单元）vs 全场均值
     const ts = (T.units ?? []).map((u) => u.tMin).filter((v) => v != null).sort((a, b) => a - b);
     const p90 = ts.length ? ts[Math.min(ts.length - 1, Math.floor(ts.length * 0.9))] : 1;
@@ -705,29 +741,55 @@ try {
     const pick = sel ?? [...units].sort((a, b) => (b.disease ?? 0) - (a.disease ?? 0))[0] ?? null;
     const wsum = units.reduce((a, u) => a + (u.area || 0), 0) || 1;
     const allVec = dims.map((_, k) => units.reduce((a, u) => a + good(u)[k] * (u.area || 0), 0) / wsum);
+    /*
+     * **每一维按全场的 min~max 归一**：0 = 全场最差、1 = 全场最好。
+     * 原来各维都按 0~1 归一，62 个单元画出来都是"中间一团"（差异全被量纲摊平了）；
+     * 换成"在场内位置"之后，画像的形状才真的在描述这个单元。
+     */
+    const raw = units.map(good);
+    const dimLo = dims.map((_, k) => Math.min(...raw.map((r) => r[k])));
+    const dimHi = dims.map((_, k) => Math.max(...raw.map((r) => r[k])));
+    /*
+     * ⚠️ **全场差距太小的维度不许归一**：本数据里"养分保持"全场只差 0.04，
+     * 按 min~max 归一等于把这 0.04 放大成整个轴 —— 图上会画出一个"巨大差异"，而它其实是噪声。
+     * 阈值 `DIM_MIN` 与图注里"几维无区分度"的统计**共用同一个数**（两处各写一个必然对不上）。
+     */
+    const DIM_MIN = 0.05;
+    const dimSpan = dims.map((_, k) => dimHi[k] - dimLo[k]);
+    const dimUsable = dimSpan.map((x) => x >= DIM_MIN);
+    const norm = (r) => r.map((v, k) => (dimUsable[k]
+      ? Math.min(1, Math.max(0, (v - dimLo[k]) / dimSpan[k]))
+      : 0.5));
     return {
-      line: {
-        unit: '', series: [
-          { label: '生长进度', color: '#c8b93a', values: sample(reg.progress) },
-          { label: '促病指数', color: '#c0392b', values: sample(reg.disease) },
-          { label: '水分保持', color: '#5fa8c8', values: sample(reg.waterIdx) },
-          { label: '养分保持', color: '#6fae4a', values: sample(reg.fertIdx) },
-        ], xLabels, mark,
-      },
+      line: { unit: '', series: lineSeries, xLabels, mark, yMin: lineRange.lo, yMax: lineRange.hi },
       pie: { unit: 'ha', items: pie },
       column: { unit: 'ha', items: column },
       radar: {
         dims,
         series: pick ? [
-          { label: `${pick.code}${sel ? '（当前选中）' : '（病级最高）'}`, color: '#1a4f8a', fill: 'rgba(26,79,138,0.20)', values: good(pick) },
-          { label: '全场均值（面积加权）', color: '#c0603a', fill: 'rgba(192,96,58,0.14)', values: allVec },
+          { label: `${pick.code}${sel ? '（当前选中）' : '（病级最高）'}`, color: PALETTE.blue, fill: 'rgba(0,114,178,0.20)', values: norm(good(pick)) },
+          { label: '全场均值（面积加权）', color: PALETTE.orange, fill: 'rgba(230,159,0,0.16)', values: norm(allVec) },
         ] : [],
       },
       notes: {
-        line: `区域逐日（每 ${step} 天取一点，共 ${xLabels.length} 点）· 竖线 = 当前日期 ${fmtDay(ymdAt(state.day))}`,
-        pie: `地块面积按作物构成（休耕单列 —— 不单列就与总面积对不上账）· 合计 ${(pie.reduce((a, x) => a + x.value, 0)).toFixed(1)} ha`,
-        column: '经营单元按面积前 12（x 轴用短码 U0001；完整码是「行政区划码-U-序号」）',
-        radar: '五维**都归一化到"越大越好"**：病级与可达性已反向（标签带 ↓）；均值按单元面积加权',
+        line: `区域逐日（每 ${step} 天取一点，共 ${xLabels.length} 点）· 竖线 = 当前日期 ${fmtDay(ymdAt(state.day))}`
+          + ` · 纵轴 ${lineRange.lo.toFixed(2)}~${lineRange.hi.toFixed(2)}`
+          + (lineZeroBase
+            ? '（0 基：四条序列合看时的实际范围）· **点上面的序列名可以只留一条**，纵轴会自动收到它的范围，差异更清楚'
+              + ' · 配色用 Okabe-Ito（色盲安全）'
+            : '（**非零基**：为了看清差异；图角也标了）'),
+        pie: `地块面积按作物构成，从大到小排（休耕单列 —— 不单列就与总面积对不上账）`
+          + ` · 前 ${PIE_MAX - 1} 类单列，其余合并为「其他」（占 ${((pieRest / (pieSum || 1)) * 100).toFixed(1)}%）`
+          + ` · 合计 ${pieSum.toFixed(1)} ha（合并只改显示分组，不改数值）`
+          + ' · 颜色与地图同一份作物色（**别只靠颜色读**，标签与百分比才是主读法）',
+        column: '到收储点最远的 12 个经营单元（分钟）· 选它是因为**真的有差距**'
+          + '（面积前 12 名都在 29.5~30.6 ha，柱状图看不出东西）· **柱从 0 起（不截轴）**，'
+          + '差异靠柱顶数值看清 · x 轴用短码 U0001（完整码是「行政区划码-U-序号」）',
+        radar: `5 维（维度再多就该换图）；有区分度的维度按**全场 min~max 归一**（0 = 全场最差，1 = 全场最好）⇒ 形状即"在场内位置"；`
+          + `**只看形状与各维位置，不要拿多边形面积当综合得分**（轴顺序一变面积就变，这类"面积打分"被专门质疑过）；`
+          + '病级与可达性已反向（标签带 ↓）；'
+          + `（${dimUsable.filter(Boolean).length} 维有区分度；另 ${dimUsable.filter((x) => !x).length} 维全场差距 < ${DIM_MIN}，**按无区分度处理**，
+          + '归一后一律画在中间 —— 不把噪声放大成"差异"）`,
       },
     };
   }

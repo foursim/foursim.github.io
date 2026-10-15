@@ -246,6 +246,14 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 .chart-card figcaption span { font-size: 11px; color: var(--dim); line-height: 1.35; }
 .chart-card canvas { width: 100%; display: block; }
 .chart-hint { padding: 2px 10px 6px; font-size: 11px; color: var(--dim); }
+/* 折线的序列开关：小圆点用该序列的颜色，关掉的置灰划线 */
+.chart-toggles { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 2px; }
+.chart-toggles .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px;
+  padding: 1px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  color: var(--fg); cursor: pointer; }
+.chart-toggles .chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.chart-toggles .chip.off { color: var(--dim); text-decoration: line-through; opacity: 0.65; }
+.chart-toggles .chip.off::before { background: var(--line); }
 
 /* 表格（政企口径：深蓝表头 + 斑马纹 + 数字右对齐 + 表头吸顶） */
 .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }

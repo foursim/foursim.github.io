@@ -9,7 +9,7 @@
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
 import { THEME, cssVar } from './theme.js';
-import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart } from './charts.js';
+import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange } from './charts.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -580,12 +580,15 @@ export class UI {
     if (cvs) {
       // `row.series` 是**抽样序列的数组**（main.js 归一过），不是模型原始的样本对象数组
       const step = this.model.meta.stepDays;
-      sparkline(cvs, [
+      const mini = [
         { values: r.series.progress, color: '#c8b93a' },
         { values: r.series.disease, color: '#c0392b' },
         { values: r.series.water, color: '#5fa8c8' },
         { values: r.series.fert, color: '#6fae4a' },
-      ], { mark: Math.round(d / step), height: 78, yMax: 1 });
+      ];
+      // 迷你曲线也**按数据范围铺满**：固定 0~1 时四条线都挤在上半部，看不出差别
+      const rr = dataRange(mini.flatMap((s) => s.values));
+      sparkline(cvs, mini, { mark: Math.round(d / step), height: 78, yMin: rr.lo, yMax: rr.hi });
     }
   }
 
@@ -614,19 +617,58 @@ export class UI {
     if (!d) { el.innerHTML = '<p class="hint">图表数据未就绪</p>'; return; }
     const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span>${note}</span></figcaption>`
       + `<canvas id="${prefix}-${id}"></canvas></figure>`;
+    /*
+     * 折线卡片额外带**序列开关**（点一下只看那一条）：四条序列量纲接近但水平不同，
+     * 合看时纵轴只能收到"四者的公共范围"（≈0~1），彼此的高低差看不出来；
+     * 只看一条时纵轴收到这一条自己的范围，形状与波动立刻清楚。
+     */
+    const lineCard = `<figure class="chart-card"><figcaption><b>① 区域时序（折线图）</b>`
+      + `<span id="${prefix}-line-note"></span></figcaption>`
+      + `<div class="chart-toggles" id="${prefix}-line-toggles">`
+      + d.line.series.map((s, i) => `<button type="button" class="chip" data-series="${i}" style="--c:${s.color}">${s.label}</button>`).join('')
+      + `</div><canvas id="${prefix}-line"></canvas></figure>`;
     // 指引必须放在**图的上方**：底部条只有 ~130px，放在下面用户要先滚动才能看到（等于没有）
     const hint = refName === 'tb-body'
       ? '<div class="chart-hint">底部条只有 ~130px 高：点右上「展开」放大，或打开右侧「数据视图」一次看全四张</div>'
       : '';
     el.innerHTML = hint + `<div class="chart-grid">`
-      + card('① 区域时序（折线图）', d.notes.line, 'line')
+      + lineCard
       + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
       + card('③ 经营单元面积前 12（柱状图）', d.notes.column, 'col')
       + card('④ 单元画像 vs 全场均值（雷达图）', d.notes.radar, 'radar')
       + `</div>`;
-    lineChart(document.getElementById(`${prefix}-line`), d.line.series, { height: 168, xLabels: d.line.xLabels, mark: d.line.mark });
+    // 折线：**只对可见序列收范围**（一条时收到它自己的范围，差异最清楚）
+    const visible = new Set(d.line.series.map((_, i) => i));
+    const lineNote = document.getElementById(`${prefix}-line-note`);
+    const drawLine = () => {
+      const vis = d.line.series.filter((_, i) => visible.has(i));
+      if (!vis.length) return;
+      const rr = dataRange(vis.flatMap((s) => s.values));
+      const li = lineChart(document.getElementById(`${prefix}-line`), vis,
+        { height: 168, xLabels: d.line.xLabels, mark: d.line.mark, yMin: rr.lo, yMax: rr.hi });
+      if (lineNote) {
+        lineNote.textContent = `${d.notes.line.split(' · 纵轴')[0]}`
+          + (li && !li.zeroBase ? ` · 纵轴 ${rr.lo.toFixed(2)}~${rr.hi.toFixed(2)}（**非零基**：为看清差异）` : ' · 纵轴 0 起（可见序列的实际范围就是如此）');
+      }
+      const box = document.getElementById(`${prefix}-line-toggles`);
+      if (box) for (const b of box.querySelectorAll('.chip')) b.classList.toggle('off', !visible.has(Number(b.dataset.series)));
+    };
+    const box = document.getElementById(`${prefix}-line-toggles`);
+    if (box) {
+      box.addEventListener('click', (ev) => {
+        const b = ev.target.closest('.chip');
+        if (!b) return;
+        const i = Number(b.dataset.series);
+        // 至少留一条：全关掉会变成一张空图（"用户操作导致的不可能状态"直接挡住）
+        if (visible.has(i) && visible.size === 1) { this.toast('至少留一条曲线', 'warn'); return; }
+        if (visible.has(i)) visible.delete(i); else visible.add(i);
+        drawLine();
+      });
+    }
+    drawLine();
     pieChart(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
-    columnChart(document.getElementById(`${prefix}-col`), d.column.items, { height: 168, unit: d.column.unit, rotateLabels: true });
+    columnChart(document.getElementById(`${prefix}-col`), d.column.items,
+      { height: 168, unit: d.column.unit, rotateLabels: true, labelValues: true });
     radarChart(document.getElementById(`${prefix}-radar`), { axes: d.radar.dims, series: d.radar.series }, { height: 188 });
     const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
     if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
@@ -786,7 +828,7 @@ export class UI {
 
   /** 图表原语（挂在实例上：判据要能直接验空输入的行为，例如"空数据不画白图"） */
   get charts() {
-    return { lineChart, columnChart, pieChart, radarChart };
+    return { lineChart, columnChart, pieChart, radarChart, dataRange };
   }
 
   /** 某图层当前是否可见（由 main.js 接到地图的真实状态上；取不到就当作可见，保持旧行为） */

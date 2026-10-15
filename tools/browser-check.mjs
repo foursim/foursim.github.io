@@ -1961,7 +1961,10 @@ const s32 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   const cropSum=T.crops.reduce((s2,x)=>s2+x.area,0);
   // 标签是**短码**（完整码画到轴上会被截断成同一个样子 —— 这个坑真踩过）
   const short=(c)=>c.split('-').slice(1).join('')||c;
-  const colWant=[...T.units].sort((x,y)=>y.area-x.area).slice(0,12).map(u=>short(u.code));
+  // 柱状图画的指标：到收储点最远的 12 个单元（选它是因为"真的有差距"，面积那种几乎没差距的指标图是白画）
+  const colWant=[...T.units].filter(u=>u.tMin!=null).sort((x,y)=>y.tMin-x.tMin).slice(0,12).map(u=>short(u.code));
+  const colSpread=(()=>{const v=d.column.items.map(x=>x.value);
+    return Math.max(...v)/Math.max(1e-9,Math.min(...v));})();
   const colGot=d.column.items.map(x=>x.label);
   // 雷达：全场均值必须等于按单元面积加权的独立复算
   const units=T.units, wsum=units.reduce((s2,u)=>s2+(u.area||0),0);
@@ -1973,7 +1976,7 @@ const s32 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   const lineOk=d.line.series.length===4 && d.line.series.every(s2=>s2.values.length===d.line.xLabels.length)
     && d.line.mark>=0 && d.line.mark<d.line.xLabels.length;
   return {tabs, ink, sizes, cards,
-    pieBad:pieBad.length, pieSum, cropSum, colGot, colWant, radarSeries:d.radar.series.length, dim, ok01, lineOk,
+    pieBad:pieBad.length, pieSum, cropSum, colGot, colWant, colSpread, radarSeries:d.radar.series.length, dim, ok01, lineOk,
     radarLabels:d.radar.series.map(s2=>s2.label),
     hint:document.querySelector('#tb-body .chart-hint')?.textContent.trim()||''};})()`);
 await shot('charts-底部条-1440x900');
@@ -1983,13 +1986,15 @@ check('「图表」页签存在（9 个页签），一屏四张图**都真画了
     && s32.cards.length === 4 && s32.cards.every((c) => c.title && c.note.length > 8),
   `页签 ${s32.tabs.length} 个 · 着色像素 折线 ${s32.ink.line} / 饼 ${s32.ink.pie} / 柱 ${s32.ink.col} / 雷达 ${s32.ink.radar}`
     + ` · 卡片 ${s32.cards.length} 张（各带口径说明）`);
-check('饼图与柱状图的**数来自表格**（同源）：逐项等于作物面积、柱前 12 等于按面积排序的单元',
+check('饼图与柱状图的**数来自表格**（同源）：逐项等于作物面积、柱前 12 等于按"到收储点"排序的单元',
   s32.pieBad === 0 && Math.abs(s32.pieSum - s32.cropSum) < 0.2
     && s32.colGot.join() === s32.colWant.join()
-    && new Set(s32.colGot).size === s32.colGot.length,
+    && new Set(s32.colGot).size === s32.colGot.length
+    && s32.colSpread > 1.5,
   `饼 ${s32.pieSum.toFixed(1)} = 作物面积合计 ${s32.cropSum.toFixed(1)} ha（逐项不符 ${s32.pieBad}）`
     + ` · 柱前 12 与独立排序一致=${s32.colGot.join() === s32.colWant.join()}`
-    + ` · 标签互不相同=${new Set(s32.colGot).size === s32.colGot.length}（${s32.colGot.slice(0, 3).join('/')}…）`);
+    + ` · 标签互不相同=${new Set(s32.colGot).size === s32.colGot.length}（${s32.colGot.slice(0, 3).join('/')}…）`
+    + ` · 柱值最大/最小 = ${s32.colSpread.toFixed(2)} 倍（**图必须真有差距**：面积那种 1.04 倍的指标画出来等于白画）`);
 check('雷达图：5 维、2 个系列（选中单元 vs 全场均值），且**所有值都在 0~1**（量纲已归一）',
   s32.dim === 5 && s32.radarSeries === 2 && s32.ok01,
   `${s32.dim} 维 × ${s32.radarSeries} 系列：${s32.radarLabels.join(' / ')}`);
@@ -2032,6 +2037,133 @@ const s32b = await ev(`(()=>{const a=globalThis.__agri;const ui=a.ui;
 check('**空数据不画白图**：四个原语在空输入下都返回 null 并写出提示文字（不是一张空白画布）',
   Object.values(s32b).every((v) => typeof v === 'object' && v.ret === 'null' && v.ink > 40),
   Object.entries(s32b).map(([k, v]) => `${k}: ${typeof v === 'object' ? `${v.ink} 像素` : v}`).join(' · '));
+
+
+// ===================== 33. 显示范围适配：对比更明显 + 截轴有写明 =====================
+console.log('\n=== 33. 显示范围：对比更明显 / 截轴有写明 ===');
+await boot(1440, 900);
+const s33 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const mk=()=>{const c=document.createElement('canvas'); c.style.width='320px'; c.style.height='168px';
+    document.getElementById('tb-body').appendChild(c); return c;};
+  const bandInk=(c,y0,y1)=>{const px=c.getContext('2d').getImageData(0,y0,c.width,y1-y0).data;
+    let k=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) k++; return k;};
+  const d=ui.actions.onChartData();
+  const CH=ui.charts;
+  // 取"最小值不为 0"的那条（水分保持）来测收紧；生长进度最小值就是 0 ⇒ 收不动是**诚实行为**
+  const zeroBased=d.line.series[0];                       // 生长进度（跨 0）
+  const one=d.line.series[2];                             // 水分保持（不跨 0）
+  const span1=Math.max(...one.values)-Math.min(...one.values);
+  const rAll=CH.dataRange(d.line.series.flatMap(s2=>s2.values));
+  const rOne=CH.dataRange(one.values);
+  const rZero=CH.dataRange(zeroBased.values);
+  // "对比度" = 该序列的数据跨度 ÷ 轴跨度（越大，波动越明显）
+  const contrast0=span1/(rAll.hi-rAll.lo), contrast1=span1/(rOne.hi-rOne.lo);
+  const c1=mk(); const m1=CH.lineChart(c1,[one],{height:168,yMin:rOne.lo,yMax:rOne.hi});
+  const cw=mk(); CH.lineChart(cw,[one],{height:168,yMin:rOne.lo,yMax:rOne.hi});
+  const cn=mk(); CH.lineChart(cn,[one],{height:168,yMin:0,yMax:rOne.hi});
+  const cornerWith=bandInk(cw,0,26), cornerNone=bandInk(cn,0,26);
+
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,150));
+  const chips=[...document.querySelectorAll('#tb-line-toggles .chip')];
+  const allNote=document.getElementById('tb-line-note').textContent.replace(/\s+/g,' ');
+  [0,1,3].forEach(i=>chips[i].click());          // 关掉 3 条，**留下水分保持**（不跨 0 的那条）
+  await new Promise(r=>setTimeout(r,90));
+  const tightNote=document.getElementById('tb-line-note').textContent.replace(/\s+/g,' ');
+  const offCount=document.querySelectorAll('#tb-line-toggles .chip.off').length;
+  const leftOn=[...document.querySelectorAll('#tb-line-toggles .chip:not(.off)')].map(b=>b.textContent.trim());
+  chips[2].click();                              // 再关掉最后一条 ⇒ 应被挡住
+  await new Promise(r=>setTimeout(r,50));
+  const stillOff=document.querySelectorAll('#tb-line-toggles .chip.off').length;
+
+  const cL=mk(); const mColL=CH.columnChart(cL,d.column.items,{height:168,rotateLabels:true,labelValues:true});
+  // ⚠️ 两次必须用**同一个 yMax**：带标值会留 12% 顶空，柱子变矮 ⇒ 顶部那条带会被柱子长度污染（不是标值）
+  const cN=mk(); const mCol=CH.columnChart(cN,d.column.items,{height:168,rotateLabels:true,labelValues:false,yMax:mColL.yMax});
+  const topL=bandInk(cL,0,26), topN=bandInk(cN,0,26);
+
+  const T=a.buildTables(a.state.day); const units=T.units;
+  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0,Number(u.water)||0,Number(u.fert)||0,
+    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??1)/(Math.max(...units.map(x=>x.tMin??0))||1))];
+  const raw=units.map(good);
+  const dimHi=[0,1,2,3,4].map(k=>Math.max(...raw.map(r=>r[k])));
+  const dimLo=[0,1,2,3,4].map(k=>Math.min(...raw.map(r=>r[k])));
+  const DIM_MIN=0.05;
+  const spreadFixed=dimHi.map((h,k)=>h-dimLo[k]);                 // 原始跨度
+  const usable=spreadFixed.map(x=>x>=DIM_MIN);                     // 与 main.js 同一个阈值
+  const normOne=(r)=>r.map((v,k)=>usable[k]?Math.min(1,Math.max(0,(v-dimLo[k])/spreadFixed[k])):0.5);
+  const normAll=raw.map(normOne);
+  // 归一后的**每维跨度**：可用维度必须用满 0~1；不可用维度必须一律 0.5（不许把 0.04 的噪声放大成整根轴）
+  const spreadRange=dimHi.map((h,k)=>Math.max(...normAll.map(r=>r[k]))-Math.min(...normAll.map(r=>r[k])));
+  const mean=(arr)=>arr.reduce((t,x)=>t+x,0)/arr.length;
+  const sel=units.find(u=>u.id===ui.selected?.unit_id)??[...units].sort((x,y)=>(y.disease??0)-(x.disease??0))[0];
+  const wsum=units.reduce((t,u)=>t+(u.area||0),0)||1;
+  const avg=[0,1,2,3,4].map(k=>units.reduce((t,u)=>t+good(u)[k]*(u.area||0),0)/wsum);
+  const mae=(v)=>v.reduce((t,x,k)=>t+Math.abs(x-avg[k]),0)/5;
+  const selVec=d.radar.series[0]?.values ?? [];
+  const maeRange=mae(selVec);
+  const maeFixed=mae(good(sel));
+  return {contrast0,contrast1,span1,lineRange:[rOne.lo,rOne.hi],m1zero:m1.zeroBase,rZero,leftOn,
+    cornerWith,cornerNone,offCount,stillOff,allNote,tightNote,
+    colZero:mCol.zeroBase,colLabel:mColL.labelValues,topL,topN,
+    dims:d.radar.dims.length,spreadRange,spreadFixed,usable,spreadFixedMean:mean(spreadFixed),
+    maeRange,maeFixed,notes:d.notes};})()`);
+check('**折线：只看一条 ⇒ 纵轴收到它自己的范围**（对比度提升）；而**最小值本来就是 0 的序列保持 0 基**（不许假装收紧）',
+  s33.contrast1 > s33.contrast0 * 1.5 && s33.m1zero === false && s33.offCount === 3 && s33.stillOff === 3
+    && /非零基/.test(s33.tightNote) && s33.rZero.lo === 0
+    && s33.leftOn.length === 1 && /水分/.test(s33.leftOn[0]),
+  `对比度 ${(s33.contrast0 * 100).toFixed(0)}% → ${(s33.contrast1 * 100).toFixed(0)}%`
+    + `（${(s33.contrast1 / s33.contrast0).toFixed(2)} 倍）· 跨 0 的序列轴下界=${s33.rZero.lo.toFixed(2)}（保持 0 基）`
+    + ` · 只看一条（${s33.leftOn.join('')}）后「${s33.tightNote.slice(-22)}」· 最后一条关不掉=${s33.stillOff === 3}`);
+check('**截轴写在图上**：非零基时图角画出「轴 x~y（非零基）」角标；同一份数据 0 基时不画',
+  s33.cornerWith > s33.cornerNone + 20,
+  `顶部 26px 像素：非零基 ${s33.cornerWith} vs 0 基 ${s33.cornerNone}（差 ${s33.cornerWith - s33.cornerNone}）`);
+check('**柱状图不截轴**（0 基），差异靠**柱顶数值**看清（数值只画在柱顶那条带里）',
+  s33.colZero === true && s33.colLabel === true && s33.topL > s33.topN,
+  `0 基=${s33.colZero} · 柱顶带像素 带标值 ${s33.topL} vs 不带 ${s33.topN}（+${s33.topL - s33.topN}）`);
+check('**雷达按全场 min~max 归一**：有区分度的维度用满 0~1；**差距 < 0.05 的维度按无区分度处理**（不放大噪声）',
+  s33.dims === 5 && s33.spreadRange.every((v, k) => (s33.usable[k] ? v > 0.999 : v < 1e-9))
+    && s33.usable.filter(Boolean).length >= 4 && s33.maeRange > s33.maeFixed * 1.4,
+  `原始跨度 ${s33.spreadFixed.map((v) => v.toFixed(2)).join('/')} ⇒ 归一后跨度 `
+    + `${s33.spreadRange.map((v) => v.toFixed(2)).join('/')}（可用 ${s33.usable.filter(Boolean).length}/5 维）`
+    + ` · 与均值的平均差 ${s33.maeFixed.toFixed(3)} → ${s33.maeRange.toFixed(3)}（${(s33.maeRange / s33.maeFixed).toFixed(2)} 倍）`);
+check('**图注交代口径**：柱状写"柱从 0 起（不截轴）"、雷达写归一范围、折线提示"点序列名收紧纵轴"',
+  /不截轴/.test(s33.notes.column) && /min~max 归一/.test(s33.notes.radar) && /点上面/.test(s33.notes.line),
+  `柱状「${s33.notes.column.slice(0, 22)}…」· 雷达「${s33.notes.radar.slice(0, 22)}…」`);
+
+// ===================== 34. 图示规范（查到的成熟做法落到判据） =====================
+console.log('\n=== 34. 图示规范：配色 / 饼图分组 / 雷达口径 ===');
+const s34 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const d=ui.actions.onChartData();
+  const T=a.buildTables(a.state.day);
+  const cropN=T.crops.length;
+  const pieSum=d.pie.items.reduce((t,x)=>t+x.value,0);
+  const cropSum=T.crops.reduce((t,x)=>t+x.area,0);
+  const others=d.pie.items.filter(x=>/^其他/.test(String(x.label)));
+  return {lineColors:d.line.series.map(s2=>s2.color), radarColors:d.radar.series.map(s2=>s2.color),
+    pieN:d.pie.items.length, cropN, pieSum, cropSum, others:others.map(x=>[x.label,x.value]),
+    notes:d.notes};})()`);
+// Okabe-Ito 四个色（橘/朱红/蓝/青绿）—— 就是"别再换成红绿对"这条规矩的钉子
+const OKABE = ['#E69F00', '#D55E00', '#0072B2', '#009E73'];
+check('**分类配色用色盲安全的 Okabe-Ito**（折线四序列 + 雷达两序列），而不是最常见的红绿对',
+  s34.lineColors.every((c, i) => c.toUpperCase() === OKABE[i]) && s34.radarColors.length === 2
+    && s34.radarColors[0].toUpperCase() === '#0072B2' && s34.radarColors[1].toUpperCase() === '#E69F00',
+  `折线 ${s34.lineColors.join('/')} · 雷达 ${s34.radarColors.join('/')}`);
+check('**饼图小项合并为「其他」**（>6 类时前 5 类单列），且**合并只改显示分组、不改数值**（合计守恒）',
+  s34.cropN > 6 ? (s34.pieN === 6 && s34.others.length === 1 && Math.abs(s34.pieSum - s34.cropSum) < 0.2)
+    : (s34.pieN === s34.cropN && s34.others.length === 0),
+  `作物 ${s34.cropN} 类 → 饼 ${s34.pieN} 块（${s34.others.length ? `其他 ${s34.others[0][0]} ${s34.others[0][1].toFixed(1)} ha` : '未合并'}）`
+    + ` · 合计 ${s34.pieSum.toFixed(1)} = 作物面积 ${s34.cropSum.toFixed(1)} ha`);
+check('**雷达图写明"别拿面积当综合得分"**（轴序一变面积就变，这在文献里被专门质疑过），且维度不超 6 个',
+  /不要拿多边形面积当综合得分/.test(s34.notes.radar) && /5 维/.test(s34.notes.radar),
+  `雷达图注「${s34.notes.radar.slice(0, 40)}…」`);
+check('雷达图注的两处计数**用同一条规则**（不会出现"5/5 维有区分度"与"另 1 维无区分度"并存这种自相矛盾）',
+  (() => { const m = s34.notes.radar.match(/(\d) 维有区分度；另 (\d) 维/); return !!m && Number(m[1]) + Number(m[2]) === 5; })()
+    && !/\d\/5 维有区分度/.test(s34.notes.radar),
+  `雷达图注「${s34.notes.radar.match(/\d 维有区分度；另 \d 维[^）]*/)?.[0] ?? '（没写到计数）'}」`);
+check('**颜色只是冗余编码**：饼图图注明确写"别只靠颜色读，标签与百分比才是主读法"',
+  /别只靠颜色读/.test(s34.notes.pie),
+  `饼图图注末段「${s34.notes.pie.slice(-30)}」`);
+
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

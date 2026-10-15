@@ -27,7 +27,7 @@ function prepare(canvas, height) {
  * @param series `[{ values:number[], color:string, label:string, max?:number }]`
  * @param opts.mark 当前播放到的下标（画一条竖线）
  */
-export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null } = {}) {
+export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null, yMin = 0 } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const pad = { l: 2, r: 2, t: 6, b: 10 };
   const n = Math.max(...series.map((s) => s.values.length), 1);
@@ -43,7 +43,8 @@ export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null 
     ctx.stroke();
   }
   const xOf = (i) => pad.l + ((w - pad.l - pad.r) * i) / Math.max(1, n - 1);
-  const yOf = (v) => h - pad.b - ((h - pad.t - pad.b) * v) / max;
+  const span = (max - yMin) || 1;
+  const yOf = (v) => h - pad.b - ((h - pad.t - pad.b) * Math.max(0, Math.min(1, ((Number(v) || 0) - yMin) / span)));
   for (const s of series) {
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.6;
@@ -240,15 +241,39 @@ function drawHint(ctx, w, h, text) {
   ctx.textBaseline = 'alphabetic';
 }
 
-/** 通用坐标轴：左轴 + 底轴 + 水平网格 + y 刻度（返回绘图区） */
-function axes(ctx, w, h, { yMax, yTicks = 4, padL = 40, padR = 8, padT = 10, padB = 22, fmt = (v) => String(Math.round(v * 100) / 100) }) {
+/**
+ * **显示范围**：把一组值收成 `{lo, hi}`，让画布铺满数据 —— 差异才看得见。
+ *
+ * 两条必须守住的纪律：
+ * 1. **非零基要写明**：截轴是"放大差异"的常用手段，也是"用图骗人"的常用手段，
+ *    区别只在于**有没有写出来** ⇒ 返回值里的 `lo` 会被画到图角（见 `axes` 的 rangeLabel）。
+ * 2. **非负数不画负轴**：`lo` 在数据非负时夹到 0，否则 0 与最小值之间的空白会被读成负值。
+ */
+export function dataRange(values, { pad = 0.06, zeroBase = false } = {}) {
+  const v = (values ?? []).map(Number).filter((x) => Number.isFinite(x));
+  if (!v.length) return { lo: 0, hi: 1 };
+  let lo = Math.min(...v);
+  let hi = Math.max(...v);
+  if (zeroBase) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
+  const span = hi - lo;
+  if (span <= 0) return { lo, hi: lo + (lo === 0 ? 1 : Math.abs(lo) * 0.1) };
+  const p = span * pad;
+  let outLo = lo - p;
+  const outHi = hi + p;
+  if (lo >= 0) outLo = Math.max(0, outLo);
+  return { lo: outLo, hi: outHi };
+}
+
+/** 通用坐标轴：左轴 + 底轴 + 水平网格 + y 刻度（支持非零基；返回绘图区） */
+function axes(ctx, w, h, { yMin = 0, yMax, yTicks = 4, padL = 40, padR = 8, padT = 10, padB = 22, rangeLabel = null, fmt = (v) => String(Math.round(v * 100) / 100) }) {
   const plot = { x: padL, y: padT, w: Math.max(10, w - padL - padR), h: Math.max(10, h - padT - padB) };
   ctx.font = '10px system-ui, sans-serif';
   ctx.strokeStyle = 'rgba(120,135,150,0.35)';
   ctx.fillStyle = cssVar('--dim', '#5b6b7f');
   ctx.lineWidth = 1;
+  const span = (yMax - yMin) || 1;
   for (let i = 0; i <= yTicks; i++) {
-    const v = (yMax * i) / yTicks;
+    const v = yMin + (span * i) / yTicks;
     const y = Math.round(plot.y + plot.h - (plot.h * i) / yTicks) + 0.5;
     ctx.beginPath();
     ctx.moveTo(plot.x, y);
@@ -264,6 +289,14 @@ function axes(ctx, w, h, { yMax, yTicks = 4, padL = 40, padR = 8, padT = 10, pad
   ctx.lineTo(plot.x + 0.5, plot.y + plot.h + 0.5);
   ctx.lineTo(plot.x + plot.w, plot.y + plot.h + 0.5);
   ctx.stroke();
+  // **截轴必须在图上写明**（写在图角，不是只写进图注里）
+  if (rangeLabel) {
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    ctx.textAlign = 'right';
+    ctx.fillText(rangeLabel, plot.x + plot.w - 2, plot.y + 9);
+    ctx.textAlign = 'left';
+  }
   return plot;
 }
 
@@ -272,15 +305,25 @@ function axes(ctx, w, h, { yMax, yTicks = 4, padL = 40, padR = 8, padT = 10, pad
  * @param series `[{ values:number[], color, label, width?, dash? }]`
  * @param opts.mark 当前帧下标（画一条竖线）
  */
-export function lineChart(canvas, series, { height = 180, yMax = null, mark = -1, unit = '', xLabels = null } = {}) {
+export function lineChart(canvas, series, { height = 180, yMin = null, yMax = null, mark = -1, unit = '', xLabels = null, fit = true } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const list = (series ?? []).filter((s) => s && Array.isArray(s.values) && s.values.length > 1);
   if (!list.length) { drawHint(ctx, w, h, '没有可画的序列'); return null; }
-  const vmax = yMax ?? Math.max(1e-9, ...list.flatMap((s) => s.values.map((v) => Number(v) || 0)));
-  const plot = axes(ctx, w, h, { yMax: vmax });
+  const all = list.flatMap((s) => s.values.map((v) => Number(v) || 0));
+  // 默认**按数据范围铺满**：0 起时 0.3~1.0 的曲线会被压成一条平线，差异全看不见
+  const auto = fit ? dataRange(all) : { lo: 0, hi: Math.max(1e-9, ...all) };
+  const lo = yMin ?? auto.lo;
+  const hi = yMax ?? (auto.hi > lo ? auto.hi : lo + 1e-9);
+  const vmax = hi - lo;
+  const zeroBase = lo <= 0;
+  const plot = axes(ctx, w, h, {
+    yMin: lo, yMax: hi,
+    rangeLabel: zeroBase ? null : `轴 ${lo.toFixed(2)}~${hi.toFixed(2)}（非零基）`,
+    fmt: (v) => (vmax < 1 ? v.toFixed(2) : String(Math.round(v * 10) / 10)),
+  });
   const n = Math.max(...list.map((s) => s.values.length));
   const X = (i) => plot.x + (plot.w * i) / Math.max(1, n - 1);
-  const Y = (v) => plot.y + plot.h - (plot.h * Math.min(1, (Number(v) || 0) / vmax));
+  const Y = (v) => plot.y + plot.h - plot.h * Math.max(0, Math.min(1, ((Number(v) || 0) - lo) / vmax));
   for (const s of list) {
     ctx.strokeStyle = s.color;
     ctx.lineWidth = s.width ?? 1.6;
@@ -320,26 +363,39 @@ export function lineChart(canvas, series, { height = 180, yMax = null, mark = -1
     }
     ctx.textAlign = 'left';
   }
-  return { n, yMax: vmax, series: list.length, unit };
+  return { n, lo, hi, zeroBase, series: list.length, unit };
 }
 
 /** **柱状图**（竖直，带坐标轴）：适合看"各项谁高谁低" */
-export function columnChart(canvas, items, { height = 180, unit = '', color = null, rotateLabels = false } = {}) {
+export function columnChart(canvas, items, { height = 180, unit = '', color = null, rotateLabels = false, yMin = 0, yMax = null, labelValues = false } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const list = (items ?? []).filter((it) => it && Number.isFinite(Number(it.value)));
   if (!list.length) { drawHint(ctx, w, h, '没有可画的数据'); return null; }
-  const vmax = Math.max(1e-9, ...list.map((it) => Number(it.value)));
-  const plot = axes(ctx, w, h, { yMax: vmax, padB: rotateLabels ? 30 : 22 });
+  /*
+   * ⚠️ 柱状图**默认 0 起**，而且**不建议**截轴：柱子是"用长度表示量"，
+   * 截掉基线会让 8 ha 与 30 ha 看起来差三倍（这正是最常见的"用图骗人"）。
+   * 想让差异明显，正确做法是**把数值标在柱顶**（`labelValues`）—— 数字不会骗人。
+   */
+  const dataMax = Math.max(1e-9, ...list.map((it) => Number(it.value)));
+  const vmax = yMax ?? dataMax * (labelValues ? 1.12 : 1);   // 给柱顶数值留一点空间
+  const plot = axes(ctx, w, h, { yMin, yMax: vmax, padB: rotateLabels ? 30 : 22 });
   const slot = plot.w / list.length;
   const bw = Math.max(3, Math.min(34, slot - 6));
   const base = color ?? cssVar('--brand', '#1a4f8a');
   ctx.font = '10px system-ui, sans-serif';
   list.forEach((it, i) => {
     const v = Number(it.value);
-    const bh = Math.max(1, (plot.h * v) / vmax);
+    const bh = Math.max(1, plot.h * Math.max(0, Math.min(1, (v - yMin) / (vmax - yMin || 1))));
     const x = plot.x + i * slot + (slot - bw) / 2;
     ctx.fillStyle = it.color ?? base;
     ctx.fillRect(x, plot.y + plot.h - bh, bw, bh);
+    // 柱顶标值：不截轴也能看清差异（数字比长度更精确）
+    if (labelValues) {
+      ctx.fillStyle = cssVar('--fg', '#12263f');
+      ctx.textAlign = 'center';
+      ctx.fillText(v >= 100 ? String(Math.round(v)) : v.toFixed(1), x + bw / 2, plot.y + plot.h - bh - 3);
+      ctx.textAlign = 'left';
+    }
     const lab = String(it.label ?? '');
     ctx.fillStyle = cssVar('--dim', '#5b6b7f');
     if (rotateLabels) {
@@ -355,7 +411,7 @@ export function columnChart(canvas, items, { height = 180, unit = '', color = nu
       ctx.textAlign = 'left';
     }
   });
-  return { n: list.length, yMax: vmax, unit };
+  return { n: list.length, yMin, yMax: vmax, dataMax, zeroBase: yMin <= 0, labelValues, unit };
 }
 
 /**

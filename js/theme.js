@@ -12,6 +12,20 @@
  */
 
 /** 当前采用的视觉方案（只此一套；留成常量是为了在帮助面板与文档里能引用名字） */
+/**
+ * **色盲安全配色（Okabe-Ito）**：分类色一律用它。
+ *
+ * 出处：这类调色板被广泛推荐（nature 那篇 "data visualization with flying colors"、R 的 ggokabeito、
+ * 各类期刊制图规范都把 Okabe-Ito 当默认）。原来折线用的是 `#c0392b`（红）+ `#6fae4a`（绿）——
+ * 红绿对是**红绿色盲最难分的一对**，图上那条"促病指数"与"养分保持"对一部分人就是同一条线。
+ *
+ * 顺带守一条老规矩：颜色只是**冗余编码**，图例文字与直接标注才是主要读法（见下方各图的图注）。
+ */
+export const PALETTE = {
+  orange: '#E69F00', sky: '#56B4E9', green: '#009E73', yellow: '#F0E442',
+  blue: '#0072B2', vermillion: '#D55E00', purple: '#CC79A7', grey: '#999999',
+};
+
 export const THEME = {
   key: 'gov',
   name: 'A 政务深蓝',
