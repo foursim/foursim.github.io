@@ -11,3 +11,7 @@ shots/
 data/_soil_samples.json
 # 按需生成的"地块 × 日"长表（约 15 MB，随时可由 npm run export:daily 重算）
 tables/fact_parcel_daily.csv
+
+# LibreOffice/OpenOffice 打开 CSV 时会写这种锁文件（文件被占用 ⇒ 导出会 EBUSY）。
+# 它们是“某人正开着这个文件”的信号，**不是产物**，绝不能提交。
+.~lock.*#

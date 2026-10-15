@@ -9,7 +9,7 @@
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
 import { THEME, cssVar } from './theme.js';
-import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars } from './charts.js';
+import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart } from './charts.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -59,6 +59,8 @@ const TABLE_TABS = [
   ['scenario', '情景推演'],
   // 透视视图：矩阵由 `npm run query --web data/pivot.json` 离线算好，页面**只查表**（纯静态硬线）
   ['pivot', '透视视图'],
+  // 常用数据图示：折线看时序、饼看构成、柱看排行、雷达看画像（一屏四张，不引图表库）
+  ['charts', '图表'],
 ];
 
 /**
@@ -598,6 +600,38 @@ export class UI {
    * 数据来自离线预计算的 `data/scenario.json`：每个候选点都已用**真实路网**重算过全网时间，
    * 浏览器只做"最近候选点的查表"，不在前端跑 Dijkstra（见 `tools/scenario.mjs` 的说明）。
    */
+  /**
+   * **「图表」面板**：一屏四张常用图（折线 / 饼 / 柱 / 雷达）。
+   *
+   * 每张图都带**标题 + 口径说明**：图只能表达"量"，口径（谁加权、谁反向、抽了多少点）
+   * 必须写在图上，否则读者只能猜（这也是本项目反复踩的一条）。
+   * 空数据时图表原语会画一句提示，不会留一张白图。
+   */
+  renderChartPanel(refName, prefix) {
+    const el = this.refs[refName];
+    if (!el) return;
+    const d = this.actions?.onChartData?.() ?? null;
+    if (!d) { el.innerHTML = '<p class="hint">图表数据未就绪</p>'; return; }
+    const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span>${note}</span></figcaption>`
+      + `<canvas id="${prefix}-${id}"></canvas></figure>`;
+    // 指引必须放在**图的上方**：底部条只有 ~130px，放在下面用户要先滚动才能看到（等于没有）
+    const hint = refName === 'tb-body'
+      ? '<div class="chart-hint">底部条只有 ~130px 高：点右上「展开」放大，或打开右侧「数据视图」一次看全四张</div>'
+      : '';
+    el.innerHTML = hint + `<div class="chart-grid">`
+      + card('① 区域时序（折线图）', d.notes.line, 'line')
+      + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
+      + card('③ 经营单元面积前 12（柱状图）', d.notes.column, 'col')
+      + card('④ 单元画像 vs 全场均值（雷达图）', d.notes.radar, 'radar')
+      + `</div>`;
+    lineChart(document.getElementById(`${prefix}-line`), d.line.series, { height: 168, xLabels: d.line.xLabels, mark: d.line.mark });
+    pieChart(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
+    columnChart(document.getElementById(`${prefix}-col`), d.column.items, { height: 168, unit: d.column.unit, rotateLabels: true });
+    radarChart(document.getElementById(`${prefix}-radar`), { axes: d.radar.dims, series: d.radar.series }, { height: 188 });
+    const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
+    if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
+  }
+
   /** 切换表格页签（底部条页签 / 窄屏「更多」下拉 / 抽屉页签都走它，避免三处逻辑各写一遍） */
   setTable(key, { drawer = false } = {}) {
     // 透视数据是**懒加载**的：第一次切到这个页签才取（首屏少一份 JSON），加载完成后再重画一次
@@ -748,6 +782,11 @@ export class UI {
     this.scenario = sc;
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
     this.renderTables();
+  }
+
+  /** 图表原语（挂在实例上：判据要能直接验空输入的行为，例如"空数据不画白图"） */
+  get charts() {
+    return { lineChart, columnChart, pieChart, radarChart };
   }
 
   /** 某图层当前是否可见（由 main.js 接到地图的真实状态上；取不到就当作可见，保持旧行为） */
@@ -952,6 +991,11 @@ export class UI {
         + (base ? ` · 现状：平均 ${base.avg_min} / p50 ${base.p50_min} / p90 ${base.p90_min} 分，盲区 ${base.blind_parcels} 块 / ${base.blind_ha} ha` : '')
         + (picked ? ` · 已选 ★（平均可省 ${picked.avg_gain_min} 分钟/块）` : best)
         + ' · 点一行可在图上选中该候选点';
+    } else if (key === 'charts') {
+      // 面板自己会画（见 renderChartPanel）；这里只是让"列选择/导出/筛选"这类表格逻辑有个合法的空数据
+      cols = [{ label: '图表' }];
+      rows = [];
+      note = '图表页签（一屏四张图，见下方说明）';
     } else if (key === 'pivot') {
       /*
        * **静态透视视图**：矩阵、行列合计、总合计全部由离线工具算好（`npm run query --web data/pivot.json`），
@@ -1017,6 +1061,8 @@ export class UI {
     for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === this.activeTable);
     }
+    // 「图表」不是表格，而是一屏四张图：走自己的渲染路径（别硬塞进 cols/rows 那套）
+    if (this.activeTable === 'charts') { this.renderChartPanel('tb-body', 'tb'); return; }
     const { cols, rows, note } = this.buildTable(this.activeTable);
     // **行数透明**：132px 里只露 5 行时，用户必须知道"还有多少没看到"（否则会以为看到的就是全部）
     this.refs['tb-note'].textContent = `${note}${note ? ' · ' : ''}共 ${rows.length} 行`;
@@ -1055,6 +1101,8 @@ export class UI {
     }
     // 透视控件跟的是"抽屉的页签"，所以每次重画抽屉都要重算一次显隐（漏了就会"切过去控件不出现"）
     this.renderPivotSel();
+    // 抽屉里的「图表」同样走面板
+    if (this.drawerTab === 'charts') { this.renderChartPanel('dw-body', 'dw'); return; }
     const { cols, rows, note } = this.buildTable(this.drawerTab);
     /*
      * **列选择**：先投影出"要显示的列"。

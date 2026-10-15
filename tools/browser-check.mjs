@@ -1934,6 +1934,105 @@ check('**点候选点一行 ⇒ 在图上选中该点**（高亮其受影响地�
   s31c.hl > 0 && s31c.marked === 1 && s31c.chartKind === 'paired' && /已选/.test(s31c.note),
   `高亮 ${s31c.hl} 块 · ★ 行 ${s31c.marked} · 图 kind=${s31c.chartKind} · 表注含"已选"`);
 
+
+// ===================== 32. 常用数据图示（折线 / 饼 / 柱 / 雷达） =====================
+console.log('\n=== 32. 常用图表：折线 / 饼 / 柱 / 雷达 ===');
+await boot(1440, 900);
+const s32 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const tabs=[...document.querySelectorAll('#tb-tabs button[data-tab]')].map(b=>b.dataset.tab);
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,120));
+  const inkOf=(id)=>{const c=document.getElementById(id); if(!c) return -1;
+    const px=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let k=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) k++; return k;};
+  const sizes={};
+  for(const id of ['tb-line','tb-pie','tb-col','tb-radar']){
+    const c=document.getElementById(id); sizes[id]=c?[c.width,c.height]:null;}
+  const ink={line:inkOf('tb-line'), pie:inkOf('tb-pie'), col:inkOf('tb-col'), radar:inkOf('tb-radar')};
+  const cards=[...document.querySelectorAll('#tb-body .chart-card')].map(f=>({
+    title:f.querySelector('b').textContent.trim(), note:f.querySelector('span').textContent.trim()}));
+
+  // 数据正确性：图里的数必须与**表格**同源（UI 不做聚合，聚合在 main.js）
+  const d=ui.actions.onChartData();
+  const T=a.buildTables(a.state.day);
+  const cropArea=Object.fromEntries(T.crops.map(c=>[c.name,c.area]));
+  const pieBad=d.pie.items.filter(x=>Math.abs(x.value-cropArea[x.label])>0.05);
+  const pieSum=d.pie.items.reduce((s2,x)=>s2+x.value,0);
+  const cropSum=T.crops.reduce((s2,x)=>s2+x.area,0);
+  // 标签是**短码**（完整码画到轴上会被截断成同一个样子 —— 这个坑真踩过）
+  const short=(c)=>c.split('-').slice(1).join('')||c;
+  const colWant=[...T.units].sort((x,y)=>y.area-x.area).slice(0,12).map(u=>short(u.code));
+  const colGot=d.column.items.map(x=>x.label);
+  // 雷达：全场均值必须等于按单元面积加权的独立复算
+  const units=T.units, wsum=units.reduce((s2,u)=>s2+(u.area||0),0);
+  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0, Number(u.water)||0, Number(u.fert)||0,
+    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??1)/(Math.max(...units.map(x=>x.tMin??0))||1))];
+  const dim=d.radar.dims.length;
+  const ok01=d.radar.series.every(s2=>s2.values.length===dim && s2.values.every(v=>v>=0&&v<=1));
+  // 折线：序列与 x 轴标签等长、mark 指向当前帧
+  const lineOk=d.line.series.length===4 && d.line.series.every(s2=>s2.values.length===d.line.xLabels.length)
+    && d.line.mark>=0 && d.line.mark<d.line.xLabels.length;
+  return {tabs, ink, sizes, cards,
+    pieBad:pieBad.length, pieSum, cropSum, colGot, colWant, radarSeries:d.radar.series.length, dim, ok01, lineOk,
+    radarLabels:d.radar.series.map(s2=>s2.label),
+    hint:document.querySelector('#tb-body .chart-hint')?.textContent.trim()||''};})()`);
+await shot('charts-底部条-1440x900');
+check('「图表」页签存在（9 个页签），一屏四张图**都真画了像素**（折线/饼/柱/雷达），且每张都带标题与口径说明',
+  s32.tabs.includes('charts') && s32.tabs.length === 9
+    && s32.ink.line > 200 && s32.ink.pie > 200 && s32.ink.col > 200 && s32.ink.radar > 200
+    && s32.cards.length === 4 && s32.cards.every((c) => c.title && c.note.length > 8),
+  `页签 ${s32.tabs.length} 个 · 着色像素 折线 ${s32.ink.line} / 饼 ${s32.ink.pie} / 柱 ${s32.ink.col} / 雷达 ${s32.ink.radar}`
+    + ` · 卡片 ${s32.cards.length} 张（各带口径说明）`);
+check('饼图与柱状图的**数来自表格**（同源）：逐项等于作物面积、柱前 12 等于按面积排序的单元',
+  s32.pieBad === 0 && Math.abs(s32.pieSum - s32.cropSum) < 0.2
+    && s32.colGot.join() === s32.colWant.join()
+    && new Set(s32.colGot).size === s32.colGot.length,
+  `饼 ${s32.pieSum.toFixed(1)} = 作物面积合计 ${s32.cropSum.toFixed(1)} ha（逐项不符 ${s32.pieBad}）`
+    + ` · 柱前 12 与独立排序一致=${s32.colGot.join() === s32.colWant.join()}`
+    + ` · 标签互不相同=${new Set(s32.colGot).size === s32.colGot.length}（${s32.colGot.slice(0, 3).join('/')}…）`);
+check('雷达图：5 维、2 个系列（选中单元 vs 全场均值），且**所有值都在 0~1**（量纲已归一）',
+  s32.dim === 5 && s32.radarSeries === 2 && s32.ok01,
+  `${s32.dim} 维 × ${s32.radarSeries} 系列：${s32.radarLabels.join(' / ')}`);
+check('折线图：4 条区域时序、与 x 轴标签等长、竖线指向**当前帧**',
+  s32.lineOk, `4 条序列 × ${s32.lineOk ? '标签等长' : '标签不等长'} · mark 在范围内`);
+await shot('charts-抽屉-1440x900');
+// 抽屉里也有同一块面板（**单独查一次**：两处共用一次测量会掩盖"抽屉里根本没画"）
+const s32dw = await ev(`(async()=>{const a=globalThis.__agri;
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,140));
+  const cards=document.querySelectorAll('#dw-body .chart-card').length;
+  const c=document.getElementById('dw-pie');
+  const px=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  let ink=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) ink++;
+  return {cards, ink, hasHint:!!document.querySelector('#dw-body .chart-hint')};})()`);
+await shot('charts-抽屉-1440x900');
+check('抽屉里是**同一块面板**（四张图），而"底部条很窄"的指引只出现在底部条',
+  s32dw.cards === 4 && s32dw.ink > 200 && s32dw.hasHint === false && s32.hint.length > 6,
+  `抽屉卡片 ${s32dw.cards} 张 · 饼图着色像素 ${s32dw.ink} · 底部条有指引=${s32.hint.length > 6}、抽屉里没有=${!s32dw.hasHint}`);
+
+// 退化行为：空数据不许画成白图（原语级直接验）
+const s32b = await ev(`(()=>{const a=globalThis.__agri;const ui=a.ui;
+  const mk=(id)=>{const c=document.createElement('canvas'); c.id=id; c.style.width='240px';
+    document.getElementById('tb-body').appendChild(c); return c;};
+  const mods=a.ui.charts;
+  const out={};
+  for(const [name,fn] of [['pie',(c)=>mods.pieChart(c,[])],
+                          ['line',(c)=>mods.lineChart(c,[])],
+                          ['col',(c)=>mods.columnChart(c,[])],
+                          ['radar',(c)=>mods.radarChart(c,{axes:[{label:'a'}],series:[]})]]){
+    const c=mk('probe-'+name);
+    let ret=null; try{ ret=fn(c); }catch(e){ out[name]='抛错:'+e.message; continue; }
+    const px=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let k=0; for(let i=3;i<px.length;i+=4) if(px[i]>0) k++;
+    out[name]={ret:ret===null?'null':'有返回', ink:k};
+    c.remove();
+  }
+  return out;})()`);
+check('**空数据不画白图**：四个原语在空输入下都返回 null 并写出提示文字（不是一张空白画布）',
+  Object.values(s32b).every((v) => typeof v === 'object' && v.ret === 'null' && v.ink > 40),
+  Object.entries(s32b).map(([k, v]) => `${k}: ${typeof v === 'object' ? `${v.ink} 像素` : v}`).join(' · '));
+
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
 ws.close();

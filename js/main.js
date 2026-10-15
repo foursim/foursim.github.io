@@ -663,6 +663,75 @@ try {
   /** 最近一次算出的表数据（问题高亮要从里面取命中列表） */
   let lastTables = null;
 
+  /**
+   * **「图表」页签的四组数据**（折线 / 饼 / 柱 / 雷达）。
+   *
+   * 与表格同一条纪律：**聚合在 main.js 做，UI 只负责画**。
+   * 两边各算一遍是这类界面最常见的对不上账（表里一个数、图里另一个数）。
+   *
+   * 雷达图特别注意：五个维度的量纲不同（进度/水分/养分是 0~1，病级是 1~5 级，可达性是分钟），
+   * 所以**统一归一化到"越大越好"的 0~1**，病级与可达性做了反向（标签带 ↓）。
+   */
+  function buildChartData() {
+    const reg = model.region;
+    const T = lastTables ?? {};
+    // ① 折线：区域逐日太长（549 天），抽成 ~110 点再画；mark 指向当前帧
+    const step = Math.max(1, Math.round(model.days.length / 110));
+    const sample = (arr) => { const out = []; for (let i = 0; i < arr.length; i += step) out.push(Number(arr[i]) || 0); return out; };
+    const xLabels = [];
+    for (let i = 0; i < reg.progress.length; i += step) xLabels.push(fmtDay(model.days[i]));
+    const mark = Math.min(xLabels.length - 1, Math.round(state.day / step));
+    // ② 饼：作物面积构成（颜色用与地图同一份作物色，避免"图上绿、图里蓝"）
+    const CROP_COLOR = Object.fromEntries((VARIABLES.crop.classes ?? []).map(([k, , c]) => [k, c]));
+    const pie = (T.crops ?? []).map((c) => ({ label: c.name, value: c.area, color: CROP_COLOR[c.code] ?? '#8a94a0' }));
+    // ③ 柱：经营单元按面积前 12
+    // 标签用**短码**：完整码是 `09186162-U-0001`，画到 x 轴上会被截成 `09186162-U`
+    // ⇒ 12 根柱子的标签长得一模一样（这一版真踩过）
+    const column = [...(T.units ?? [])].sort((a, b) => b.area - a.area).slice(0, 12)
+      .map((u) => ({ label: u.code.split('-').slice(1).join('') || u.code, value: u.area }));
+    // ④ 雷达：**当前选中的地块所属单元**（没有选中就取病级最高的单元）vs 全场均值
+    const ts = (T.units ?? []).map((u) => u.tMin).filter((v) => v != null).sort((a, b) => a - b);
+    const p90 = ts.length ? ts[Math.min(ts.length - 1, Math.floor(ts.length * 0.9))] : 1;
+    const dims = [{ label: '进度' }, { label: '水分' }, { label: '养分' }, { label: '病级', invert: true }, { label: '可达性', invert: true }];
+    const good = (u) => [
+      Number.isFinite(u.progress) ? u.progress : 0,
+      Number(u.water) || 0,
+      Number(u.fert) || 0,
+      (5 - (Number(u.disease) || 1)) / 4,
+      1 - Math.min(1, (u.tMin ?? p90) / (p90 || 1)),
+    ];
+    const units = T.units ?? [];
+    const sel = ui.selected?.unit_id ? units.find((u) => u.id === ui.selected.unit_id) : null;
+    const pick = sel ?? [...units].sort((a, b) => (b.disease ?? 0) - (a.disease ?? 0))[0] ?? null;
+    const wsum = units.reduce((a, u) => a + (u.area || 0), 0) || 1;
+    const allVec = dims.map((_, k) => units.reduce((a, u) => a + good(u)[k] * (u.area || 0), 0) / wsum);
+    return {
+      line: {
+        unit: '', series: [
+          { label: '生长进度', color: '#c8b93a', values: sample(reg.progress) },
+          { label: '促病指数', color: '#c0392b', values: sample(reg.disease) },
+          { label: '水分保持', color: '#5fa8c8', values: sample(reg.waterIdx) },
+          { label: '养分保持', color: '#6fae4a', values: sample(reg.fertIdx) },
+        ], xLabels, mark,
+      },
+      pie: { unit: 'ha', items: pie },
+      column: { unit: 'ha', items: column },
+      radar: {
+        dims,
+        series: pick ? [
+          { label: `${pick.code}${sel ? '（当前选中）' : '（病级最高）'}`, color: '#1a4f8a', fill: 'rgba(26,79,138,0.20)', values: good(pick) },
+          { label: '全场均值（面积加权）', color: '#c0603a', fill: 'rgba(192,96,58,0.14)', values: allVec },
+        ] : [],
+      },
+      notes: {
+        line: `区域逐日（每 ${step} 天取一点，共 ${xLabels.length} 点）· 竖线 = 当前日期 ${fmtDay(ymdAt(state.day))}`,
+        pie: `地块面积按作物构成（休耕单列 —— 不单列就与总面积对不上账）· 合计 ${(pie.reduce((a, x) => a + x.value, 0)).toFixed(1)} ha`,
+        column: '经营单元按面积前 12（x 轴用短码 U0001；完整码是「行政区划码-U-序号」）',
+        radar: '五维**都归一化到"越大越好"**：病级与可达性已反向（标签带 ↓）；均值按单元面积加权',
+      },
+    };
+  }
+
   function setDay(day) {
     state.day = Math.min(model.days.length - 1, Math.max(0, Math.round(day)));
     region.temp = model.region.T2M[state.day];
@@ -759,6 +828,7 @@ try {
       },
       /** 点"统计网格"一行 ⇒ 与单元同一套高亮（只换空间键为 grid_id） */
       // 情景推演：候选点排行表要"整份离线数据"，页面只映射不改算
+      onChartData: () => buildChartData(),
       onScenarioCandidates: () => scenarioFile.candidates,
       onScenarioMeta: () => scenarioFile.metadata,
       onPickCandidate: (latlng) => pickScenario(latlng),

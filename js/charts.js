@@ -217,3 +217,269 @@ export function colorbar(el, gradient, lo, hi) {
        <div class="cbar-lab"><span>${lo}</span><span>${hi}</span></div>`
     : '';
 }
+
+/*
+ * ==================== 常用数据图示（都是 canvas 自绘，零依赖） ====================
+ *
+ * 与上面几个的分工：`sparkline`/`bars`/`hbars` 是**嵌在别处的迷你图**（无轴、无刻度），
+ * 这一段是**正经图表**：有坐标轴与刻度、有图例、能单独占一块地方看。
+ * 仍然不引第三方库 —— 页面的硬线是运行时零外部请求（见 README「纯静态保证」）。
+ *
+ * 四个都遵守同一条纪律：**空数据不许画成一张白图**（画一句提示），
+ * 否则用户分不清"没数据"和"图坏了"（这个坑在抽屉排行图上踩过一次）。
+ */
+
+/** 画一句居中的提示（空数据/不可用时的统一出口） */
+function drawHint(ctx, w, h, text) {
+  ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, h / 2);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** 通用坐标轴：左轴 + 底轴 + 水平网格 + y 刻度（返回绘图区） */
+function axes(ctx, w, h, { yMax, yTicks = 4, padL = 40, padR = 8, padT = 10, padB = 22, fmt = (v) => String(Math.round(v * 100) / 100) }) {
+  const plot = { x: padL, y: padT, w: Math.max(10, w - padL - padR), h: Math.max(10, h - padT - padB) };
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.strokeStyle = 'rgba(120,135,150,0.35)';
+  ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= yTicks; i++) {
+    const v = (yMax * i) / yTicks;
+    const y = Math.round(plot.y + plot.h - (plot.h * i) / yTicks) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(plot.x, y);
+    ctx.lineTo(plot.x + plot.w, y);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(fmt(v), plot.x - 4, y + 3);
+    ctx.textAlign = 'left';
+  }
+  ctx.strokeStyle = 'rgba(120,135,150,0.75)';
+  ctx.beginPath();
+  ctx.moveTo(plot.x + 0.5, plot.y);
+  ctx.lineTo(plot.x + 0.5, plot.y + plot.h + 0.5);
+  ctx.lineTo(plot.x + plot.w, plot.y + plot.h + 0.5);
+  ctx.stroke();
+  return plot;
+}
+
+/**
+ * **多序列折线图**（带坐标轴）：适合看"随时间怎么变"。
+ * @param series `[{ values:number[], color, label, width?, dash? }]`
+ * @param opts.mark 当前帧下标（画一条竖线）
+ */
+export function lineChart(canvas, series, { height = 180, yMax = null, mark = -1, unit = '', xLabels = null } = {}) {
+  const { ctx, w, h } = prepare(canvas, height);
+  const list = (series ?? []).filter((s) => s && Array.isArray(s.values) && s.values.length > 1);
+  if (!list.length) { drawHint(ctx, w, h, '没有可画的序列'); return null; }
+  const vmax = yMax ?? Math.max(1e-9, ...list.flatMap((s) => s.values.map((v) => Number(v) || 0)));
+  const plot = axes(ctx, w, h, { yMax: vmax });
+  const n = Math.max(...list.map((s) => s.values.length));
+  const X = (i) => plot.x + (plot.w * i) / Math.max(1, n - 1);
+  const Y = (v) => plot.y + plot.h - (plot.h * Math.min(1, (Number(v) || 0) / vmax));
+  for (const s of list) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.width ?? 1.6;
+    if (s.dash) ctx.setLineDash(s.dash);
+    ctx.beginPath();
+    s.values.forEach((v, i) => { const x = X(i); const y = Y(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (mark >= 0 && mark < n) {
+    ctx.strokeStyle = cssVar('--fg', '#12263f');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(X(mark), plot.y);
+    ctx.lineTo(X(mark), plot.y + plot.h);
+    ctx.stroke();
+  }
+  // 图例（图内左上角）：折线图没有图例就只能靠猜颜色
+  let lx = plot.x + 4;
+  ctx.font = '10px system-ui, sans-serif';
+  for (const s of list) {
+    if (!s.label) continue;
+    ctx.fillStyle = s.color;
+    ctx.fillRect(lx, plot.y + 2, 9, 3);
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    ctx.fillText(s.label, lx + 12, plot.y + 8);
+    lx += 12 + ctx.measureText(s.label).width + 10;
+  }
+  // x 轴标签（首/中/尾三个，避免挤成一团）
+  if (xLabels && xLabels.length) {
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    const idx = [0, Math.floor((xLabels.length - 1) / 2), xLabels.length - 1];
+    for (const i of idx) {
+      if (xLabels[i] == null || i >= n) continue;
+      ctx.textAlign = i === 0 ? 'left' : (i === xLabels.length - 1 ? 'right' : 'center');
+      ctx.fillText(String(xLabels[i]), X(i), h - 6);
+    }
+    ctx.textAlign = 'left';
+  }
+  return { n, yMax: vmax, series: list.length, unit };
+}
+
+/** **柱状图**（竖直，带坐标轴）：适合看"各项谁高谁低" */
+export function columnChart(canvas, items, { height = 180, unit = '', color = null, rotateLabels = false } = {}) {
+  const { ctx, w, h } = prepare(canvas, height);
+  const list = (items ?? []).filter((it) => it && Number.isFinite(Number(it.value)));
+  if (!list.length) { drawHint(ctx, w, h, '没有可画的数据'); return null; }
+  const vmax = Math.max(1e-9, ...list.map((it) => Number(it.value)));
+  const plot = axes(ctx, w, h, { yMax: vmax, padB: rotateLabels ? 30 : 22 });
+  const slot = plot.w / list.length;
+  const bw = Math.max(3, Math.min(34, slot - 6));
+  const base = color ?? cssVar('--brand', '#1a4f8a');
+  ctx.font = '10px system-ui, sans-serif';
+  list.forEach((it, i) => {
+    const v = Number(it.value);
+    const bh = Math.max(1, (plot.h * v) / vmax);
+    const x = plot.x + i * slot + (slot - bw) / 2;
+    ctx.fillStyle = it.color ?? base;
+    ctx.fillRect(x, plot.y + plot.h - bh, bw, bh);
+    const lab = String(it.label ?? '');
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    if (rotateLabels) {
+      ctx.save();
+      ctx.translate(x + bw / 2, plot.y + plot.h + 4);
+      ctx.rotate(-Math.PI / 4);
+      ctx.textAlign = 'right';
+      ctx.fillText(lab.slice(0, 10), 0, 0);
+      ctx.restore();
+    } else {
+      ctx.textAlign = 'center';
+      ctx.fillText(lab.slice(0, 6), x + bw / 2, h - 6);
+      ctx.textAlign = 'left';
+    }
+  });
+  return { n: list.length, yMax: vmax, unit };
+}
+
+/**
+ * **饼图**：适合看"构成占比"。
+ * 只画一块也算合法（100%），但**占比为 0 的项不画**（画成一条线没有意义，还会让人以为有值）。
+ */
+export function pieChart(canvas, items, { height = 180, unit = '', donut = 0.55 } = {}) {
+  const { ctx, w, h } = prepare(canvas, height);
+  const list = (items ?? []).filter((it) => it && Number(it.value) > 0);
+  const total = list.reduce((a, it) => a + Number(it.value), 0);
+  if (!list.length || total <= 0) { drawHint(ctx, w, h, '没有可画的占比'); return null; }
+  const R = Math.min(h / 2 - 12, w * 0.28);
+  const cx = 8 + R + Math.max(0, (w * 0.42 - 2 * R) / 2);
+  const cy = h / 2;
+  let a0 = -Math.PI / 2;
+  const parts = [];
+  for (const it of list) {
+    const frac = Number(it.value) / total;
+    const a1 = a0 + frac * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, a0, a1);
+    ctx.closePath();
+    ctx.fillStyle = it.color;
+    ctx.fill();
+    parts.push({ label: it.label, value: Number(it.value), frac });
+    a0 = a1;
+  }
+  if (donut > 0) {   // 环形：中间空出来写总量，图更"轻"
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * donut, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.fillStyle = cssVar('--fg', '#12263f');
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(String(Math.round(total * 10) / 10), cx, cy + 2);
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+  ctx.fillText(unit || '合计', cx, cy + 14);
+  ctx.textAlign = 'left';
+  // 图例（右侧，带百分比）：占比不写出来等于让用户自己算
+  const lx = cx + R + 12;
+  let ly = Math.max(14, cy - (list.length * 13) / 2 + 4);
+  ctx.font = '10px system-ui, sans-serif';
+  for (const p of parts) {
+    ctx.fillStyle = p.frac > 0.001 ? p.color : p.color;
+    ctx.fillRect(lx, ly - 8, 9, 8);
+    ctx.fillStyle = cssVar('--fg', '#12263f');
+    ctx.fillText(`${String(p.label).slice(0, 8)} ${(p.frac * 100).toFixed(1)}%`, lx + 12, ly);
+    ly += 13;
+  }
+  return { total, parts };
+}
+
+/**
+ * **雷达图**：适合"一个对象在多个维度上的形状"（本项目的用法：某个经营单元 vs 全场均值）。
+ *
+ * ⚠️ 各维量纲不同 ⇒ **必须先归一化到 0~1**，而且"越大越好"与"越小越好"的维度要分别处理
+ * （`axes` 里带 `invert` 的表示"越小越好"，例如到收储点时间）。
+ */
+export function radarChart(canvas, { axes: dims, series }, { height = 200, rings = 4 } = {}) {
+  const { ctx, w, h } = prepare(canvas, height);
+  const list = (series ?? []).filter((s) => s && Array.isArray(s.values));
+  const dimList = (dims ?? []).filter((d) => d && d.label);
+  if (list.length < 1 || dimList.length < 3) { drawHint(ctx, w, h, '维度不足（至少 3 维）'); return null; }
+  // R 要给**底部图例**留位置（否则图例压到"可达性↓"这类轴标签上，这一版真踩过）
+  const R = Math.min(h / 2 - 26, w * 0.3);
+  const cx = w / 2;
+  const cy = h / 2 - 4;
+  const ang = (i) => -Math.PI / 2 + (i * Math.PI * 2) / dimList.length;
+  const pos = (i, r) => [cx + Math.cos(ang(i)) * r, cy + Math.sin(ang(i)) * r];
+  ctx.font = '10px system-ui, sans-serif';
+  // 网格环 + 轴线
+  ctx.strokeStyle = 'rgba(120,135,150,0.35)';
+  ctx.lineWidth = 1;
+  for (let k = 1; k <= rings; k++) {
+    ctx.beginPath();
+    dimList.forEach((_, i) => { const [x, y] = pos(i, (R * k) / rings); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.closePath();
+    ctx.stroke();
+  }
+  dimList.forEach((_, i) => {
+    const [x, y] = pos(i, R);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  });
+  // 各维标签（带"越小越好"的标记）
+  dimList.forEach((d, i) => {
+    const [x, y] = pos(i, R + 11);
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    ctx.textAlign = Math.abs(x - cx) < 6 ? 'center' : (x > cx ? 'left' : 'right');
+    ctx.textBaseline = y > cy + 6 ? 'top' : (y < cy - 6 ? 'bottom' : 'middle');
+    ctx.fillText(`${d.label}${d.invert ? '↓' : ''}`, x, y);
+  });
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  // 多边形
+  for (const s of list) {
+    ctx.beginPath();
+    s.values.forEach((v, i) => {
+      const [x, y] = pos(i, R * Math.max(0, Math.min(1, Number(v) || 0)));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = s.fill ?? 'rgba(26,79,138,0.18)';
+    ctx.fill();
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+  // 图例（底部居中）
+  let lx = Math.max(6, cx - 60);
+  ctx.font = '10px system-ui, sans-serif';
+  for (const s of list) {
+    ctx.fillStyle = s.color;
+    ctx.fillRect(lx, h - 12, 9, 3);
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    ctx.fillText(String(s.label ?? ''), lx + 12, h - 6);
+    lx += 12 + ctx.measureText(String(s.label ?? '')).width + 12;
+  }
+  return { dims: dimList.length, series: list.length };
+}
