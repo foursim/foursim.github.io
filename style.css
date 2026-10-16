@@ -315,9 +315,10 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 .cols-pop label { display: flex; align-items: center; gap: 6px; font-size: 12px;
   padding: 2px 0; white-space: nowrap; cursor: pointer; }
 /* 抽屉里的排行图 */
-.dw-chart-wrap { padding: 6px 10px 4px; border-bottom: 1px solid var(--line); background: var(--panel-2, var(--panel)); }
+.dw-chart-wrap { position: relative; padding: 6px 10px 4px; border-bottom: 1px solid var(--line); background: var(--panel-2, var(--panel)); }
 .dw-chart-wrap.hidden { display: none; }
 .dw-chart-wrap canvas { width: 100%; display: block; }
+.dw-chart-wrap .chart-png { position: absolute; top: 4px; right: 8px; z-index: 2; }
 /* 窄列宽：页签只留前 3 个，其余进下拉 */
 #tb-more { display: none; }
 @media (max-width: 1240px) {

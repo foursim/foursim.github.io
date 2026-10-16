@@ -49,6 +49,9 @@ const CHART_SPEC = {
  * 表格页签。**简洁版**：不分组、不做查询构造器 ——
  * 五张表覆盖"结论/空间/趋势/异常"，外加一张「重点」放**带名字的业务问题**（联合查询的落地形态）。
  */
+/** 抽屉里三类上下文图的中文名（导出文件名与标题条都用它 —— 只有一处定义） */
+const DRAWER_CHART_NAME = { rank: '排行图', paired: '情景前后对照', stacked: '农事日历' };
+
 const TABLE_TABS = [
   ['focus', '重点问题'],
   ['frame', '当前帧指标'],
@@ -154,6 +157,7 @@ export class UI {
       'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
       'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel', 'btn-pivot-csv',
+      'btn-dw-chart-png',
       'tablebar'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
@@ -305,6 +309,14 @@ export class UI {
       this.saveColHidden();
       this.renderColsPop();
       this.renderDrawer();
+    });
+    // 抽屉里的图（排行 / 前后对照 / 堆叠柱）也能导出：图上带着**口径与日期**，离开页面还说得清
+    refs['btn-dw-chart-png'].addEventListener('click', () => {
+      const url = this.dwChartPng();
+      if (!url) { this.toast('这张图还没画好', 'warn'); return; }
+      const info = this.drawerChartInfo ?? {};
+      const day = fmtDay(this.model.days[this.day] ?? '');
+      this.actions?.onDownloadPng?.(url, `图表_${DRAWER_CHART_NAME[info.kind] ?? 'chart'}_${day}.png`);
     });
     refs['btn-dw-csv'].addEventListener('click', () => actions.onExportCsv?.());
     // 导出**当前视图**（筛选 + 排序后的行）：看得懂之后能拿得走，闭环才成立
@@ -882,6 +894,33 @@ export class UI {
     this.scenario = sc;
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
     this.renderTables();
+  }
+
+  /**
+   * 抽屉里**当前那张上下文图**导出成 PNG（dataURL）：排行 / 情景前后对照 / 农事日历堆叠柱。
+   * 与 `chartPanelPng` 同一套做法（另起画布 + 标题条），同样抽成纯函数便于判据。
+   */
+  dwChartPng() {
+    const cv = this.refs['dw-chart'];
+    if (!cv || !cv.width || !cv.height) return '';
+    const info = this.drawerChartInfo ?? {};
+    const name = DRAWER_CHART_NAME[info.kind] ?? '图';
+    const pad = 12;
+    const head = 26;
+    const c = document.createElement('canvas');
+    c.width = cv.width + pad * 2;
+    c.height = cv.height + head + pad;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = cssVar('--panel', '#ffffff');
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = cssVar('--fg', '#12263f');
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    const day = fmtDay(this.model.days[this.day] ?? '');
+    ctx.fillText(`${name}　${info.col ? `口径：${info.col}　` : ''}${day}`, pad, 17);
+    ctx.drawImage(cv, pad, head, cv.width, cv.height);
+    ctx.strokeStyle = cssVar('--line', '#d3e0ee');
+    ctx.strokeRect(pad + 0.5, head + 0.5, cv.width - 1, cv.height - 1);
+    return c.toDataURL('image/png');
   }
 
   /**

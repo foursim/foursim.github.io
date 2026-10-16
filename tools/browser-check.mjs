@@ -36,6 +36,30 @@ let fail = 0;
 function skip(label, detail = '') {
   console.log(`  [SKIP] ${label}${detail ? ` — ${detail}` : ''}`);
 }
+/*
+ * **判据侧的公共辅助**（只写一份，用模板变量注入到各个 `ev()` 里）。
+ *
+ * 为什么必须抽出来：这段"按 AGG_RULE 取单元五维 → 按全场归一"的逻辑原来有 **3 份拷贝**
+ * （§32 一份、§33 一份、§35 一份），上一次就是因为只改了两处、漏了第三处而出现
+ * "页面按 p90 封顶、判据按 max"的口径不一致 —— 判据自己也会腐烂。
+ * 注意：注入的是**字符串**，在浏览器里以 const 形式落地；用到的变量是 `T`（buildTables 结果）。
+ */
+const UNIT_NORM_SRC = `
+  const P90=(()=>{const t=[...T.units].map(u=>u.tMin).filter(v=>v!=null).sort((x,y)=>x-y);
+    return t.length?t[Math.min(t.length-1,Math.floor(t.length*0.9))]:1;})();
+  const raw5=(u)=>[Number.isFinite(u.progress)?u.progress:0, Number(u.water)||0, Number(u.fert)||0,
+    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??P90)/(P90||1))];
+  const RAW=T.units.map(raw5);
+  const DIM_HI=[0,1,2,3,4].map(k=>Math.max(...RAW.map(r=>r[k])));
+  const DIM_LO=[0,1,2,3,4].map(k=>Math.min(...RAW.map(r=>r[k])));
+  const DIM_SPAN=DIM_HI.map((h,k)=>h-DIM_LO[k]);
+  const DIM_MIN=0.05;
+  const DIM_USABLE=DIM_SPAN.map(x=>x>=DIM_MIN);
+  const norm5=(u)=>raw5(u).map((v,k)=>DIM_USABLE[k]?Math.min(1,Math.max(0,(v-DIM_LO[k])/DIM_SPAN[k])):0.5);
+  const AREA_W=T.units.reduce((a,u)=>a+(u.area||0),0)||1;
+  const areaAvg5=[0,1,2,3,4].map(k=>T.units.reduce((a,u)=>a+raw5(u)[k]*(u.area||0),0)/AREA_W);
+`;
+
 const check = (label, cond, detail = '') => {
   if (cond) { pass++; console.log(`  [OK]   ${label}${detail ? ` — ${detail}` : ''}`); }
   else { fail++; console.log(`  [FAIL] ${label}${detail ? ` — ${detail}` : ''}`); }
@@ -1966,10 +1990,7 @@ const s32 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   const colSpread=(()=>{const v=d.column.items.map(x=>x.value);
     return Math.max(...v)/Math.max(1e-9,Math.min(...v));})();
   const colGot=d.column.items.map(x=>x.label);
-  // 雷达：全场均值必须等于按单元面积加权的独立复算
-  const units=T.units, wsum=units.reduce((s2,u)=>s2+(u.area||0),0);
-  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0, Number(u.water)||0, Number(u.fert)||0,
-    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??1)/(Math.max(...units.map(x=>x.tMin??0))||1))];
+  // 雷达：只断言"值都在 0~1"（逐值口径在 §33/§35 用公共辅助核对，避免三份拷贝各说各话）
   const dim=d.radar.dims.length;
   const ok01=d.radar.series.every(s2=>s2.values.length===dim && s2.values.every(v=>v>=0&&v<=1));
   // 折线：序列与 x 轴标签等长、mark 指向当前帧
@@ -2081,30 +2102,21 @@ const s33 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   const cN=mk(); const mCol=CH.columnChart(cN,d.column.items,{height:168,rotateLabels:true,labelValues:false,yMax:mColL.yMax});
   const topL=bandInk(cL,0,26), topN=bandInk(cN,0,26);
 
-  const T=a.buildTables(a.state.day); const units=T.units;
-  // ⚠️ 与页面同一条规则：可达性那一维按全场 **p90 封顶**（不是 max —— 判据第一次逐值对比向量才暴露这点）
-  const ts9=[...units].map(u=>u.tMin).filter(v=>v!=null).sort((x,y)=>x-y);
-  const P90=ts9.length?ts9[Math.min(ts9.length-1,Math.floor(ts9.length*0.9))]:1;
-  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0,Number(u.water)||0,Number(u.fert)||0,
-    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??P90)/(P90||1))];
-  const raw=units.map(good);
-  const dimHi=[0,1,2,3,4].map(k=>Math.max(...raw.map(r=>r[k])));
-  const dimLo=[0,1,2,3,4].map(k=>Math.min(...raw.map(r=>r[k])));
-  const DIM_MIN=0.05;
-  const spreadFixed=dimHi.map((h,k)=>h-dimLo[k]);                 // 原始跨度
-  const usable=spreadFixed.map(x=>x>=DIM_MIN);                     // 与 main.js 同一个阈值
-  const normOne=(r)=>r.map((v,k)=>usable[k]?Math.min(1,Math.max(0,(v-dimLo[k])/spreadFixed[k])):0.5);
-  const normAll=raw.map(normOne);
+  const T=a.buildTables(a.state.day);
+${UNIT_NORM_SRC}
+  const units=T.units;
+  const spreadFixed=DIM_SPAN;                                      // 原始跨度
+  const usable=DIM_USABLE;                                         // 与 main.js 同一个阈值
+  const normAll=T.units.map(norm5);
   // 归一后的**每维跨度**：可用维度必须用满 0~1；不可用维度必须一律 0.5（不许把 0.04 的噪声放大成整根轴）
-  const spreadRange=dimHi.map((h,k)=>Math.max(...normAll.map(r=>r[k]))-Math.min(...normAll.map(r=>r[k])));
+  const spreadRange=DIM_HI.map((h,k)=>Math.max(...normAll.map(r=>r[k]))-Math.min(...normAll.map(r=>r[k])));
   const mean=(arr)=>arr.reduce((t,x)=>t+x,0)/arr.length;
   const sel=units.find(u=>u.id===ui.selected?.unit_id)??[...units].sort((x,y)=>(y.disease??0)-(x.disease??0))[0];
-  const wsum=units.reduce((t,u)=>t+(u.area||0),0)||1;
-  const avg=[0,1,2,3,4].map(k=>units.reduce((t,u)=>t+good(u)[k]*(u.area||0),0)/wsum);
+  const avg=areaAvg5;
   const mae=(v)=>v.reduce((t,x,k)=>t+Math.abs(x-avg[k]),0)/5;
   const selVec=d.radar.series[0]?.values ?? [];
   const maeRange=mae(selVec);
-  const maeFixed=mae(good(sel));
+  const maeFixed=mae(raw5(sel));
   return {contrast0,contrast1,span1,lineRange:[rOne.lo,rOne.hi],m1zero:m1.zeroBase,rZero,leftOn,
     cornerWith,cornerNone,offCount,stillOff,allNote,tightNote,
     colZero:mCol.zeroBase,colLabel:mColL.labelValues,topL,topN,
@@ -2211,22 +2223,13 @@ const s35 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   await new Promise(r=>setTimeout(r,120));
   const backRegion=sig();
 
-  // 雷达对比对象：选"病级最低" ⇒ 必须等于该单元的归一向量（同一套归一规则）
-  const units=a.buildTables(a.state.day).units;
-  // ⚠️ 与页面同一条规则：可达性那一维按全场 **p90 封顶**（不是 max —— 判据第一次逐值对比向量才暴露这点）
-  const ts9=[...units].map(u=>u.tMin).filter(v=>v!=null).sort((x,y)=>x-y);
-  const P90=ts9.length?ts9[Math.min(ts9.length-1,Math.floor(ts9.length*0.9))]:1;
-  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0,Number(u.water)||0,Number(u.fert)||0,
-    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??P90)/(P90||1))];
-  const raw=units.map(good);
-  const dimHi=[0,1,2,3,4].map(k=>Math.max(...raw.map(r=>r[k])));
-  const dimLo=[0,1,2,3,4].map(k=>Math.min(...raw.map(r=>r[k])));
-  const spread=dimHi.map((h,k)=>h-dimLo[k]);
-  const usable=spread.map(x=>x>=0.05);
-  const normOf=(u)=>good(u).map((v,k)=>usable[k]?Math.min(1,Math.max(0,(v-dimLo[k])/spread[k])):0.5);
+  // 雷达对比对象：选"病级最低" ⇒ 必须等于该单元的归一向量（同一套归一规则，走公共辅助）
+  const T=a.buildTables(a.state.day);
+${UNIT_NORM_SRC}
+  const units=T.units;
   const bestU=[...units].sort((x,y)=>(x.disease??0)-(y.disease??0))[0];
   const best=d1.radar.compare.find(o=>o.key==='best');
-  const bestOk=!!best&&best.values.every((v,k)=>Math.abs(v-normOf(bestU)[k])<1e-9);
+  const bestOk=!!best&&best.values.every((v,k)=>Math.abs(v-norm5(bestU)[k])<1e-9);
   const cmp=document.getElementById('tb-radar-compare');
   const sigR=()=>{const cc=document.getElementById('tb-radar');
     const px=cc.getContext('2d').getImageData(0,0,cc.width,cc.height).data;
@@ -2260,6 +2263,61 @@ check('**图表导出 PNG**：`chartPanelPng()` 拼出真实 PNG（dataURL 有�
   String(s35.urlHead).startsWith('data:image/png') && s35.urlLen > 20000
     && s35.captured && String(s35.captured.head).startsWith('data:image/png') && /\.png$/.test(String(s35.captured.name)),
   `${(s35.urlLen / 1024).toFixed(0)} KB PNG · 按钮交出 ${s35.captured ? `${(s35.captured.len / 1024).toFixed(0)} KB，文件名 ${s35.captured.name}` : '（没触发）'}`);
+
+
+// ===================== 36. 抽屉上下文图导出 PNG（排行 / 前后对照 / 堆叠柱） =====================
+console.log('\n=== 36. 抽屉上下文图导出 PNG ===');
+await boot(1440, 900);
+const s36 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const out={};
+  const grab=(kindHint)=>{
+    const url=ui.dwChartPng();
+    const info=ui.drawerChartInfo||{};
+    const btn=document.getElementById('btn-dw-chart-png');
+    // 用桩捕获"按钮把什么交给了下载通道"
+    let cap=null; const orig=ui.actions.onDownloadPng;
+    ui.actions.onDownloadPng=(u,n)=>{cap={head:u.slice(0,20),len:u.length,name:n};};
+    if(btn) btn.click();
+    ui.actions.onDownloadPng=orig;
+    return {kind:info.kind, col:info.col, head:url.slice(0,20), len:url.length,
+      btnShown: btn ? !document.getElementById('dw-chart-wrap').classList.contains('hidden') : false,
+      cap};
+  };
+  // ① 排行图：抽屉里打开「统计网格」（面积/进度排行）
+  document.getElementById('btn-drawer').click();
+  document.querySelector('#dw-tabs button[data-tab="grids"]').click();
+  await new Promise(r=>setTimeout(r,150));
+  out.rank=grab();
+
+  // ② 堆叠柱：透视视图选农事日历
+  document.querySelector('#dw-tabs button[data-tab="pivot"]').click();
+  a.ensurePivot();
+  for(let i=0;i<60 && !ui.pivotData;i++) await new Promise(r=>setTimeout(r,100));
+  const idx=ui.pivotData.views.findIndex(v=>v.chart==='stacked');
+  const sel=document.getElementById('pivot-sel'); sel.value=String(idx);
+  sel.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,180));
+  out.stacked=grab();
+
+  // ③ 前后对照：选一个情景候选点（抽屉切到情景推演）
+  const cand=a.scenario.candidates.reduce((b,c)=>c.avg_gain_min>(b?b.avg_gain_min:-1)?c:b,null);
+  a.pickScenario({lat:cand.lat,lng:cand.lon});
+  document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
+  await new Promise(r=>setTimeout(r,180));
+  out.paired=grab();
+  return out;})()`);
+check('**抽屉里的三类上下文图都能导出 PNG**（排行 / 前后对照 / 农事日历堆叠柱），且每张都带口径与日期',
+  [s36.rank, s36.stacked, s36.paired].every((x) => String(x.head).startsWith('data:image/png'))
+    && s36.rank.len > 3000 && s36.stacked.len > 3000 && s36.paired.len > 3000
+    && s36.rank.kind === 'rank' && s36.stacked.kind === 'stacked' && s36.paired.kind === 'paired',
+  `排行 ${(s36.rank.len / 1024).toFixed(1)} KB（口径 ${s36.rank.col}）· 堆叠柱 ${(s36.stacked.len / 1024).toFixed(1)} KB`
+    + `（口径 ${s36.stacked.col}）· 前后对照 ${(s36.paired.len / 1024).toFixed(1)} KB（口径 ${s36.paired.col}）`);
+check('按钮把 dataURL 交给**同一条下载通道**，文件名按图种区分（排行图 / 农事日历 / 情景前后对照）',
+  [s36.rank, s36.stacked, s36.paired].every((x) => x.cap && String(x.cap.head).startsWith('data:image/png'))
+    && s36.rank.cap.name.includes('排行图') && s36.stacked.cap.name.includes('农事日历')
+    && s36.paired.cap.name.includes('情景前后对照')
+    && new Set([s36.rank.cap.name, s36.stacked.cap.name, s36.paired.cap.name]).size === 3,
+  [s36.rank.cap, s36.stacked.cap, s36.paired.cap].map((c) => c.name).join(' · '));
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
