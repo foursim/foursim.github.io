@@ -9,7 +9,7 @@
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
 import { THEME, cssVar, PALETTE } from './theme.js';
-import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange } from './charts.js';
+import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange, scatter } from './charts.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -157,6 +157,7 @@ export class UI {
       'drawer', 'drawer-mask', 'drawer-close', 'dw-tabs', 'dw-body', 'dw-note', 'dw-count', 'dw-filter',
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
       'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel', 'btn-pivot-csv',
+      'btn-scen-view',
       'btn-dw-chart-png',
       'tablebar'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
@@ -226,6 +227,7 @@ export class UI {
       const v = this.pivotData?.views?.[this.pivotView] ?? {};
       if (text) this.actions?.onDownload?.(text, `透视视图_${v.id ?? 'view'}.csv`);
     });
+    refs['btn-scen-view']?.addEventListener?.('click', () => this.actions?.onToggleScenarioView?.());
     refs['pivot-sel'].addEventListener('change', (ev) => {
       this.pivotView = Number(ev.target.value) || 0;
       this.renderTables();
@@ -271,7 +273,9 @@ export class UI {
       refs[id].addEventListener('click', () => {
         // 打开时**暂停播放**：数字自己在跳的表格没法读（与"透视要冻结时点"同一个道理）
         actions.onPause?.();
-        this.openDrawer();
+        // 跟随 strip 的**当前页签**：抽屉是"当前这张表的全行视图"，打开在别的表上说不通
+        //（曾如此：停在「情景推演」点数据视图，抽屉显示的是「经营单元」）
+        this.openDrawer(this.activeTable);
       });
     }
     refs['drawer-close'].addEventListener('click', () => this.closeDrawer());
@@ -837,10 +841,33 @@ export class UI {
     // 情景推演的**前后对照**：选过候选点才有，图跟着"当前选中的那个点"走
     if (this.drawerTab === 'scenario' && this.scenarioCompare) {
       wrap.classList.remove('hidden');
+      this.setChartCaption(cvs, '');
       pairedBars(cvs, this.scenarioCompare, { unit: 'min' });
       this.drawerChartInfo = { kind: 'paired', col: '到收储点 min（现状 → 新建后）', items: this.scenarioCompare };
       return;
     }
+    /*
+     * 情景推演（**没选点**时）：候选点散点图 —— "面积大"与"省得多"是不是同一批点。
+     * 选了点则被上面的"前后对照"接管（那才是那一刻该看的图）。
+     */
+    if (this.drawerTab === 'scenario') {
+      const cands = this.actions?.onScenarioCandidates?.() ?? [];
+      if (cands.length > 2) {
+        const meta = scatter(cvs, cands.map((c) => ({ x: c.improved_ha, y: c.avg_gain_min })), {
+          height: 200, xLabel: '受益面积', xUnit: 'ha', yLabel: '平均节省', yUnit: 'min/块',
+        });
+        if (meta) {
+          wrap.classList.remove('hidden');
+          this.setChartCaption(cvs, `散点图：${meta.n} 个候选点 · x = 受益面积（ha，越大受益地块越多）`
+            + ` · y = 平均节省（min/块，越大越划算）`
+            + ` · 虚线圆点是**帕累托前沿 ${meta.frontIdx.length} 个**（不被任何点同时超过 ⇒ 其余点都有"同时更差"的问题）`
+            + ` · 表格按面积排序只能看一维，这张图回答的是"面积最大 ≠ 最划算"`);
+          this.drawerChartInfo = { kind: 'scatter', col: '受益面积 ha × 平均节省 min', n: meta.n, front: meta.frontIdx.length };
+          return;
+        }
+      }
+    }
+    this.setChartCaption(cvs, '');
     const spec = CHART_SPEC[this.drawerTab];
     const ci = spec ? cols.findIndex((c) => c.label === spec.col) : -1;
     const text = (c) => String((typeof c === 'object' && c !== null ? c.text : c) ?? '').replace(/<[^>]*>/g, '');
@@ -913,6 +940,22 @@ export class UI {
         ? `取消高亮（当前：${text}）；也可以再点一次同一行`
         : '当前没有高亮';
     }
+  }
+
+  /**
+   * 图容器里的**说明行**（与图同一个容器 ⇒ 图注不会漂到别处去）。
+   * 传空串就是清掉（换图时不清会让上一张图的说明留在屏幕上）。
+   */
+  setChartCaption(cvs, text) {
+    if (!cvs?.parentElement) return;
+    let cap = cvs.parentElement.querySelector('.dw-chart-cap');
+    if (!text) { if (cap) cap.textContent = ''; return; }
+    if (!cap) {
+      cap = document.createElement('div');
+      cap.className = 'dw-chart-cap tb-note';
+      cvs.parentElement.appendChild(cap);
+    }
+    cap.textContent = text;
   }
 
   /** 情景"前后对照"（按经营单元；`main.js` 选点后算好传进来，本类不做聚合） */
@@ -991,7 +1034,7 @@ export class UI {
 
   /** 图表原语（挂在实例上：判据要能直接验空输入的行为，例如"空数据不画白图"） */
   get charts() {
-    return { lineChart, columnChart, pieChart, radarChart, dataRange };
+    return { lineChart, columnChart, pieChart, radarChart, dataRange, scatter };
   }
 
   /** 某图层当前是否可见（由 main.js 接到地图的真实状态上；取不到就当作可见，保持旧行为） */
@@ -1010,6 +1053,7 @@ export class UI {
     this.pivotData = data ?? null;
     this.pivotLoadFailed = !data;
     this.renderPivotSel();
+    this.renderScenarioViewBtn();
     this.renderTables();
     this.renderDrawer();
   }
@@ -1037,6 +1081,22 @@ export class UI {
         : `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`)).join('');
     }
     if (views.length) sel.value = String(Math.min(this.pivotView, views.length - 1));
+  }
+
+  /**
+   * 情景页签的「只看视野」按钮：只在情景页签出现，并显示**当前视野内的候选数**。
+   * 按钮文案直接给出数量（「只看视野（37）」）—— 点之前就知道能筛到几个。
+   */
+  renderScenarioViewBtn() {
+    const btn = this.refs['btn-scen-view'];
+    if (!btn) return;
+    const on = this.activeTable === 'scenario' || (this.drawerOpen && this.drawerTab === 'scenario');
+    btn.classList.toggle('hidden', !on);
+    if (!on) return;
+    const sv = this.actions?.onScenarioList?.();
+    if (!sv) return;
+    btn.textContent = sv.viewOnly ? `显示全部（${sv.total}）` : `只看视野（${sv.inView}）`;
+    btn.classList.toggle('on', !!sv.viewOnly);
   }
 
   setTables(tables) {
@@ -1166,9 +1226,9 @@ export class UI {
        * 现状那一列对每个候选都一样，所以写进表注（不占一列）。
        */
       // 下标必须留着：编号 B-001 是**离线数据里的位置**，排序不该改变编号（否则编号随排序乱跳）
-      const list = (this.actions?.onScenarioCandidates?.() ?? [])
-        .map((c, i) => ({ c, i }))
-        .sort((x, y) => (y.c.improved_ha || 0) - (x.c.improved_ha || 0));
+      // 列表由数据侧给（含"只看当前视野"的筛选结果）；条目带**原始下标**，行编号不会跟着漂
+      const sv = this.actions?.onScenarioList?.() ?? { list: [], total: 0, inView: 0, viewOnly: false };
+      const list = [...sv.list].sort((x, y) => (y.c.improved_ha || 0) - (x.c.improved_ha || 0));
       const meta = this.actions?.onScenarioMeta?.() ?? {};
       const sc = this.scenario;
       const picked = sc?.cand ?? null;
@@ -1192,7 +1252,9 @@ export class UI {
       }));
       const base = sc?.base ?? meta.baseline ?? null;
       const best = list.length ? ` · 受益最大的候选：B-${String(list[0].i + 1).padStart(3, '0')}（${list[0].c.improved_ha} ha，表首行）` : '';
-      note = `${list.length} 个候选点（离线真实路网重算，${meta.step_m ?? '?'} m 网格）· **按受益面积排序**`
+      note = (sv.viewOnly
+        ? `${list.length} / ${sv.total} 个候选点 · **已按当前地图视野筛选**（筛选只动列表：指标是离线按**全网**重算的，不是视野内重算）`
+        : `${list.length} 个候选点`) + `（离线真实路网重算，${meta.step_m ?? '?'} m 网格）· **按受益面积排序**`
         + (base ? ` · 现状：平均 ${base.avg_min} / p50 ${base.p50_min} / p90 ${base.p90_min} 分，盲区 ${base.blind_parcels} 块 / ${base.blind_ha} ha` : '')
         + (picked ? ` · 已选 ★（平均可省 ${picked.avg_gain_min} 分钟/块）` : best)
         + ' · 点一行可在图上选中该候选点';
@@ -1262,6 +1324,7 @@ export class UI {
 
   renderTables() {
     this.renderPivotSel();
+    this.renderScenarioViewBtn();
     if (!this.refs['tb-body']) return;
     for (const b of this.refs['tb-tabs'].querySelectorAll('button')) {
       b.classList.toggle('on', b.dataset.tab === this.activeTable);
@@ -1306,6 +1369,7 @@ export class UI {
     }
     // 透视控件跟的是"抽屉的页签"，所以每次重画抽屉都要重算一次显隐（漏了就会"切过去控件不出现"）
     this.renderPivotSel();
+    this.renderScenarioViewBtn();
     // 抽屉里的「图表」同样走面板
     if (this.drawerTab === 'charts') { this.renderChartPanel('dw-body', 'dw'); return; }
     const { cols, rows, note } = this.buildTable(this.drawerTab);

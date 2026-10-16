@@ -396,6 +396,81 @@ export function lineChart(canvas, series, { height = 180, yMin = null, yMax = nu
   return { n, lo, hi, zeroBase, series: list.length, unit, upto };
 }
 
+/**
+ * **散点图**（x、y 都是"越大越好"）：看**两个指标互相拉扯**的关系。
+ *
+ * 为什么需要它：候选点表只能按**一个**维度排序（按受益面积排完，就看不出"每块省多少"），
+ * 柱状图也只有一维 —— "面积大"和"省得多"是不是同一批点，前四种图都答不了。
+ * 这里再标出**帕累托前沿**（不被任何点同时超过的那些点）：它们在"这两个目标下没有更好的选择"，
+ * 其余点则都能被某个前沿点同时超过（那才是"不选它"的硬理由）。
+ *
+ * 两个轴都是 0 基（这两组指标天然从 0 起）；若将来有非零基的场景，图角会照规范写明。
+ */
+export function scatter(canvas, points, {
+  height = 200, xLabel = 'x', yLabel = 'y', xUnit = '', yUnit = '',
+  xZero = true, yZero = true, showFront = true, dotColor = null, frontColor = null,
+} = {}) {
+  const { ctx, w, h } = prepare(canvas, height);
+  const list = (points ?? []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (list.length < 3) { drawHint(ctx, w, h, '点太少（<3），画不出散布关系'); return null; }
+  const xHi = Math.max(...list.map((p) => p.x));
+  const yHi = Math.max(...list.map((p) => p.y));
+  const xLo = xZero ? 0 : Math.min(...list.map((p) => p.x));
+  const yLo = yZero ? 0 : Math.min(...list.map((p) => p.y));
+  const xSpan = (xHi - xLo) || 1;
+  const ySpan = (yHi - yLo) || 1;
+  const fmt = (span, v) => (span < 2 ? v.toFixed(2) : String(Math.round(v * 10) / 10));
+  const plot = axes(ctx, w, h, {
+    yMin: yLo, yMax: yHi, padB: 30,
+    rangeLabel: yZero ? null : `纵轴 ${yLo.toFixed(2)}~${yHi.toFixed(2)}（非零基）`,
+    fmt: (v) => fmt(ySpan, v),
+  });
+  const X = (v) => plot.x + plot.w * Math.max(0, Math.min(1, (v - xLo) / xSpan));
+  const Y = (v) => plot.y + plot.h - plot.h * Math.max(0, Math.min(1, (v - yLo) / ySpan));
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+  for (let i = 0; i <= 4; i++) {
+    const v = xLo + (xSpan * i) / 4;
+    ctx.textAlign = i === 0 ? 'left' : (i === 4 ? 'right' : 'center');
+    ctx.fillText(fmt(xSpan, v), X(v), h - 18);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText(`${yLabel}${yUnit ? `（${yUnit}）` : ''} ↑`, plot.x + 4, plot.y + 9);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${xLabel}${xUnit ? `（${xUnit}）` : ''} →`, plot.x + plot.w - 2, plot.y + plot.h - 5);
+  ctx.textAlign = 'left';
+  // 帕累托前沿：不存在另一个点"两个目标都不差、至少一个更好"
+  const frontIdx = list.map((_, i) => i).filter((i) => !list.some((q, j) => j !== i
+    && q.x >= list[i].x && q.y >= list[i].y && (q.x > list[i].x || q.y > list[i].y)));
+  ctx.fillStyle = dotColor ?? cssVar('--brand', '#1a4f8a');
+  ctx.globalAlpha = 0.5;
+  for (const p of list) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  if (showFront && frontIdx.length) {
+    const fc = frontColor ?? cssVar('--warn', '#b3541e');
+    const sorted = frontIdx.map((i) => list[i]).sort((a, b) => a.x - b.x);
+    ctx.strokeStyle = fc;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    sorted.forEach((p, k) => (k ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y))));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (const p of sorted) {
+      ctx.beginPath();
+      ctx.arc(X(p.x), Y(p.y), 4.2, 0, Math.PI * 2);
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = fc;
+      ctx.stroke();
+    }
+    ctx.fillStyle = fc;
+    ctx.fillRect(plot.x + 4, plot.y + 15, 9, 3);
+    ctx.fillStyle = cssVar('--dim', '#5b6b7f');
+    ctx.fillText(`○ 帕累托前沿 ${frontIdx.length} 个（不被任何点同时超过）`, plot.x + 16, plot.y + 21);
+  }
+  return { n: list.length, frontIdx, xLo, xHi, yLo, yHi, zeroBase: xZero && yZero };
+}
+
 /** **柱状图**（竖直，带坐标轴）：适合看"各项谁高谁低" */
 export function columnChart(canvas, items, { height = 180, unit = '', color = null, rotateLabels = false, yMin = 0, yMax = null, labelValues = false } = {}) {
   const { ctx, w, h } = prepare(canvas, height);

@@ -1963,8 +1963,10 @@ const s31b = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const 
   const target=findCand(rows[2].cand)||{improved:[]};
   document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
   await new Promise(r=>setTimeout(r,60));
+  // 未选点：抽屉图现在是**候选散点**（受益面积 × 平均节省 + 帕累托前沿）；
+  // 排行本身表格已经给了（154 行按面积降序），图用来回答"面积大和省得多是不是同一批点"
   const beforePick={chartKind:ui.drawerChartInfo&&ui.drawerChartInfo.kind,
-    chartTop:ui.drawerChartInfo&&ui.drawerChartInfo.items&&ui.drawerChartInfo.items[0]};
+    n:ui.drawerChartInfo&&ui.drawerChartInfo.n, front:ui.drawerChartInfo&&ui.drawerChartInfo.front};
   return {n:rows.length, nCands:cands.length, head, sample, argmax, beforePick,
     sortedDesc:rows.every((r,i)=>i===0||parse(rows[i-1].cells[1])>=parse(r.cells[1])),
     firstIsArgmax:parse(rows[0].cells[1])===argmax.ha};})()`);
@@ -1986,9 +1988,9 @@ await shot('candidates-picked-1440x900');
 check('**候选点排行表**：154 个候选全在表里、按受益面积降序、首位就是最大受益候选（独立复算）',
   s31b.n === s31b.nCands && s31b.sortedDesc && s31b.firstIsArgmax && s31b.head.length === 9,
   `${s31b.n}/${s31b.nCands} 行 · 列 ${s31b.head.length} 个 · 首位 ${s31b.head[1]} = ${s31b.argmax.ha} ha（降序 ${s31b.sortedDesc}）`);
-check('未选点时的抽屉图是"候选排行"（该建在哪），选点后切成"前后对照"（省在哪里）',
-  s31b.beforePick?.chartKind === 'rank' && s31c.chartKind === 'paired',
-  `选点前 kind=${s31b.beforePick?.chartKind}（首位 ${s31b.beforePick?.chartTop?.label} ${s31b.beforePick?.chartTop?.value} ha）→ 选点后 kind=${s31c.chartKind}`);
+check('未选点时的抽屉图是**候选散点**（受益面积 × 平均节省，154 个点 + 帕累托前沿），选点后切成"前后对照"（省在哪里）',
+  s31b.beforePick?.chartKind === 'scatter' && s31b.beforePick?.n === s31b.nCands && s31c.chartKind === 'paired',
+  `选点前 kind=${s31b.beforePick?.chartKind}（${s31b.beforePick?.n} 点 / 前沿 ${s31b.beforePick?.front} 个）→ 选点后 kind=${s31c.chartKind}`);
 check('候选点的**数**与离线 JSON 一致（抽样 3 个：受益面积 / 平均节省）',
   s31b.sample.every((x) => Math.abs(x.gotH - x.wantH) < 0.06 && Math.abs(x.gotG - x.wantG) < 0.005),
   s31b.sample.map((x) => `${x.id} ${x.gotH}=${x.wantH}·${x.gotG}≈${x.wantG}`).join(' · '));
@@ -2473,6 +2475,152 @@ check('**随日期变的图和"不变"的图都量出来**（免得图注把静�
   `两天实测：雷达(单元画像) ${s38.radarDiff ? '变' : '不变'} · 饼(作物面积) ${s38.pieDiff ? '变' : '不变'}`
     + ` · 柱(到收储点) ${s38.colDiff ? '变' : '不变'} —— 柱与饼不随日期变是**对的**（运距是地理事实、`
     + `作物在季内固定），雷达必须变（进度/病级按当日）`);
+
+// ===================== 39. 情景候选表：只看当前视野 =====================
+console.log('\n=== 39. 情景候选表按视野筛选 ===');
+await boot(1440, 900);
+const s39 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  const B=()=>a.map.map.getBounds();
+  const inView=()=>{const b=B();return a.scenario.candidates.filter(c=>
+    c.lat<=b.getNorth()&&c.lat>=b.getSouth()&&c.lon<=b.getEast()&&c.lon>=b.getWest());};
+  const trs=()=>[...document.querySelectorAll('#tb-body tbody tr')];
+  const btn=()=>document.getElementById('btn-scen-view');
+  const note=()=>document.querySelector('#tb-note').textContent.replace(/\\s+/g,' ');
+
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  await sleep(250);
+  const shown=!btn().classList.contains('hidden');
+  const label0=btn().textContent.trim();
+  const rows0=trs().length;
+  const n0=inView().length, total=a.scenario.candidates.length;
+  // 标签里的数字必须与独立复算的视野内计数一致
+  const m0=/只看视野（(\\d+)）/.exec(label0);
+
+  // 缩进到一个小区域（围绕 B-001）⇒ 视野内计数应显著变少，按钮标签跟着更新
+  const c0=a.scenario.candidates[0];
+  a.map.map.setView([c0.lat,c0.lon], 15, {animate:false});
+  await sleep(350);
+  const label1=btn().textContent.trim();
+  const m1=/只看视野（(\\d+)）/.exec(label1);
+  const n1=inView().length;
+
+  // 打开筛选：行 = 视野内候选
+  btn().click();
+  await sleep(250);
+  const rows1=trs().map(tr=>({cand:tr.getAttribute('data-cand'), first:tr.children[0].textContent.trim()}));
+  const note1=note(), label2=btn().textContent.trim();
+  // B 编号必须仍对应**原数组下标**（筛完不许重排编号）
+  const idxOk=rows1.every(r=>{const i=Number(/B-(\\d+)/.exec(r.first)[1])-1;
+    const c=a.scenario.candidates[i]; if(!c) return false;
+    return Math.abs(c.lon-Number(r.cand.split('|')[0]))<1e-4 && Math.abs(c.lat-Number(r.cand.split('|')[1]))<1e-4;});
+
+  // 关掉：恢复全部
+  btn().click();
+  await sleep(250);
+  const rows2=trs().length, label3=btn().textContent.trim();
+
+  // 别的页签不该露这个按钮
+  document.querySelector('#tb-tabs button[data-tab="units"]').click();
+  await sleep(200);
+  const hiddenElsewhere=btn().classList.contains('hidden');
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  await sleep(200);
+  return {shown,label0,label1,label2,label3,rows0,rows1:rows1.length,rows2,total,n0,n1,
+    m0:m0?Number(m0[1]):null,m1:m1?Number(m1[1]):null,note1,idxOk,hiddenElsewhere};})()`);
+check('情景页签有「只看视野」按钮，且**按钮上的数量 == 独立复算的视野内候选数**',
+  s39.shown && s39.m0 === s39.n0 && s39.n0 <= s39.total,
+  `按钮「${s39.label0}」· 独立复算视野内 ${s39.n0} / 共 ${s39.total}（初始视野覆盖全区）`);
+check('地图缩放到小区域后，按钮上的数量**跟着更新**（视野变了数量就变，不是一次性快照）',
+  s39.m1 === s39.n1 && s39.n1 < s39.n0,
+  `缩放后「${s39.label1}」· 独立复算 ${s39.n1} 个（原来 ${s39.n0} 个）`);
+check('打开筛选：表里**只剩视野内的候选**，且表注写明"筛选只动列表、指标仍是全网口径"',
+  s39.rows1 === s39.n1 && s39.rows1 < s39.total
+    && /已按当前地图视野筛选/.test(s39.note1) && /全网/.test(s39.note1),
+  `行数 ${s39.rows0} → ${s39.rows1}（视野内 ${s39.n1}）· 表注「${s39.note1.slice(0, 60)}…」`);
+check('筛选后 **B 编号仍对应原数组下标**（`B-007` 永远指同一个候选点，不跟着重排）',
+  s39.idxOk,
+  `${s39.rows1} 行逐行核对 data-cand 与编号下标一致`);
+check('再点一下恢复全部；其他页签不露这个按钮（跨页签误用没有入口）',
+  s39.rows2 === s39.total && /显示全部/.test(s39.label2) && /只看视野/.test(s39.label3) && s39.hiddenElsewhere,
+  `恢复后 ${s39.rows2} 行 · 按钮「${s39.label3}」· 在「经营单元」页签隐藏=${s39.hiddenElsewhere}`);
+
+
+
+// ===================== 40. 情景候选散点图（受益面积 × 平均节省 + 帕累托前沿） =====================
+console.log('\n=== 40. 情景候选散点图（帕累托前沿） ===');
+await boot(1440, 900);
+const s40 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  document.getElementById('btn-drawer').click();
+  await sleep(350);
+  // 抽屉要**跟随 strip 的页签**打开（停在情景推演点数据视图，就该看到情景这张表）
+  const drawerFollows=ui.drawerTab==='scenario';
+  const wrap=document.getElementById('dw-chart-wrap');
+  const cvs=document.getElementById('dw-chart');
+  const cap=wrap.querySelector('.dw-chart-cap');
+  const capNow=cap?.textContent??'NONE';   // ⚠️ 必须**此刻**读：后面切页签会（正确地）把说明清掉
+  const diag={capNow,caps:document.querySelectorAll('.dw-chart-cap').length,
+    kids:[...wrap.children].map(e=>e.className||e.tagName).join('|'),
+    html:wrap.innerHTML.replace(/\s+/g,' ').slice(0,150)};
+  const info=ui.drawerChartInfo&&{kind:ui.drawerChartInfo.kind,n:ui.drawerChartInfo.n,front:ui.drawerChartInfo.front,col:ui.drawerChartInfo.col};
+  // 独立复算帕累托前沿（x、y 都越大越好；不被任何点同时超过）
+  const P0=a.scenario.candidates.map(c=>({x:c.improved_ha,y:c.avg_gain_min}));
+  const frontIdx=P0.map((_,i)=>i).filter(i=>!P0.some((q,j)=>j!==i&&q.x>=P0[i].x&&q.y>=P0[i].y&&(q.x>P0[i].x||q.y>P0[i].y)));
+  // 画上去了没有：总墨迹 + 前沿环的颜色像素
+  const px=(fill)=>[...cvs.getContext('2d').getImageData(0,0,cvs.width,cvs.height).data];
+  const d=px();
+  let ink=0,warn=0;
+  const tap=(dd)=>{let w=0,k=0; for(let i=0;i<dd.length;i+=4){ if(dd[i+3]>0) k++;
+    if(dd[i]>150&&dd[i+1]<120&&dd[i+2]<80&&dd[i+3]>150) w++; } return {w,k};};
+  let t=tap(d); ink=t.k; warn=t.w;
+  // 自校准：同一批点**画前沿 / 不画前沿**各来一次 —— 不设魔法阈值，只问"前沿到底画了没有"
+  const hash=(dd)=>{let h=0; for(let i=0;i<dd.length;i+=997) h=(h*31+dd[i])|0; return h;};
+  const withFront=hash(d);
+  const CH=ui.charts;
+  const meta2=CH.scatter(cvs,P0.map(p=>({x:p.x,y:p.y})),{height:200,xLabel:'x',yLabel:'y'});
+  const withArea=hash(cvs.getContext('2d').getImageData(0,0,cvs.width,cvs.height).data);
+  CH.scatter(cvs,P0.map(p=>({x:p.x,y:p.y})),{height:200,xLabel:'x',yLabel:'y',showFront:false});
+  const noFront=tap(cvs.getContext('2d').getImageData(0,0,cvs.width,cvs.height).data);
+  const hashNoFront=hash(cvs.getContext('2d').getImageData(0,0,cvs.width,cvs.height).data);
+  const maxAreaOnFront=frontIdx.includes(P0.findIndex(p=>p.x===Math.max(...P0.map(q=>q.x))));
+  // 切**抽屉的**页签：散点说明必须被清掉（说明与图同一个容器 ⇒ 换图不能留上一张的说明）
+  document.querySelector('#dw-tabs button[data-tab="units"]').click();
+  await sleep(300);
+  const capAfter=(wrap.querySelector('.dw-chart-cap')?.textContent??'');
+  const kindAfter=ui.drawerChartInfo?.kind??null;
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  await sleep(300);
+  return {diag,drawerFollows,shown:!wrap.classList.contains('hidden'),cap:cap?cap.textContent:'',info,
+    withFront,hashNoFront,warnNoFront:noFront.w,inkNoFront:noFront.k,meta2Front:meta2.frontIdx.length,
+    nCand:P0.length,expFront:frontIdx.length,nFronts:new Set(P0.map(p=>p.x+':'+p.y)).size,
+    ink,warn,maxAreaOnFront,capAfter,kindAfter};})()`);
+check('打开数据视图时**抽屉跟随当前页签**（停在「情景推演」就该看到情景这张表）',
+  s40.drawerFollows === true, `drawerTab=${s40.info?.kind ? 'scenario' : '?'}（跟随=${s40.drawerFollows}）`);
+check('情景推演抽屉里画的是**散点图**（受益面积 × 平均节省），并有与图同处的说明行',
+  s40.shown && s40.info?.kind === 'scatter' && s40.info.n === s40.nCand
+    && /散点图/.test(s40.diag.capNow) && /帕累托前沿/.test(s40.diag.capNow) && /面积最大 ≠ 最划算/.test(s40.diag.capNow),
+  `kind=${s40.info?.kind} · ${s40.info?.n} 点 · 说明「${String(s40.diag.capNow).slice(0, 78)}…」`);
+check('**帕累托前沿的个数 == 独立复算**（不被动点同时超过的那些；判断逻辑与判据各写一遍）',
+  s40.info?.front === s40.expFront,
+  `图上 ${s40.info?.front} 个 · 独立复算 ${s40.expFront} 个 / 共 ${s40.nCand} 个候选（去重后 ${s40.nFronts} 个不同位置）`);
+check('散点**真的画上去了**：有墨迹，且"画前沿/不画前沿"两种画面的像素确实不同（前沿不是只返回了个数字）',
+  s40.ink > 2000 && s40.warn > 0 && s40.warnNoFront === 0 && s40.withFront !== s40.hashNoFront
+    && s40.meta2Front === s40.expFront,
+  `不透明像素 ${(s40.ink / 1000).toFixed(1)}k · 前沿色像素 ${s40.warn}（关掉前沿后 ${s40.warnNoFront}）`
+    + ` · 两种画面不同=${s40.withFront !== s40.hashNoFront} · 纯函数复算前沿 ${s40.meta2Front} 个`);
+check('换页签后**散点说明被清掉**（屏幕上的说明必须跟着图走，不能留上一张的）',
+  !/散点图/.test(s40.capAfter) && s40.kindAfter !== 'scatter',
+  `换到「经营单元」后说明「${s40.capAfter.slice(0, 40)}」· kind=${s40.kindAfter}`);
+check('图中信息可读性：**受益面积最大的候选在前沿上**（x 最大的点不可能被同时超过，除非位置重复）',
+  s40.maxAreaOnFront === true,
+  `最大受益面积那一个在前沿=${s40.maxAreaOnFront}（共 ${s40.nCand} 个候选）`);
+// 截图前**切回情景**（否则拍到的是刚切走的另一张图 —— 这个坑本轮已经踩过一次）
+await ev(`(async()=>{const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
+  await sleep(250); return true;})()`);
+await shot('dw-chart-情景散点图-1440x900');
 
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

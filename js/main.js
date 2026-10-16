@@ -444,7 +444,7 @@ try {
     };
   }
 
-  const state = { day: 0, variable: 'progress', playing: false, daysPerSec: 4 };
+  const state = { day: 0, variable: 'progress', playing: false, daysPerSec: 4, scenarioViewOnly: false };
 
   // ==================== 导出（CSV / PNG） ====================
   const csvCell = (v) => {
@@ -575,6 +575,17 @@ try {
   });
 
   // 地图点选：只在「情景推演」页签激活时接管点击（否则点地块应该是"选中地块"）
+  /*
+   * 地图平移/缩放后：按钮上的"视野内 N 个"要跟着更新；开着筛选时表也要跟着视野走。
+   * 加 250ms 防抖 —— 拖地图会连续触发 moveend，每帧重排 154 行表会卡。
+   */
+  let moveTimer = 0;
+  map.map.on('moveend zoomend', () => {
+    ui.renderScenarioViewBtn();
+    if (!state.scenarioViewOnly) return;
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => ui.renderTables(), 250);
+  });
   map.map.on('click', (e) => {
     if (ui.activeTable === 'scenario') pickScenario(e.latlng);
   });
@@ -971,6 +982,33 @@ try {
       // 情景推演：候选点排行表要"整份离线数据"，页面只映射不改算
       onChartData: () => buildChartData(),
       onScenarioCandidates: () => scenarioFile.candidates,
+      /*
+       * 候选点表：**按当前视野筛**（"该建在哪"通常先看一片区域，154 个候选逐一看太慢）。
+       *
+       * 筛选在数据侧做（UI 不筛、只渲染）。**指标（受益面积/平均节省/盲区…）是离线按全网重算的** ——
+       * 视野只决定"先看哪几个候选"，被筛掉的行不是被删掉的数据。所以表注里必须写明这一点，
+       * 否则读的人会以为"平均节省"也是视野内重算的。
+       *
+       * 返回的条目带**原始下标** `i`：行标签 `B-007` 必须永远对应同一个候选点，
+       * 筛选后重排下标会让编号跟着漂（这是"筛完行号变了"的经典坑）。
+       */
+      onScenarioList: () => {
+        const b = map.map.getBounds();
+        const inView = (c) => c.lat <= b.getNorth() && c.lat >= b.getSouth()
+          && c.lon <= b.getEast() && c.lon >= b.getWest();
+        const all = scenarioFile.candidates.map((c, i) => ({ i, c }));
+        const inside = all.filter((e) => inView(e.c));
+        return {
+          total: all.length, inView: inside.length, viewOnly: !!state.scenarioViewOnly,
+          list: state.scenarioViewOnly ? inside : all,
+          bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((v) => Number(v.toFixed(4))),
+        };
+      },
+      onToggleScenarioView: () => {
+        state.scenarioViewOnly = !state.scenarioViewOnly;
+        ui.renderTables();
+        ui.toast(state.scenarioViewOnly ? '候选点表已按当前视野筛选' : '候选点表已恢复全部', 'ok');
+      },
       onScenarioMeta: () => scenarioFile.metadata,
       onPickCandidate: (latlng) => pickScenario(latlng),
       onHighlightGrid: (gridId) => {
