@@ -95,14 +95,33 @@ HTTP_PORT = server.address().port;
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP_PORT}`,
   `--user-data-dir=${path.join(os.tmpdir(), `agri-${Date.now()}`)}`, '--no-first-run',
   '--disable-gpu', '--force-device-scale-factor=1', 'about:blank'], { stdio: 'ignore' });
-async function waitFor(fn, what) { for (let i = 0; i < 100; i++) { try { const v = await fn(); if (v) return v; } catch { /* retry */ } await sleep(200); } throw new Error(`超时：${what}`); }
+async function waitFor(fn, what) {
+  for (let i = 0; i < 100; i++) { try { const v = await fn(); if (v) return v; } catch { /* retry */ } await sleep(200); }
+  // 超时时**把页面自己的报错带上** —— 否则只剩"超时"两个字，得靠猜
+  const errs = pageErrors.slice(-4);
+  throw new Error(`超时：${what}${errs.length ? `｜页面报错：${errs.join(' ｜ ')}` : '（页面无报错）'}`);
+}
 const target = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json()).find((x) => x.type === 'page'), 'target');
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
 let id = 0;
 const pending = new Map();
+/**
+ * **页面侧的异常/报错要留下来**。
+ *
+ * 起因：页面某个模块一抛错，`__agri` 就永远不出现，`waitFor` 只报"超时：页面就绪" ——
+ * 排查得靠猜（这次就对着一个语法正确的改动猜了半天）。CDP 的 `Runtime.enable` 早就开着，
+ * 只是没人接这两类事件。超时信息里把它们打出来，问题一眼可见。
+ */
+const pageErrors = [];
 ws.addEventListener('message', (e) => {
   const m = JSON.parse(e.data);
+  if (m.method === 'Runtime.exceptionThrown') {
+    const d = m.params?.exceptionDetails ?? {};
+    pageErrors.push(`${d.text ?? '异常'} ${d.exception?.description ?? ''}`.trim().slice(0, 300));
+  } else if (m.method === 'Runtime.consoleAPICalled' && m.params?.type === 'error') {
+    pageErrors.push(`console.error ${(m.params.args ?? []).map((a) => a.value ?? a.description ?? '').join(' ')}`.slice(0, 300));
+  }
   if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); }
 });
 const send = (m, p = {}) => new Promise((resolve, reject) => { const i = ++id; pending.set(i, { resolve, reject }); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
@@ -2318,6 +2337,76 @@ check('按钮把 dataURL 交给**同一条下载通道**，文件名按图种区
     && s36.paired.cap.name.includes('情景前后对照')
     && new Set([s36.rank.cap.name, s36.stacked.cap.name, s36.paired.cap.name]).size === 3,
   [s36.rank.cap, s36.stacked.cap, s36.paired.cap].map((c) => c.name).join(' · '));
+
+
+// ===================== 37. 时序回放：曲线只画到当前日期（纵轴不跳） =====================
+console.log('\n=== 37. 时序回放：曲线裁到当前帧 ===');
+await boot(1440, 900);
+const s37 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const m=a.map;
+  // "实画"= 不透明像素：淡画的那段是 0.28 透明度，不该被算进来（否则曲线一直画满，判不出裁剪）
+  const solid=(c)=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let k=0; for(let i=3;i<d.length;i+=4) if(d[i]>=200) k++; return k;};
+  const fp=(c)=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let h=0; for(let i=0;i<d.length;i+=997) h=(h*31+d[i])|0; return h;};
+  // "画到哪"= **实画像素的右边界**：几何量，不受轴标签/抗锯齿的像素计数噪声影响
+  const OKABE=[[230,159,0],[213,94,0],[0,114,178],[0,158,115]];
+  const isSeries=(d,i)=>{ if(d[i+3]<200) return false;
+    for(const [r,g,b] of OKABE){ if(Math.abs(d[i]-r)<44&&Math.abs(d[i+1]-g)<44&&Math.abs(d[i+2]-b)<44) return true; } return false;};
+  const rightEdge=(c)=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height);
+    for(let x=d.width-1;x>=0;x--){ for(let y=30;y<d.height;y++){ if(isSeries(d.data,(y*d.width+x)*4)) return x; } } return -1;};
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,160));
+  const cvsAt=()=>document.getElementById('tb-line');   // 每次现取：重建后旧节点会被丢弃
+  const days=[Math.floor(a.model.days.length*0.2), Math.floor(a.model.days.length*0.9), a.model.days.length-1];
+  const ink=[];
+  const right=[];
+  for(const d of days){ a.setDay(d); await new Promise(r=>setTimeout(r,90));
+    ink.push(solid(cvsAt())); right.push(rightEdge(cvsAt())); }
+  // 纵轴不跳：同一份数据、不同 upto ⇒ 返回的范围必须一样（范围按**全窗口**算）
+  const CH=ui.charts;
+  const d0=ui.actions.onChartData();
+  const ser=d0.line.objects[0].series;
+  const rr=[0.2,0.9,1].map(f=>CH.lineChart(cvsAt(),ser,{height:168,upto:Math.floor(ser[0].values.length*f)}));
+  const sameRange=rr.every(r=>r.lo===rr[0].lo&&r.hi===rr[0].hi);
+
+  // 详情面板的小曲线同样裁到当前帧
+  const target=a.rows.find(r=>r.unit_id&&r.series.progress.length>2);
+  ui.select(target);
+  const det=[Math.floor(a.model.days.length*0.2), a.model.days.length-1];
+  const detInk=[];
+  for(const d of det){ a.setDay(d); ui.select(target); await new Promise(r=>setTimeout(r,90));
+    detInk.push(solid(document.getElementById('det-chart'))); }
+
+  // 端到端：点 ▶ 播放 ⇒ 日期在走、图在动
+  const t0={day:a.state.day, fp:fp(cvsAt())};
+  document.getElementById('btn-play').click();
+  await new Promise(r=>setTimeout(r,1400));
+  const playing=!!a.state?.playing || document.getElementById('btn-play').textContent.trim()==='⏸';
+  const t1={day:a.state.day, fp:fp(cvsAt())};
+  document.getElementById('btn-play').click();          // 停下
+  await new Promise(r=>setTimeout(r,120));
+  return {ink, right, days, sameRange, range:[rr[0].lo,rr[0].hi], detInk, t0, t1, playing,
+    stopped:document.getElementById('btn-play').textContent.trim()==='▶'};})()`);
+check('**回放时曲线只画到当前日期**：实画的**右边界**随回放右移、实画像素同步增多（淡画的部分不算数）',
+  s37.right[0] < s37.right[1] && s37.right[1] <= s37.right[2]
+    && s37.ink[0] < s37.ink[1] && s37.ink[2] >= s37.ink[1] * 0.95,
+  `实画右边界 ${s37.right[0]}px（${Math.round(s37.days[0] / 549 * 100)}%）→ ${s37.right[1]}px（90%）→ ${s37.right[2]}px（末帧）`
+    + ` · 实画像素 ${(s37.ink[0] / 1000).toFixed(1)}k → ${(s37.ink[1] / 1000).toFixed(1)}k → ${(s37.ink[2] / 1000).toFixed(1)}k`);
+check('**纵轴不随回放跳动**：范围按全窗口算，逐帧只有"画到哪"在变',
+  s37.sameRange, `三次调用（20%/90%/末帧）返回同一范围 ${s37.range[0].toFixed(2)}~${s37.range[1].toFixed(2)}`);
+check('详情面板的小曲线**同样裁到当前帧**（同一个 `upto` 口径，两处不会一个裁一个不裁）',
+  s37.detInk[0] < s37.detInk[1] && s37.detInk[0] > 0,
+  `实画像素 ${(s37.detInk[0] / 1000).toFixed(1)}k → ${(s37.detInk[1] / 1000).toFixed(1)}k`);
+check('**播放端到端**：点 ▶ 后日期在走、曲线跟着变；再点一下能停下（按钮回到 ▶）',
+  s37.t1.day !== s37.t0.day && s37.t1.fp !== s37.t0.fp && s37.stopped,
+  `第 ${s37.t0.day} 天 → 第 ${s37.t1.day} 天 · 画布指纹 ${s37.t0.fp} → ${s37.t1.fp} · 已停止=${s37.stopped}`);
+// 截图：停在窗口 ~35%，回放中的那一帧长什么样（实画 + 淡画的交界）
+await ev(`(()=>{const a=globalThis.__agri;
+  a.setDay(Math.floor(a.model.days.length*0.35));
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  return true;})()`);
+await sleep(250);
+await shot('charts-回放中-1440x900');
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);

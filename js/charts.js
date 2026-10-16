@@ -27,7 +27,7 @@ function prepare(canvas, height) {
  * @param series `[{ values:number[], color:string, label:string, max?:number }]`
  * @param opts.mark 当前播放到的下标（画一条竖线）
  */
-export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null, yMin = 0 } = {}) {
+export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null, yMin = 0, upto = -1 } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const pad = { l: 2, r: 2, t: 6, b: 10 };
   const n = Math.max(...series.map((s) => s.values.length), 1);
@@ -45,12 +45,28 @@ export function sparkline(canvas, series, { mark = -1, height = 76, yMax = null,
   const xOf = (i) => pad.l + ((w - pad.l - pad.r) * i) / Math.max(1, n - 1);
   const span = (max - yMin) || 1;
   const yOf = (v) => h - pad.b - ((h - pad.t - pad.b) * Math.max(0, Math.min(1, ((Number(v) || 0) - yMin) / span)));
-  for (const s of series) {
+  /*
+   * **回放时只把"已经发生"的部分画实**：`upto` = 当前帧下标，之后的部分画淡。
+   * 画淡而不是不画：坐标轴与整段形状保持稳定（每帧只画前半段的话，图会看着"断开/闪"），
+   * 但"已到 / 未到"一眼可分。纵轴范围仍按**全窗口**算，回放时不跳。
+   * 实现就两步：先把整段画淡，再把已发生的一段画实 —— 不做裁剪，简单且无副作用。
+   */
+  const seg = (s, to, alpha) => {
+    ctx.globalAlpha = alpha;
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    s.values.forEach((v, i) => (i ? ctx.lineTo(xOf(i), yOf(v)) : ctx.moveTo(xOf(i), yOf(v))));
+    for (let k = 0; k <= to; k++) (k ? ctx.lineTo(xOf(k), yOf(s.values[k])) : ctx.moveTo(xOf(k), yOf(s.values[k])));
     ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+  for (const s of series) {
+    if (upto >= 0 && upto < s.values.length - 1) {
+      seg(s, s.values.length - 1, 0.28);
+      seg(s, upto, 1);
+    } else {
+      seg(s, s.values.length - 1, 1);
+    }
   }
   if (mark >= 0 && mark < n) {
     ctx.strokeStyle = 'rgba(240,244,232,0.65)';
@@ -305,7 +321,7 @@ function axes(ctx, w, h, { yMin = 0, yMax, yTicks = 4, padL = 40, padR = 8, padT
  * @param series `[{ values:number[], color, label, width?, dash? }]`
  * @param opts.mark 当前帧下标（画一条竖线）
  */
-export function lineChart(canvas, series, { height = 180, yMin = null, yMax = null, mark = -1, unit = '', xLabels = null, fit = true } = {}) {
+export function lineChart(canvas, series, { height = 180, yMin = null, yMax = null, mark = -1, unit = '', xLabels = null, fit = true, upto = -1 } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const list = (series ?? []).filter((s) => s && Array.isArray(s.values) && s.values.length > 1);
   if (!list.length) { drawHint(ctx, w, h, '没有可画的序列'); return null; }
@@ -324,13 +340,27 @@ export function lineChart(canvas, series, { height = 180, yMin = null, yMax = nu
   const n = Math.max(...list.map((s) => s.values.length));
   const X = (i) => plot.x + (plot.w * i) / Math.max(1, n - 1);
   const Y = (v) => plot.y + plot.h - plot.h * Math.max(0, Math.min(1, ((Number(v) || 0) - lo) / vmax));
+  /*
+   * **回放**（`upto` = 当前帧下标）：已发生的一段画实、之后画淡。
+   *
+   * 为什么必须裁剪：不裁的话，回放到第 20 天时图上已经把整个窗口画完了
+   * —— 地图停在某一天、图却把"未来"也摊开，两边说的是不同的事。
+   * 为什么画淡而不是不画：整段形状与坐标轴保持稳定（每帧都重算会让纵轴跳动、图看着闪），
+   * 且"已到 / 未到"一眼可分。纵轴范围始终按**全窗口**算。
+   */
+  const nAll = (s) => s.values.length - 1;
   for (const s of list) {
-    ctx.strokeStyle = s.color;
     ctx.lineWidth = s.width ?? 1.6;
     if (s.dash) ctx.setLineDash(s.dash);
-    ctx.beginPath();
-    s.values.forEach((v, i) => { const x = X(i); const y = Y(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
-    ctx.stroke();
+    const seg = (to, alpha) => {
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = s.color;
+      ctx.beginPath();
+      for (let i = 0; i <= to; i++) { const x = X(i); const y = Y(s.values[i]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+    if (upto >= 0 && upto < nAll(s)) { seg(upto, 1); seg(nAll(s), 0.28); } else { seg(nAll(s), 1); }
     ctx.setLineDash([]);
   }
   if (mark >= 0 && mark < n) {
@@ -363,7 +393,7 @@ export function lineChart(canvas, series, { height = 180, yMin = null, yMax = nu
     }
     ctx.textAlign = 'left';
   }
-  return { n, lo, hi, zeroBase, series: list.length, unit };
+  return { n, lo, hi, zeroBase, series: list.length, unit, upto };
 }
 
 /** **柱状图**（竖直，带坐标轴）：适合看"各项谁高谁低" */

@@ -595,15 +595,18 @@ export class UI {
     if (cvs) {
       // `row.series` 是**抽样序列的数组**（main.js 归一过），不是模型原始的样本对象数组
       const step = this.model.meta.stepDays;
+      // 配色与图表面板同一套（Okabe-Ito 色盲安全）—— 同一个指标在两处不该是两种颜色
       const mini = [
-        { values: r.series.progress, color: '#c8b93a' },
-        { values: r.series.disease, color: '#c0392b' },
-        { values: r.series.water, color: '#5fa8c8' },
-        { values: r.series.fert, color: '#6fae4a' },
+        { values: r.series.progress, color: PALETTE.orange },
+        { values: r.series.disease, color: PALETTE.vermillion },
+        { values: r.series.water, color: PALETTE.blue },
+        { values: r.series.fert, color: PALETTE.green },
       ];
       // 迷你曲线也**按数据范围铺满**：固定 0~1 时四条线都挤在上半部，看不出差别
       const rr = dataRange(mini.flatMap((s) => s.values));
-      sparkline(cvs, mini, { mark: Math.round(d / step), height: 78, yMin: rr.lo, yMax: rr.hi });
+      // 详情曲线的当前帧：`d` 是模型日下标、`step` 是抽样步长，与 x 格点对齐
+      const upto = Math.round(d / step);
+      sparkline(cvs, mini, { mark: upto, upto, height: 78, yMin: rr.lo, yMax: rr.hi });
     }
   }
 
@@ -629,120 +632,147 @@ export class UI {
     const el = this.refs[refName];
     if (!el) return;
     const d = this.actions?.onChartData?.() ?? null;
-    if (!d) { el.innerHTML = '<p class="hint">图表数据未就绪</p>'; return; }
-    const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span>${note}</span></figcaption>`
-      + `<canvas id="${prefix}-${id}"></canvas></figure>`;
-    // 雷达卡片：**对比对象可选**（原来只能"vs 全场均值"，看不出两个单元的差别）
-    const radarCard = `<figure class="chart-card"><figcaption><b>④ 单元画像 vs 对比对象（雷达图）</b>`
-      + `<span id="${prefix}-radar-note">${d.notes.radar}</span></figcaption>`
-      + `<div class="chart-ctl"><label>对比 `
-      + `<select id="${prefix}-radar-compare">`
-      + d.radar.compare.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.radarIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
-      + `</select></label>`
-      + `<button type="button" class="mini" id="${prefix}-export-png" title="把这一屏四张图拼成一张 PNG 导出">导出图表</button>`
-      + `</div><canvas id="${prefix}-radar"></canvas></figure>`;
+    if (!d) { el.innerHTML = '<p class="hint">图表数据未就绪</p>'; delete el.dataset.chartSig; return; }
     /*
-     * 折线卡片额外带**序列开关**（点一下只看那一条）：四条序列量纲接近但水平不同，
-     * 合看时纵轴只能收到"四者的公共范围"（≈0~1），彼此的高低差看不出来；
-     * 只看一条时纵轴收到这一条自己的范围，形状与波动立刻清楚。
+     * **结构与逐帧分开**：面板结构（四张卡片、序列开关、两个下拉）只在"对象/对比对象变了"时重建，
+     * 换天/回放时**只重画**。
+     *
+     * 起因是回放：原来每换一天就 `innerHTML` 重建一次 —— 一秒钟重建四次画布，
+     * 而且判据抓到画布引用会失效（拿到的是刚被丢掉的那张）。数据放 `this._chartData`，
+     * 画图闭包每次现取，DOM 就只需要建一次。
      */
-    const lineCard = `<figure class="chart-card"><figcaption><b>① 时序（折线图）</b>`
-      + `<span id="${prefix}-line-note"></span></figcaption>`
-      + `<div class="chart-ctl"><label>对象 `
-      + `<select id="${prefix}-line-object">`
-      + d.line.objects.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.lineIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
-      + `</select></label></div>`
-      + `<div class="chart-toggles" id="${prefix}-line-toggles">`
-      + d.line.series.map((s, i) => `<button type="button" class="chip" data-series="${i}" style="--c:${s.color}">${s.label}</button>`).join('')
-      + `</div><canvas id="${prefix}-line"></canvas></figure>`;
-    // 指引必须放在**图的上方**：底部条只有 ~130px，放在下面用户要先滚动才能看到（等于没有）
-    const hint = refName === 'tb-body'
-      ? '<div class="chart-hint">底部条只有 ~130px 高：点右上「展开」放大，或打开右侧「数据视图」一次看全四张</div>'
-      : '';
-    el.innerHTML = hint + `<div class="chart-grid">`
-      + lineCard
-      + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
-      + card('③ 经营单元面积前 12（柱状图）', d.notes.column, 'col')
-      + radarCard
-      + `</div>`;
+    const sig = [refName,
+      d.line.objects.map((o) => o.label).join('|'),
+      d.radar.compare.map((o) => o.label).join('|')].join('#');
+    this._chartData = d;
+    if (el.dataset.chartSig !== sig) {
+      el.dataset.chartSig = sig;
+      // 可见序列集合挂在实例上（跨换天保留）；换对象时重置
+      this.chartVisible = new Set((d.line.objects[this.chartPick.lineIdx ?? 0] ?? d.line.objects[0]).series.map((_, i) => i));
+      const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span id="${prefix}-${id}-note">${note}</span></figcaption>`
+        + `<canvas id="${prefix}-${id}"></canvas></figure>`;
+      // 雷达卡片：**对比对象可选**（原来只能"vs 全场均值"，看不出两个单元的差别）
+      const radarCard = `<figure class="chart-card"><figcaption><b>④ 单元画像 vs 对比对象（雷达图）</b>`
+        + `<span id="${prefix}-radar-note">${d.notes.radar}</span></figcaption>`
+        + `<div class="chart-ctl"><label>对比 `
+        + `<select id="${prefix}-radar-compare">`
+        + d.radar.compare.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.radarIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
+        + `</select></label>`
+        + `<button type="button" class="mini" id="${prefix}-export-png" title="把这一屏四张图拼成一张 PNG 导出">导出图表</button>`
+        + `</div><canvas id="${prefix}-radar"></canvas></figure>`;
+      /*
+       * 折线卡片额外带**序列开关**（点一下只看那一条）：四条序列量纲接近但水平不同，
+       * 合看时纵轴只能收到"四者的公共范围"（≈0~1），彼此的高低差看不出来；
+       * 只看一条时纵轴收到这一条自己的范围，形状与波动立刻清楚。
+       */
+      const lineCard = `<figure class="chart-card"><figcaption><b>① 时序（折线图）</b>`
+        + `<span id="${prefix}-line-note"></span></figcaption>`
+        + `<div class="chart-ctl"><label>对象 `
+        + `<select id="${prefix}-line-object">`
+        + d.line.objects.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.lineIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
+        + `</select></label></div>`
+        + `<div class="chart-toggles" id="${prefix}-line-toggles">`
+        + d.line.series.map((s2, i) => `<button type="button" class="chip" data-series="${i}" style="--c:${s2.color}">${s2.label}</button>`).join('')
+        + `</div><canvas id="${prefix}-line"></canvas></figure>`;
+      // 指引必须放在**图的上方**：底部条只有 ~130px，放在下面用户要先滚动才能看到（等于没有）
+      const hint = refName === 'tb-body'
+        ? '<div class="chart-hint">底部条只有 ~130px 高：点右上「展开」放大，或打开右侧「数据视图」一次看全四张</div>'
+        : '';
+      el.innerHTML = hint + `<div class="chart-grid">`
+        + lineCard
+        + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
+        + card('③ 经营单元面积偏高的 12 个（柱状图）', d.notes.column, 'col')
+        + radarCard
+        + `</div>`;
+      // 序列开关：至少留一条（全关掉会变成一张空图，属于"用户操作导致的不可能状态"，直接挡住）
+      const box = document.getElementById(`${prefix}-line-toggles`);
+      if (box) {
+        box.addEventListener('click', (ev) => {
+          const b = ev.target.closest('.chip');
+          if (!b) return;
+          const i = Number(b.dataset.series);
+          if (this.chartVisible.has(i) && this.chartVisible.size === 1) { this.toast('至少留一条曲线', 'warn'); return; }
+          if (this.chartVisible.has(i)) this.chartVisible.delete(i); else this.chartVisible.add(i);
+          this.drawChartPanel(prefix);
+        });
+      }
+      const objSel = document.getElementById(`${prefix}-line-object`);
+      if (objSel) {
+        objSel.addEventListener('change', () => {
+          const idx = d.line.objects.findIndex((o) => o.key === objSel.value);
+          this.chartPick.lineIdx = idx < 0 ? 0 : idx;
+          // 换对象 ⇒ 重置序列开关（旧下标对新对象没有意义）
+          this.chartVisible = new Set((d.line.objects[this.chartPick.lineIdx] ?? d.line.objects[0]).series.map((_, i) => i));
+          this.drawChartPanel(prefix);
+        });
+      }
+      const cmpSel = document.getElementById(`${prefix}-radar-compare`);
+      if (cmpSel) {
+        cmpSel.addEventListener('change', () => {
+          const i = d.radar.compare.findIndex((o) => o.key === cmpSel.value);
+          this.chartPick.radarIdx = i < 0 ? 0 : i;
+          this.drawChartPanel(prefix);
+        });
+      }
+      // 导出图表 PNG（四张 canvas 拼一张 + 标题条：离开页面后还说得清是什么口径）
+      const btnPng = document.getElementById(`${prefix}-export-png`);
+      if (btnPng) {
+        btnPng.addEventListener('click', () => {
+          const url = this.chartPanelPng(prefix);
+          if (!url) { this.toast('图表还没画好', 'warn'); return; }
+          this.actions?.onDownloadPng?.(url, `图表_${fmtDay(this.model.days[this.day] ?? '')}.png`);
+        });
+      }
+    }
+    this.drawChartPanel(prefix);
+    const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
+    if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
+  }
+
+  /**
+   * **只重画、不重建**（换天 / 回放时走这条路）。数据每次现从 `this._chartData` 取，
+   * 所以 DOM 与事件绑定都只需要建一次。
+   */
+  drawChartPanel(prefix) {
+    const d = this._chartData;
+    if (!d) return;
+    const vis0 = this.chartVisible ?? new Set();
     // 折线：**只对可见序列收范围**（一条时收到它自己的范围，差异最清楚）；对象可切（区域 / 选中单元）
-    const objSel = document.getElementById(`${prefix}-line-object`);
-    let curSeries = (d.line.objects[this.chartPick.lineIdx ?? 0] ?? d.line.objects[0]).series;
-    const visible = new Set(curSeries.map((_, i) => i));
+    const curSeries = (d.line.objects[this.chartPick.lineIdx ?? 0] ?? d.line.objects[0]).series;
+    const vis = curSeries.filter((_, i) => vis0.has(i));
     const lineNote = document.getElementById(`${prefix}-line-note`);
-    const drawLine = () => {
-      const vis = curSeries.filter((_, i) => visible.has(i));
-      if (!vis.length) return;
-      const rr = dataRange(vis.flatMap((s) => s.values));
+    if (vis.length) {
+      const rr = dataRange(vis.flatMap((s2) => s2.values));
+      // `upto` = 当前帧：回放时只画到那一天，之后的画淡（纵轴仍按全窗口算，不跳）
       const li = lineChart(document.getElementById(`${prefix}-line`), vis,
-        { height: 168, xLabels: d.line.xLabels, mark: d.line.mark, yMin: rr.lo, yMax: rr.hi });
+        { height: 168, xLabels: d.line.xLabels, mark: d.line.mark, upto: d.line.mark, yMin: rr.lo, yMax: rr.hi });
       if (lineNote) {
         lineNote.textContent = `${d.notes.line.split(' · 纵轴')[0]}`
           + (li && !li.zeroBase ? ` · 纵轴 ${rr.lo.toFixed(2)}~${rr.hi.toFixed(2)}（**非零基**：为看清差异）` : ' · 纵轴 0 起（可见序列的实际范围就是如此）');
       }
-      const box = document.getElementById(`${prefix}-line-toggles`);
-      if (box) for (const b of box.querySelectorAll('.chip')) b.classList.toggle('off', !visible.has(Number(b.dataset.series)));
-    };
+    } else if (lineNote) {
+      lineNote.textContent = d.notes.line.split(' · 纵轴')[0];
+    }
     const box = document.getElementById(`${prefix}-line-toggles`);
-    if (box) {
-      box.addEventListener('click', (ev) => {
-        const b = ev.target.closest('.chip');
-        if (!b) return;
-        const i = Number(b.dataset.series);
-        // 至少留一条：全关掉会变成一张空图（"用户操作导致的不可能状态"直接挡住）
-        if (visible.has(i) && visible.size === 1) { this.toast('至少留一条曲线', 'warn'); return; }
-        if (visible.has(i)) visible.delete(i); else visible.add(i);
-        drawLine();
-      });
-    }
-    drawLine();
-    if (objSel) {
-      objSel.addEventListener('change', () => {
-        const idx = d.line.objects.findIndex((o) => o.key === objSel.value);
-        this.chartPick.lineIdx = idx < 0 ? 0 : idx;
-        curSeries = (d.line.objects[this.chartPick.lineIdx] ?? d.line.objects[0]).series;
-        // 换对象 ⇒ 重置序列开关（旧下标对新对象没有意义）
-        visible.clear();
-        curSeries.forEach((_, i) => visible.add(i));
-        const box2 = document.getElementById(`${prefix}-line-toggles`);
-        if (box2) box2.querySelectorAll('.chip').forEach((b) => b.classList.toggle('off', false));
-        drawLine();
-      });
-    }
+    if (box) for (const b of box.querySelectorAll('.chip')) b.classList.toggle('off', !vis0.has(Number(b.dataset.series)));
     pieChart(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
     columnChart(document.getElementById(`${prefix}-col`), d.column.items,
       { height: 168, unit: d.column.unit, rotateLabels: true, labelValues: true });
     // 雷达：画「单元画像 vs 对比对象」（对比对象用下拉选，默认全场均值）
-    const cmpSel = document.getElementById(`${prefix}-radar-compare`);
-    const drawRadar = () => {
-      const pick = d.radar.series[0];
-      const other = d.radar.compare[this.chartPick.radarIdx ?? 0] ?? d.radar.compare[0];
-      if (!pick || !other) return;
+    const pick = d.radar.series[0];
+    const other = d.radar.compare[this.chartPick.radarIdx ?? 0] ?? d.radar.compare[0];
+    if (pick && other) {
       radarChart(document.getElementById(`${prefix}-radar`),
         { axes: d.radar.dims, series: [pick, { label: other.label, color: PALETTE.orange, fill: 'rgba(230,159,0,0.16)', values: other.values }] },
         { height: 188 });
-    };
-    if (cmpSel) {
-      cmpSel.addEventListener('change', () => {
-        const i = d.radar.compare.findIndex((o) => o.key === cmpSel.value);
-        this.chartPick.radarIdx = i < 0 ? 0 : i;
-        drawRadar();
-      });
     }
-    drawRadar();
-    // 导出图表 PNG（四张 canvas 拼一张 + 标题条：离开页面后还说得清是什么口径）
-    const btnPng = document.getElementById(`${prefix}-export-png`);
-    if (btnPng) {
-      btnPng.addEventListener('click', () => {
-        const url = this.chartPanelPng(prefix);
-        if (!url) { this.toast('图表还没画好', 'warn'); return; }
-        const day = fmtDay(this.model.days[this.day] ?? '');
-        this.actions?.onDownloadPng?.(url, `图表_${day}.png`);
-      });
-    }
-    const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
-    if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
+    // 图注：换天时日期/分维计数会变，逐帧刷新（结构不动）
+    const setNote = (id, txt) => { const n = document.getElementById(`${prefix}-${id}-note`); if (n) n.textContent = txt; };
+    setNote('pie', d.notes.pie);
+    setNote('col', d.notes.column);
+    setNote('radar', d.notes.radar);
   }
+
 
   /** 切换表格页签（底部条页签 / 窄屏「更多」下拉 / 抽屉页签都走它，避免三处逻辑各写一遍） */
   setTable(key, { drawer = false } = {}) {
