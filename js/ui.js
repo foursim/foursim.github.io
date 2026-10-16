@@ -8,7 +8,7 @@
  *    避免"测量滞后期间面板被底部条压住、按钮点不到"。
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
-import { THEME, cssVar } from './theme.js';
+import { THEME, cssVar, PALETTE } from './theme.js';
 import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange } from './charts.js';
 
 const LAYERS = [
@@ -128,6 +128,9 @@ export class UI {
     this.colHidden = UI.loadColHidden();
     /** 当前抽屉里的图（判据与导出要用它核对） */
     this.drawerChartInfo = null;
+    /** 图表面板里用户的选择（换天重画时不该被重置） */
+    this.chartPick = { lineIdx: 0, radarIdx: 0 };
+
     /** 离线透视视图（data/pivot.json）与当前选中的那个 */
     this.pivotData = null;
     this.pivotView = 0;
@@ -617,13 +620,26 @@ export class UI {
     if (!d) { el.innerHTML = '<p class="hint">图表数据未就绪</p>'; return; }
     const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span>${note}</span></figcaption>`
       + `<canvas id="${prefix}-${id}"></canvas></figure>`;
+    // 雷达卡片：**对比对象可选**（原来只能"vs 全场均值"，看不出两个单元的差别）
+    const radarCard = `<figure class="chart-card"><figcaption><b>④ 单元画像 vs 对比对象（雷达图）</b>`
+      + `<span id="${prefix}-radar-note">${d.notes.radar}</span></figcaption>`
+      + `<div class="chart-ctl"><label>对比 `
+      + `<select id="${prefix}-radar-compare">`
+      + d.radar.compare.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.radarIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
+      + `</select></label>`
+      + `<button type="button" class="mini" id="${prefix}-export-png" title="把这一屏四张图拼成一张 PNG 导出">导出图表</button>`
+      + `</div><canvas id="${prefix}-radar"></canvas></figure>`;
     /*
      * 折线卡片额外带**序列开关**（点一下只看那一条）：四条序列量纲接近但水平不同，
      * 合看时纵轴只能收到"四者的公共范围"（≈0~1），彼此的高低差看不出来；
      * 只看一条时纵轴收到这一条自己的范围，形状与波动立刻清楚。
      */
-    const lineCard = `<figure class="chart-card"><figcaption><b>① 区域时序（折线图）</b>`
+    const lineCard = `<figure class="chart-card"><figcaption><b>① 时序（折线图）</b>`
       + `<span id="${prefix}-line-note"></span></figcaption>`
+      + `<div class="chart-ctl"><label>对象 `
+      + `<select id="${prefix}-line-object">`
+      + d.line.objects.map((o, i) => `<option value="${o.key}"${i === (this.chartPick.lineIdx ?? 0) ? ' selected' : ''}>${o.label}</option>`).join('')
+      + `</select></label></div>`
       + `<div class="chart-toggles" id="${prefix}-line-toggles">`
       + d.line.series.map((s, i) => `<button type="button" class="chip" data-series="${i}" style="--c:${s.color}">${s.label}</button>`).join('')
       + `</div><canvas id="${prefix}-line"></canvas></figure>`;
@@ -635,13 +651,15 @@ export class UI {
       + lineCard
       + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
       + card('③ 经营单元面积前 12（柱状图）', d.notes.column, 'col')
-      + card('④ 单元画像 vs 全场均值（雷达图）', d.notes.radar, 'radar')
+      + radarCard
       + `</div>`;
-    // 折线：**只对可见序列收范围**（一条时收到它自己的范围，差异最清楚）
-    const visible = new Set(d.line.series.map((_, i) => i));
+    // 折线：**只对可见序列收范围**（一条时收到它自己的范围，差异最清楚）；对象可切（区域 / 选中单元）
+    const objSel = document.getElementById(`${prefix}-line-object`);
+    let curSeries = (d.line.objects[this.chartPick.lineIdx ?? 0] ?? d.line.objects[0]).series;
+    const visible = new Set(curSeries.map((_, i) => i));
     const lineNote = document.getElementById(`${prefix}-line-note`);
     const drawLine = () => {
-      const vis = d.line.series.filter((_, i) => visible.has(i));
+      const vis = curSeries.filter((_, i) => visible.has(i));
       if (!vis.length) return;
       const rr = dataRange(vis.flatMap((s) => s.values));
       const li = lineChart(document.getElementById(`${prefix}-line`), vis,
@@ -666,10 +684,50 @@ export class UI {
       });
     }
     drawLine();
+    if (objSel) {
+      objSel.addEventListener('change', () => {
+        const idx = d.line.objects.findIndex((o) => o.key === objSel.value);
+        this.chartPick.lineIdx = idx < 0 ? 0 : idx;
+        curSeries = (d.line.objects[this.chartPick.lineIdx] ?? d.line.objects[0]).series;
+        // 换对象 ⇒ 重置序列开关（旧下标对新对象没有意义）
+        visible.clear();
+        curSeries.forEach((_, i) => visible.add(i));
+        const box2 = document.getElementById(`${prefix}-line-toggles`);
+        if (box2) box2.querySelectorAll('.chip').forEach((b) => b.classList.toggle('off', false));
+        drawLine();
+      });
+    }
     pieChart(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
     columnChart(document.getElementById(`${prefix}-col`), d.column.items,
       { height: 168, unit: d.column.unit, rotateLabels: true, labelValues: true });
-    radarChart(document.getElementById(`${prefix}-radar`), { axes: d.radar.dims, series: d.radar.series }, { height: 188 });
+    // 雷达：画「单元画像 vs 对比对象」（对比对象用下拉选，默认全场均值）
+    const cmpSel = document.getElementById(`${prefix}-radar-compare`);
+    const drawRadar = () => {
+      const pick = d.radar.series[0];
+      const other = d.radar.compare[this.chartPick.radarIdx ?? 0] ?? d.radar.compare[0];
+      if (!pick || !other) return;
+      radarChart(document.getElementById(`${prefix}-radar`),
+        { axes: d.radar.dims, series: [pick, { label: other.label, color: PALETTE.orange, fill: 'rgba(230,159,0,0.16)', values: other.values }] },
+        { height: 188 });
+    };
+    if (cmpSel) {
+      cmpSel.addEventListener('change', () => {
+        const i = d.radar.compare.findIndex((o) => o.key === cmpSel.value);
+        this.chartPick.radarIdx = i < 0 ? 0 : i;
+        drawRadar();
+      });
+    }
+    drawRadar();
+    // 导出图表 PNG（四张 canvas 拼一张 + 标题条：离开页面后还说得清是什么口径）
+    const btnPng = document.getElementById(`${prefix}-export-png`);
+    if (btnPng) {
+      btnPng.addEventListener('click', () => {
+        const url = this.chartPanelPng(prefix);
+        if (!url) { this.toast('图表还没画好', 'warn'); return; }
+        const day = fmtDay(this.model.days[this.day] ?? '');
+        this.actions?.onDownloadPng?.(url, `图表_${day}.png`);
+      });
+    }
     const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
     if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
   }
@@ -824,6 +882,41 @@ export class UI {
     this.scenario = sc;
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
     this.renderTables();
+  }
+
+  /**
+   * 把「图表」面板里的四张 canvas 拼成**一张 PNG**（dataURL）。
+   *
+   * 与「导出地图」同一套做法：另起一张画布把现有 canvas 画进去 + 加标题条。
+   * 抽成纯函数是为了**可判据**（不必真去接浏览器的下载流程）。
+   */
+  chartPanelPng(prefix) {
+    const ids = ['line', 'pie', 'col', 'radar'];
+    const cs = ids.map((id) => document.getElementById(`${prefix}-${id}`)).filter(Boolean);
+    if (!cs.length) return '';
+    const w = Math.max(...cs.map((c) => c.width));
+    const rowH = Math.max(...cs.map((c) => c.height));
+    const rowsN = Math.ceil(cs.length / 2);
+    const pad = 12;
+    const head = 26;
+    const c = document.createElement('canvas');
+    c.width = w * 2 + pad * 3;
+    c.height = head + rowH * rowsN + pad * (rowsN + 1);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = cssVar('--panel', '#ffffff');
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = cssVar('--fg', '#12263f');
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    const day = fmtDay(this.model.days[this.day] ?? '');
+    ctx.fillText(`农业监测 · 常用数据图示（折线/饼/柱/雷达）　${day}`, pad, 17);
+    cs.forEach((cv, i) => {
+      const x = pad + (i % 2) * (w + pad);
+      const y = head + Math.floor(i / 2) * (rowH + pad);
+      ctx.drawImage(cv, x, y, w, rowH);
+      ctx.strokeStyle = cssVar('--line', '#d3e0ee');
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, rowH - 1);
+    });
+    return c.toDataURL('image/png');
   }
 
   /** 图表原语（挂在实例上：判据要能直接验空输入的行为，例如"空数据不画白图"） */

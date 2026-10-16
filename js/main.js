@@ -677,18 +677,64 @@ try {
   function buildChartData() {
     const reg = model.region;
     const T = lastTables ?? {};
-    // ① 折线：区域逐日太长（549 天），抽成 ~110 点再画；mark 指向当前帧
-    const step = Math.max(1, Math.round(model.days.length / 110));
+    /*
+     * ① 折线：区域逐日太长（549 天），抽成 ~80 点再画。
+     * ⚠️ 步长必须与**地块抽样序列**一致（`meta.stepDays`，默认 7 天），
+     * 否则"区域曲线"和"单元曲线"两条线的 x 格点对不上，摆在一起就是错位的。
+     */
+    const step = model.meta.stepDays || Math.max(1, Math.round(model.days.length / 110));
     const sample = (arr) => { const out = []; for (let i = 0; i < arr.length; i += step) out.push(Number(arr[i]) || 0); return out; };
     const xLabels = [];
     for (let i = 0; i < reg.progress.length; i += step) xLabels.push(fmtDay(model.days[i]));
     const mark = Math.min(xLabels.length - 1, Math.round(state.day / step));
-    const lineSeries = [
-      { label: '生长进度', color: PALETTE.orange, values: sample(reg.progress) },
-      { label: '促病指数', color: PALETTE.vermillion, values: sample(reg.disease) },
-      { label: '水分保持', color: PALETTE.blue, values: sample(reg.waterIdx) },
-      { label: '养分保持', color: PALETTE.green, values: sample(reg.fertIdx) },
+    const METRICS = [
+      { key: 'progress', label: '生长进度', color: PALETTE.orange, region: sample(reg.progress) },
+      { key: 'disease', label: '促病指数', color: PALETTE.vermillion, region: sample(reg.disease) },
+      { key: 'water', label: '水分保持', color: PALETTE.blue, region: sample(reg.waterIdx) },
+      { key: 'fert', label: '养分保持', color: PALETTE.green, region: sample(reg.fertIdx) },
     ];
+    /**
+     * 某个经营单元的抽样曲线 = 成员地块的**面积加权**均值（同一采样格点）。
+     * 与表格/地图同一条聚合口径（`AGG_RULE` 不适用：抽样序列本身就是逐地块比值）。
+     */
+    const unitSeries = (unitId) => {
+      const mem = rows.filter((r) => r.unit_id === unitId);
+      if (!mem.length) return null;
+      const n = Math.min(...mem.map((r) => r.series.progress.length));
+      const wsum = mem.reduce((a, r) => a + (r.area_ha || 0), 0) || 1;
+      const avg = (key) => {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          let s = 0;
+          let w = 0;
+          for (const r of mem) {
+            const v = r.series[key][i];
+            if (v == null || Number.isNaN(Number(v))) continue;
+            s += Number(v) * (r.area_ha || 0);
+            w += r.area_ha || 0;
+          }
+          out.push(w ? s / w : 0);
+        }
+        return out;
+      };
+      return { n, progress: avg('progress'), disease: avg('disease'), water: avg('water'), fert: avg('fert') };
+    };
+    const unitsForPick = T.units ?? [];
+    const selUnit = ui.selected?.unit_id ? unitsForPick.find((u) => u.id === ui.selected.unit_id) : null;
+    const focusUnit = selUnit ?? [...unitsForPick].sort((a, b) => (b.disease ?? 0) - (a.disease ?? 0))[0] ?? null;
+    const uSeries = focusUnit ? unitSeries(focusUnit.id) : null;
+    const lineObjects = [
+      { key: 'region', label: '区域均值', series: METRICS.map((m) => ({ label: m.label, color: m.color, values: m.region })) },
+    ];
+    if (focusUnit && uSeries) {
+      lineObjects.push({
+        key: 'unit',
+        id: focusUnit.id,
+        label: `${focusUnit.code.split('-').slice(1).join('') || focusUnit.code}${selUnit ? '（当前选中）' : '（病级最高）'}`,
+        series: METRICS.map((m) => ({ label: m.label, color: m.color, values: uSeries[m.key] })),
+      });
+    }
+    const lineSeries = lineObjects[0].series;
     // 纵轴**按数据范围铺满**：4 条曲线都在 0.2~1.0 之间，0 起时它们会被压成四条平线
     const lineRange = dataRange(lineSeries.flatMap((s) => s.values));
     // ⚠️ 图注与事实必须一致：`lo` 真的 > 0 才叫"非零基"。
@@ -761,18 +807,30 @@ try {
       ? Math.min(1, Math.max(0, (v - dimLo[k]) / dimSpan[k]))
       : 0.5));
     return {
-      line: { unit: '', series: lineSeries, xLabels, mark, yMin: lineRange.lo, yMax: lineRange.hi },
+      line: { unit: '', series: lineSeries, objects: lineObjects, xLabels, mark, yMin: lineRange.lo, yMax: lineRange.hi },
       pie: { unit: 'ha', items: pie },
       column: { unit: 'ha', items: column },
       radar: {
         dims,
+        /* 对比对象可选：全场均值 / 病级最高 / 病级最低 / 面积最大（都按同一套归一，才可比） */
+        compare: [
+          { key: 'avg', label: '全场均值（面积加权）', values: norm(allVec) },
+          ...[['worst', '病级最高', (a, b) => (b.disease ?? 0) - (a.disease ?? 0)],
+            ['best', '病级最低', (a, b) => (a.disease ?? 0) - (b.disease ?? 0)],
+            ['biggest', '面积最大', (a, b) => (b.area ?? 0) - (a.area ?? 0)]]
+            .map(([key, label, cmp]) => {
+              const u = [...units].sort(cmp)[0];
+              return u ? { key, label: `${label} ${u.code.split('-').slice(1).join('') || u.code}`, values: norm(good(u)) } : null;
+            }).filter(Boolean),
+        ],
         series: pick ? [
           { label: `${pick.code}${sel ? '（当前选中）' : '（病级最高）'}`, color: PALETTE.blue, fill: 'rgba(0,114,178,0.20)', values: norm(good(pick)) },
           { label: '全场均值（面积加权）', color: PALETTE.orange, fill: 'rgba(230,159,0,0.16)', values: norm(allVec) },
         ] : [],
       },
       notes: {
-        line: `区域逐日（每 ${step} 天取一点，共 ${xLabels.length} 点）· 竖线 = 当前日期 ${fmtDay(ymdAt(state.day))}`
+        line: `逐日曲线（每 ${step} 天取一点，共 ${xLabels.length} 点）· 竖线 = 当前日期 ${fmtDay(ymdAt(state.day))}`
+          + ` · 左上「对象」可切到${lineObjects[1] ? ` **${lineObjects[1].label}**（成员地块面积加权）` : '经营单元（先在图上点一块地）'}`
           + ` · 纵轴 ${lineRange.lo.toFixed(2)}~${lineRange.hi.toFixed(2)}`
           + (lineZeroBase
             ? '（0 基：四条序列合看时的实际范围）· **点上面的序列名可以只留一条**，纵轴会自动收到它的范围，差异更清楚'
@@ -785,7 +843,9 @@ try {
         column: '到收储点最远的 12 个经营单元（分钟）· 选它是因为**真的有差距**'
           + '（面积前 12 名都在 29.5~30.6 ha，柱状图看不出东西）· **柱从 0 起（不截轴）**，'
           + '差异靠柱顶数值看清 · x 轴用短码 U0001（完整码是「行政区划码-U-序号」）',
-        radar: `5 维（维度再多就该换图）；有区分度的维度按**全场 min~max 归一**（0 = 全场最差，1 = 全场最好）⇒ 形状即"在场内位置"；`
+        radar: `左边是单元画像，右边下拉可换**对比对象**（全场均值 / 病级最高·最低 / 面积最大，都在同一套归一里）；`
+          + `5 维（维度再多就该换图）；有区分度的维度按**全场 min~max 归一**（0 = 全场最差，1 = 全场最好）`
+          + `⇒ 形状即"在场内位置"（可达性那一维按全场 **p90 封顶**，免得一个极端地块把其他单元都压在底部）；`
           + `**只看形状与各维位置，不要拿多边形面积当综合得分**（轴顺序一变面积就变，这类"面积打分"被专门质疑过）；`
           + '病级与可达性已反向（标签带 ↓）；'
           + `（${dimUsable.filter(Boolean).length} 维有区分度；另 ${dimUsable.filter((x) => !x).length} 维全场差距 < ${DIM_MIN}，**按无区分度处理**，
@@ -857,6 +917,11 @@ try {
       onScenarioLegend: (on) => ui.setScenarioLegend(on ? SCENARIO_BINS : null),
       // 页面里所有导出的下载都走这一处（透视视图导出复用同一套：纯前端 Blob，无后端）
       onDownload: (text, name) => download(new Blob([text], { type: 'text/csv;charset=utf-8' }), name),
+      /** 图表面板导出 PNG（ui 侧把四张 canvas 拼成一张图，这里只负责落盘） */
+      onDownloadPng: async (dataUrl, name) => {
+        const blob = await (await fetch(dataUrl)).blob();
+        download(blob, name);
+      },
       onExportCsv: () => exportCsv(),
       /**
        * 导出**数据视图当前看到的表**（筛选 + 排序后的行）。

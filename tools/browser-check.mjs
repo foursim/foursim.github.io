@@ -2082,8 +2082,11 @@ const s33 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   const topL=bandInk(cL,0,26), topN=bandInk(cN,0,26);
 
   const T=a.buildTables(a.state.day); const units=T.units;
+  // ⚠️ 与页面同一条规则：可达性那一维按全场 **p90 封顶**（不是 max —— 判据第一次逐值对比向量才暴露这点）
+  const ts9=[...units].map(u=>u.tMin).filter(v=>v!=null).sort((x,y)=>x-y);
+  const P90=ts9.length?ts9[Math.min(ts9.length-1,Math.floor(ts9.length*0.9))]:1;
   const good=(u)=>[Number.isFinite(u.progress)?u.progress:0,Number(u.water)||0,Number(u.fert)||0,
-    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??1)/(Math.max(...units.map(x=>x.tMin??0))||1))];
+    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??P90)/(P90||1))];
   const raw=units.map(good);
   const dimHi=[0,1,2,3,4].map(k=>Math.max(...raw.map(r=>r[k])));
   const dimLo=[0,1,2,3,4].map(k=>Math.min(...raw.map(r=>r[k])));
@@ -2164,6 +2167,99 @@ check('**颜色只是冗余编码**：饼图图注明确写"别只靠颜色读�
   /别只靠颜色读/.test(s34.notes.pie),
   `饼图图注末段「${s34.notes.pie.slice(-30)}」`);
 
+
+
+// ===================== 35. 折线跟随单元 · 雷达对比对象 · 图表导出 PNG =====================
+console.log('\n=== 35. 折线跟随单元 / 雷达对比 / 导出 PNG ===');
+await boot(1440, 900);
+const s35 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,150));
+  const d0=ui.actions.onChartData();
+  const objLabels0=d0.line.objects.map(o=>o.label);
+  const hasUnit0=d0.line.objects.length>1;
+
+  // 选一块地 ⇒ 折线对象应切到"该地块所属单元（当前选中）"
+  const target=a.rows.find(r=>r.unit_id);
+  ui.select(target);
+  await new Promise(r=>setTimeout(r,150));
+  const d1=ui.actions.onChartData();
+  const unitObj=d1.line.objects.find(o=>o.key==='unit')||{};
+  // 独立复算：该单元成员地块的**面积加权**抽样序列（与 main.js 同一口径）
+  const mem=a.rows.filter(r=>r.unit_id===unitObj.id);
+  const n=Math.min(...mem.map(r=>r.series.progress.length));
+  const wantAt=(key,i)=>{let s2=0,w=0;
+    for(const r of mem){const v=r.series[key][i]; if(v==null||Number.isNaN(Number(v))) continue;
+      s2+=Number(v)*(r.area_ha||0); w+=r.area_ha||0;}
+    return w?s2/w:0;};
+  const KEYS=['progress','disease','water','fert'];
+  const bad=[];
+  KEYS.forEach((key,k)=>{ for(const i of [0,Math.floor(n/2),n-1]){
+    const got=unitObj.series?.[k]?.values?.[i];
+    if(got===undefined||Math.abs(got-wantAt(key,i))>1e-6) bad.push(key+'#'+i); }});
+
+  // 切对象：画布内容必须变（区域 ↔ 单元）
+  const c=document.getElementById('tb-line');
+  const sig=()=>{const px=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let h=0; for(let i=0;i<px.length;i+=997) h=(h*31+px[i])|0; return h;};
+  const selObj=document.getElementById('tb-line-object');
+  const before=sig();
+  selObj.value='unit'; selObj.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,120));
+  const afterUnit=sig();
+  selObj.value='region'; selObj.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,120));
+  const backRegion=sig();
+
+  // 雷达对比对象：选"病级最低" ⇒ 必须等于该单元的归一向量（同一套归一规则）
+  const units=a.buildTables(a.state.day).units;
+  // ⚠️ 与页面同一条规则：可达性那一维按全场 **p90 封顶**（不是 max —— 判据第一次逐值对比向量才暴露这点）
+  const ts9=[...units].map(u=>u.tMin).filter(v=>v!=null).sort((x,y)=>x-y);
+  const P90=ts9.length?ts9[Math.min(ts9.length-1,Math.floor(ts9.length*0.9))]:1;
+  const good=(u)=>[Number.isFinite(u.progress)?u.progress:0,Number(u.water)||0,Number(u.fert)||0,
+    (5-(Number(u.disease)||1))/4, 1-Math.min(1,(u.tMin??P90)/(P90||1))];
+  const raw=units.map(good);
+  const dimHi=[0,1,2,3,4].map(k=>Math.max(...raw.map(r=>r[k])));
+  const dimLo=[0,1,2,3,4].map(k=>Math.min(...raw.map(r=>r[k])));
+  const spread=dimHi.map((h,k)=>h-dimLo[k]);
+  const usable=spread.map(x=>x>=0.05);
+  const normOf=(u)=>good(u).map((v,k)=>usable[k]?Math.min(1,Math.max(0,(v-dimLo[k])/spread[k])):0.5);
+  const bestU=[...units].sort((x,y)=>(x.disease??0)-(y.disease??0))[0];
+  const best=d1.radar.compare.find(o=>o.key==='best');
+  const bestOk=!!best&&best.values.every((v,k)=>Math.abs(v-normOf(bestU)[k])<1e-9);
+  const cmp=document.getElementById('tb-radar-compare');
+  const sigR=()=>{const cc=document.getElementById('tb-radar');
+    const px=cc.getContext('2d').getImageData(0,0,cc.width,cc.height).data;
+    let h=0; for(let i=0;i<px.length;i+=997) h=(h*31+px[i])|0; return h;};
+  const rBefore=sigR();
+  cmp.value='biggest'; cmp.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,120));
+  const rAfter=sigR();
+
+  // 导出 PNG：纯函数 + 按钮接线（用桩捕获参数）
+  const url=ui.chartPanelPng('tb');
+  let captured=null;
+  const orig=ui.actions.onDownloadPng;
+  ui.actions.onDownloadPng=(u,n)=>{captured={head:u.slice(0,22), len:u.length, name:n};};
+  document.getElementById('tb-export-png').click();
+  await new Promise(r=>setTimeout(r,120));
+  ui.actions.onDownloadPng=orig;
+  return {objLabels0,hasUnit0,unitLabel:unitObj.label,unitId:unitObj.id,bad,
+    before,afterUnit,backRegion, bestOk, compareN:d1.radar.compare.length,
+    rBefore,rAfter, urlHead:url.slice(0,22), urlLen:url.length, captured};})()`);
+check('**折线跟随选中的经营单元**：点一块地后对象自动切到"该单元（当前选中）"，且曲线 = 成员地块**面积加权**抽样序列（独立复算 4 指标 × 3 个格点）',
+  s35.hasUnit0 && /当前选中/.test(String(s35.unitLabel)) && s35.bad.length === 0,
+  `对象：${s35.objLabels0.join(' / ')} → 选中后「${s35.unitLabel}」· 复算不符 ${s35.bad.length} 处`);
+check('切换"对象"（区域 ↔ 单元）时**画布内容真的变了**（不是只改了下拉框）',
+  s35.before !== s35.afterUnit && s35.backRegion === s35.before,
+  `画布指纹：区域 ${s35.before} → 单元 ${s35.afterUnit} → 切回区域 ${s35.backRegion}（与初始一致）`);
+check('**雷达可选对比对象**（4 个）：选"病级最低"时那一系列 == 该单元的归一向量（与主图同一套归一规则）',
+  s35.compareN === 4 && s35.bestOk && s35.rBefore !== s35.rAfter,
+  `${s35.compareN} 个对比对象 · 病级最低的向量复算一致=${s35.bestOk} · 画布指纹 ${s35.rBefore} → ${s35.rAfter}`);
+check('**图表导出 PNG**：`chartPanelPng()` 拼出真实 PNG（dataURL 有内容），按钮点击把 dataURL 交给下载通道',
+  String(s35.urlHead).startsWith('data:image/png') && s35.urlLen > 20000
+    && s35.captured && String(s35.captured.head).startsWith('data:image/png') && /\.png$/.test(String(s35.captured.name)),
+  `${(s35.urlLen / 1024).toFixed(0)} KB PNG · 按钮交出 ${s35.captured ? `${(s35.captured.len / 1024).toFixed(0)} KB，文件名 ${s35.captured.name}` : '（没触发）'}`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
