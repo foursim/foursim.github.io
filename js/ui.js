@@ -652,7 +652,8 @@ export class UI {
       const card = (title, note, id) => `<figure class="chart-card"><figcaption><b>${title}</b><span id="${prefix}-${id}-note">${note}</span></figcaption>`
         + `<canvas id="${prefix}-${id}"></canvas></figure>`;
       // 雷达卡片：**对比对象可选**（原来只能"vs 全场均值"，看不出两个单元的差别）
-      const radarCard = `<figure class="chart-card"><figcaption><b>④ 单元画像 vs 对比对象（雷达图）</b>`
+      // 标题一律读 `d.titles.*`（与数据同处声明）—— 卡片模板里不再写第二份标题
+      const radarCard = `<figure class="chart-card"><figcaption><b>${d.titles.radar}</b>`
         + `<span id="${prefix}-radar-note">${d.notes.radar}</span></figcaption>`
         + `<div class="chart-ctl"><label>对比 `
         + `<select id="${prefix}-radar-compare">`
@@ -665,7 +666,7 @@ export class UI {
        * 合看时纵轴只能收到"四者的公共范围"（≈0~1），彼此的高低差看不出来；
        * 只看一条时纵轴收到这一条自己的范围，形状与波动立刻清楚。
        */
-      const lineCard = `<figure class="chart-card"><figcaption><b>① 时序（折线图）</b>`
+      const lineCard = `<figure class="chart-card"><figcaption><b>${d.titles.line}</b>`
         + `<span id="${prefix}-line-note"></span></figcaption>`
         + `<div class="chart-ctl"><label>对象 `
         + `<select id="${prefix}-line-object">`
@@ -680,8 +681,8 @@ export class UI {
         : '';
       el.innerHTML = hint + `<div class="chart-grid">`
         + lineCard
-        + card('② 作物面积构成（饼图）', d.notes.pie, 'pie')
-        + card('③ 经营单元面积偏高的 12 个（柱状图）', d.notes.column, 'col')
+        + card(d.titles.pie, d.notes.pie, 'pie')
+        + card(d.titles.col, d.notes.column, 'col')
         + radarCard
         + `</div>`;
       // 序列开关：至少留一条（全关掉会变成一张空图，属于"用户操作导致的不可能状态"，直接挡住）

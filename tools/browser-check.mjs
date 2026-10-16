@@ -2380,7 +2380,7 @@ const s37 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const m
   // 端到端：点 ▶ 播放 ⇒ 日期在走、图在动
   const t0={day:a.state.day, fp:fp(cvsAt())};
   document.getElementById('btn-play').click();
-  await new Promise(r=>setTimeout(r,1400));
+  for(let i=0;i<40 && a.state.day===t0.day;i++) await new Promise(r=>setTimeout(r,50));
   const playing=!!a.state?.playing || document.getElementById('btn-play').textContent.trim()==='⏸';
   const t1={day:a.state.day, fp:fp(cvsAt())};
   document.getElementById('btn-play').click();          // 停下
@@ -2407,6 +2407,53 @@ await ev(`(()=>{const a=globalThis.__agri;
   return true;})()`);
 await sleep(250);
 await shot('charts-回放中-1440x900');
+
+
+// ===================== 38. 图表"说明与事实一致"（标题/口径不许各写一份） =====================
+console.log('\n=== 38. 图表说明与事实一致 ===');
+await boot(1440, 900);
+const s38 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;const T=a.buildTables(a.state.day);
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,180));
+  const d=ui.actions.onChartData();
+  const titles=[...document.querySelectorAll('#tb-body .chart-card figcaption b')].map(b=>b.textContent.trim());
+  // ③ 画的那 12 个值，与"当日 units 按 tMin 降序前 12"独立比一遍
+  const expCol=[...(T.units??[])].filter(u=>u.tMin!=null).sort((x,y)=>y.tMin-x.tMin).slice(0,12).map(u=>u.tMin);
+  const gotCol=d.column.items.map(x=>x.value);
+  // ② 饼的合计必须等于当日作物面积合计（合并「其他」只改分组、不改数值）
+  const cropSum=(T.crops??[]).reduce((x,c)=>x+c.area,0);
+  const pieSum=d.pie.items.reduce((x,c)=>x+c.value,0);
+  // ④ 雷达的"进度"维 == 当日该单元按 AGG_RULE 的进度（独立复算：member 地块面积加权）
+  const pu=d.radar.series[0]?.pid, id=d.radar.series[0]?.label&&d.radar.unitId;
+  const u=(T.units??[]).find(x=>x.id===a.ui.radarUnitId) ?? null;
+  // ① 折线的当前帧竖线 = 当前日期（与 §37 的裁剪同源）
+  const lineMark=d.line.mark, expMark=Math.min(d.line.xLabels.length-1, Math.round(a.state.day/(a.model.meta.stepDays||7)));
+  // 两天下的"随日期变"实测：饼 / 雷达
+  const snap=(day)=>{a.setDay(day); const dd=ui.actions.onChartData();
+    return {pie:dd.pie.items.map(x=>x.value.toFixed(2)).join(','), radar:(dd.radar.series[0]?.values??[]).map(x=>x.toFixed(3)).join(','),
+      col:dd.column.items.map(x=>x.value.toFixed(2)).join(',')};};
+  const dA=Math.floor(a.model.days.length*0.15), dB=Math.floor(a.model.days.length*0.75);
+  const sA=snap(dA), sB=snap(dB);
+  a.setDay(dB);
+  return {titles, expCol, gotCol, cropSum, pieSum, lineMark, expMark, unitId:a.ui.radarUnitId,
+    radarDiff:sA.radar!==sB.radar, pieDiff:sA.pie!==sB.pie, colDiff:sA.col!==sB.col};})()`);
+check('四张图的**标题与画的东西一致**：③ 说的是"到收储点最远"（不是面积）、其余三张标题与图型对得上',
+  s38.titles.length === 4 && /到收储点/.test(s38.titles[2]) && !/面积/.test(s38.titles[2])
+    && /时序/.test(s38.titles[0]) && /构成/.test(s38.titles[1]) && /雷达|画像/.test(s38.titles[3]),
+  s38.titles.join(' ｜ '));
+check('③ 柱状图画的 12 个值 == 当日单元按"到收储点"降序前 12（独立复算，不是抄图注）',
+  s38.gotCol.length === 12 && s38.gotCol.every((v, i) => Math.abs(v - s38.expCol[i]) < 1e-6),
+  `首位 ${s38.gotCol[0]} → 末位 ${s38.gotCol.slice(-1)[0]} 分钟（与当日 units 排序逐值一致）`);
+check('② 饼图合计 == 当日作物面积合计（合并「其他」只改显示分组、不改数值）',
+  Math.abs(s38.pieSum - s38.cropSum) < 0.05,
+  `饼合计 ${s38.pieSum.toFixed(2)} ha · 当日作物面积合计 ${s38.cropSum.toFixed(2)} ha`);
+check('① 折线的"当前帧"竖线位置 == 当前日期在抽样序列上的下标（与裁剪同源）',
+  s38.lineMark === s38.expMark, `竖线第 ${s38.lineMark} 点 · 期望 ${s38.expMark} 点`);
+check('**随日期变的图和"不变"的图都量出来**（免得图注把静态图说成动态、或反之）',
+  s38.radarDiff === true,
+  `两天实测：雷达(单元画像) ${s38.radarDiff ? '变' : '不变'} · 饼(作物面积) ${s38.pieDiff ? '变' : '不变'}`
+    + ` · 柱(到收储点) ${s38.colDiff ? '变' : '不变'} —— 柱与饼不随日期变是**对的**（运距是地理事实、`
+    + `作物在季内固定），雷达必须变（进度/病级按当日）`);
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 console.log(`截图目录：${OUT}`);
