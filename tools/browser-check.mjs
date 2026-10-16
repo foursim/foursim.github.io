@@ -22,6 +22,15 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
+/*
+ * `--smoke`：只验**页面能起来**（约 5 秒）。
+ *
+ * 为什么单独要这一档：完整浏览器判据 ~5 分钟，而"改完代码先确认页面没被改坏"这件事
+ * 只需要几秒。这个缺口是真出过事的 —— 一次整段替换误删了 10 个 UI 方法，
+ * 页面直接起不来，而当时的 `npm run ready` 只跑 query/repo，照样报全绿。
+ * 所以 smoke 只做三件：页面起来、无页面异常、关键数据规模对得上。
+ */
+const SMOKE = argv.includes('--smoke');
 // 端口一律**随机**：固定端口在 CI/本机重复跑时很容易撞上"端口被占用"而假失败
 let HTTP_PORT = Number(opt('port', 0));
 const CDP_PORT = Number(opt('cdp', 9300 + Math.floor(Math.random() * 400)));
@@ -170,6 +179,7 @@ async function click(sel) {
   }
   return null;
 }
+let t0 = Date.now();          // 记一次"页面起来花了多久"（smoke 模式下会打出来）
 const boot = async (w, h, query = '') => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
   await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}${query}` });
@@ -187,6 +197,15 @@ check('页面在**子路径**下正常启动（等价 GitHub Pages 项目站）'
 check('地块图层要素数与模型一致（501 块）', meta.layers === meta.parcels && meta.parcels === 501, `${meta.layers}/${meta.parcels}`);
 check('路网与设施图层也有内容', meta.roads > 1000 && meta.poi > 100, `路 ${meta.roads} 条 / 设施 ${meta.poi} 个`);
 check('时间轴覆盖跨年窗口（含冬作物完整生育期）', meta.days === 549, `${meta.start}~${meta.end}，${meta.days} 天`);
+/*
+ * 页面**加载期**的异常必须为 0：这类错（少了个方法、模块路径写错）会让 `__agri` 永远不出现，
+ * 只表现为"超时：页面就绪" —— 现在异常被接住，这里直接断言它为空。
+ */
+check('页面加载期**无异常**（`Runtime.exceptionThrown` / `console.error` 一条都不该有）',
+  pageErrors.length === 0,
+  pageErrors.length ? pageErrors.slice(0, 3).join(' ｜ ') : `页面起来用了 ${Date.now() - t0}ms`);
+
+if (SMOKE) { report(); process.exit(fail > 0 ? 1 : 0); }
 
 // ===================== 2. 指标切换 =====================
 console.log('\n=== 2. 指标切换真的改到地图 ===');
@@ -2455,9 +2474,12 @@ check('**随日期变的图和"不变"的图都量出来**（免得图注把静�
     + ` · 柱(到收储点) ${s38.colDiff ? '变' : '不变'} —— 柱与饼不随日期变是**对的**（运距是地理事实、`
     + `作物在季内固定），雷达必须变（进度/病级按当日）`);
 
-console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
-console.log(`截图目录：${OUT}`);
-ws.close();
-chrome.kill();
-server.close();
-if (fail > 0) process.exitCode = 1;
+function report() {
+  console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
+  if (!SMOKE) console.log(`截图目录：${OUT}`);
+  ws.close();
+  chrome.kill();
+  server.close();
+  if (fail > 0) process.exitCode = 1;
+}
+report();

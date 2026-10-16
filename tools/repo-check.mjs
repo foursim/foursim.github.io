@@ -70,6 +70,16 @@ const check = (label, ok, detail = '') => {
   const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'style.css'];
   const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1]);
+  /*
+   * `ready` 是"只改了代码/页面时的第一条命令"，它**必须能发现"页面根本起不来"**。
+   * 依据：一次整段替换误删了 10 个 UI 方法，页面直接报 `UI.loadColHidden is not a function`，
+   * 而当时的 ready 只跑 query/repo，照样一片绿。这条判据钉住它：谁把 smoke 拿掉，这里就红。
+   */
+  const ready = (JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts ?? {}).ready ?? '';
+  check('`ready` 里含**页面冒烟**（`smoke:browser`）—— 否则"改坏了页面"这件事在 ready 里看不出来',
+    /smoke:browser/.test(ready),
+    ready);
+
   check('页面源码里没有外部脚本/样式引用（纯静态硬线的静态兜底）',
     ext.length === 0, ext.length ? `外链：${ext.join(',')}` : `扫描 ${files.length} 个文件：只有本地引用`);
 }
