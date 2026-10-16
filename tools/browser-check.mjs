@@ -2621,6 +2621,114 @@ await ev(`(async()=>{const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
   document.querySelector('#dw-tabs button[data-tab="scenario"]').click();
   await sleep(250); return true;})()`);
 await shot('dw-chart-情景散点图-1440x900');
+await shot('dw-chart-散点图选点-1440x900');
+
+
+// ===================== 41. 散点图：点选（真实鼠标）+ 与"只看视野"联动 =====================
+console.log('\n=== 41. 散点图点选与视野联动 ===');
+await boot(1440, 900);
+// 第一段：拿到"要点的那个点的屏幕坐标"（像素位置由图自己给出，不在判据里重推一遍）
+const s41a = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  document.getElementById('btn-drawer').click();
+  await sleep(350);
+  const cvs=document.getElementById('dw-chart');
+  const st=ui.scatterPick;
+  const kw={height:200,xLabel:'受益面积',xUnit:'ha',yLabel:'平均节省',yUnit:'min/块'};
+  const meta=ui.charts.scatter(cvs, st.points, {...kw, picked:-1});     // 重画一次拿 placed（映射只取决于范围与画布尺寸）
+  const placed=meta.placed;
+  // 挑一个**邻域内只有自己**的点：点云很密，落在别人 10px 内时"命中谁"本就由距离决定，
+  // 拿它测命中测试会把"点云密度"当成"命中测试错了"
+  let K=0, bestGap=-1;
+  for(let i=0;i<placed.length;i++){
+    const g=Math.min(...placed.filter((_,j)=>j!==i).map(q=>Math.hypot(q.px-placed[i].px,q.py-placed[i].py)));
+    if(g>bestGap){bestGap=g;K=i;}
+  }
+  const hitSelf=()=>st.hit(placed[K].px, placed[K].py, 10);
+  const rect=cvs.getBoundingClientRect();
+  return {hasState:!!st, n:st.points.length, placedN:placed.length, hitSelf:hitSelf(), hitFar:st.hit(1,1,6), bestGap,
+    K, target:{lon:a.scenario.candidates[K].lon, lat:a.scenario.candidates[K].lat},
+    x:rect.left+placed[K].px, y:rect.top+placed[K].py, inViewport:rect.top+placed[K].py<900&&rect.left+placed[K].px<1440};})()`);
+check('散点图给出**可点选的坐标与命中测试**（像素位置由图自己算，判据不重推一遍）',
+  s41a.hasState && s41a.placedN === s41a.n && s41a.hitSelf === s41a.K && s41a.hitFar === -1
+    && s41a.inViewport,
+  `${s41a.n} 个点 · 用第 ${s41a.K} 个点自己的坐标命中它=${s41a.hitSelf}（最近邻距离 ${s41a.bestGap.toFixed(1)}px）· 角落里命中=${s41a.hitFar}`
+    + ` · 点击位 (${Math.round(s41a.x)}, ${Math.round(s41a.y)}) 在视口内=${s41a.inViewport}`);
+// 真实鼠标点那个圆点
+await mouse('mouseMoved', s41a.x, s41a.y);
+await mouse('mousePressed', s41a.x, s41a.y);
+await mouse('mouseReleased', s41a.x, s41a.y);
+await sleep(500);
+const s41b = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  const cand=ui.scenario&&ui.scenario.cand;
+  const btn=document.getElementById('btn-dw-scen-view');
+  const starRow=[...document.querySelectorAll('#tb-body .tbl tbody tr')]
+    .find(tr=>/★/.test(tr.textContent));
+  const picked={lon:cand&&cand.lon, lat:cand&&cand.lat};
+  const kindAfterClick=ui.drawerChartInfo&&ui.drawerChartInfo.kind;
+  const btnAfterClick={shown:!btn.classList.contains('hidden'), label:btn.textContent.trim()};
+  // 点选后抽屉已按设计切到"前后对照" ⇒ 这里只读"选点是否真的生效"，图上的像素实验放到切回散点之后
+  return {picked, kindAfterClick, btnAfterClick,
+    starRow:starRow?starRow.children[0].textContent.trim():null,
+    scatterCleared:ui.scatterPick===null};})()`);
+check('**点散点图上的圆点 ⇒ 选中该候选点**（真实鼠标；与表格行点击同一条通道：★ + 地图高亮都跟过去）',
+  Math.abs(s41b.picked.lon - s41a.target.lon) < 1e-9 && Math.abs(s41b.picked.lat - s41a.target.lat) < 1e-9,
+  `点第 ${s41a.K} 个点 ⇒ 选中 (${s41b.picked.lon?.toFixed(5)}, ${s41b.picked.lat?.toFixed(5)})`
+    + ` = scenario.json 第 ${s41a.K} 个候选 · 表格 ★ 行「${s41b.starRow}」`);
+check('选点后抽屉**自动切到"前后对照"**（原来选点后最想知道的是"省在哪里"），并出现切回散点的按钮',
+  s41b.kindAfterClick === 'paired' && s41b.btnAfterClick.shown && /看散点图/.test(s41b.btnAfterClick.label),
+  `选点后 kind=${s41b.kindAfterClick} · 按钮「${s41b.btnAfterClick.label}」（可见=${s41b.btnAfterClick.shown}）`);
+// 点按钮切回散点：选中的那个点要画得出来
+await ev(`document.getElementById('btn-dw-scen-view').click()`);
+await sleep(350);
+const s41c = await ev(`(()=>{const ui=globalThis.__agri.ui;const cvs=document.getElementById('dw-chart');
+  const st=ui.scatterPick;
+  const vb=document.getElementById('btn-dw-scen-view');
+  const state={kind:ui.drawerChartInfo?.kind??null, view:ui.scenarioChartView??null,
+    label:vb.textContent.trim(), btnShown:!vb.classList.contains('hidden'), hasState:!!st};
+  if(!st) return {state, broken:true};
+  const kw={height:200,xLabel:'受益面积',xUnit:'ha',yLabel:'平均节省',yUnit:'min/块'};
+  const snap=()=>cvs.getContext('2d').getImageData(0,0,cvs.width,cvs.height).data;
+  const picked=ui.drawerChartInfo.picked;
+  ui.charts.scatter(cvs, st.points, {...kw, picked});
+  const a=snap();
+  ui.charts.scatter(cvs, st.points, {...kw, picked:-1});
+  const b=snap();
+  // 不猜颜色：逐像素比"画了选中点"与"没画"的两张图 —— 差多少像素就是标记实际占了多大
+  let diff=0;
+  for(let i=0;i<a.length;i+=4) if(a[i]!==b[i]||a[i+1]!==b[i+1]||a[i+2]!==b[i+2]||a[i+3]!==b[i+3]) diff++;
+  return {state, kind:ui.drawerChartInfo.kind, picked, diff};})()`);
+check('切回散点：**选中的点真的画出来了**（同一批点，逐像素比"画选中 / 不画"两张图，不猜颜色）',
+  s41c.kind === 'scatter' && s41c.picked === s41a.K && s41c.diff > 20
+    && s41c.state.btnShown === true && /看前后对照/.test(s41c.state.label),
+  `${JSON.stringify(s41c.state)} · picked=${s41c.picked} · 两张画面相差 ${s41c.diff} 像素（标记的实占面积）`);
+// 与"只看视野"联动：视野外的点画淡（分布形状不变）
+const s41d = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  const b1=a.map.map.getBounds();
+  const inView1=a.scenario.candidates.filter(c=>c.lat<=b1.getNorth()&&c.lat>=b1.getSouth()
+    &&c.lon<=b1.getEast()&&c.lon>=b1.getWest()).length;
+  const dim1=ui.drawerChartInfo&&ui.drawerChartInfo.dimmed;
+  document.getElementById('btn-scen-view').click();          // 打开"只看视野"
+  await sleep(250);
+  const c0=a.scenario.candidates[0];
+  a.map.map.setView([c0.lat,c0.lon], 15, {animate:false});
+  await sleep(600);                                          // 等 moveend 防抖重画
+  const b2=a.map.map.getBounds();
+  const inView2=a.scenario.candidates.filter(c=>c.lat<=b2.getNorth()&&c.lat>=b2.getSouth()
+    &&c.lon<=b2.getEast()&&c.lon>=b2.getWest()).length;
+  const dim2=ui.drawerChartInfo&&ui.drawerChartInfo.dimmed;
+  const total=a.scenario.candidates.length;
+  const cap=(document.querySelector('#dw-chart-wrap .dw-chart-cap')?.textContent??'');
+  document.getElementById('btn-scen-view').click();          // 关掉，恢复
+  await sleep(250);
+  return {inView1, dim1, inView2, dim2, total, capDim:/视野外 \\d+ 个已画淡/.test(cap)};})()`);
+check('**图与"只看视野"联动**：开了筛选后，视野外的候选在散点图上画淡（数量 == 独立复算的视野外个数）',
+  s41d.dim1 === 0 && s41d.dim2 === s41d.total - s41d.inView2 && s41d.dim2 > 0 && s41d.capDim,
+  `筛选关闭时淡画 ${s41d.dim1} 个（应为 0）· 缩到小区域后淡画 ${s41d.dim2} / ${s41d.total}`
+    + `（独立复算视野外 ${s41d.total - s41d.inView2} 个）· 说明行提到"已画淡"=${s41d.capDim}`);
 
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

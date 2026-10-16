@@ -117,6 +117,8 @@
     <!-- 排行条形图：表看数值、图看谁高谁低（只给排行有意义的表配） -->
     <div id="dw-chart-wrap" class="dw-chart-wrap hidden">
       <button id="btn-dw-chart-png" class="mini chart-png" title="把这张图导出成 PNG（带口径与日期）">导出图</button>
+      <!-- 情景推演：这一块画布承载两张图（散点 / 前后对照），用小按钮切换，两张都够得着 -->
+      <button id="btn-dw-scen-view" class="mini chart-png hidden" title="在「候选散点」与「前后对照」之间切换">看前后对照</button>
       <canvas id="dw-chart"></canvas>
     </div>
     <div id="dw-body" class="dw-body"></div>

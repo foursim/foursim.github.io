@@ -409,6 +409,7 @@ export function lineChart(canvas, series, { height = 180, yMin = null, yMax = nu
 export function scatter(canvas, points, {
   height = 200, xLabel = 'x', yLabel = 'y', xUnit = '', yUnit = '',
   xZero = true, yZero = true, showFront = true, dotColor = null, frontColor = null,
+  picked = -1, pickedColor = null,
 } = {}) {
   const { ctx, w, h } = prepare(canvas, height);
   const list = (points ?? []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
@@ -442,9 +443,20 @@ export function scatter(canvas, points, {
   // 帕累托前沿：不存在另一个点"两个目标都不差、至少一个更好"
   const frontIdx = list.map((_, i) => i).filter((i) => !list.some((q, j) => j !== i
     && q.x >= list[i].x && q.y >= list[i].y && (q.x > list[i].x || q.y > list[i].y)));
-  ctx.fillStyle = dotColor ?? cssVar('--brand', '#1a4f8a');
+  /*
+   * 点云：`dim` 的点画淡（用来表示"被当前视野筛选排除在外"）。
+   * 画淡而不是不画：整幅形状保持不变 —— 否则一缩小视野，图的分布就"变了"，读的人会以为数据变了。
+   */
+  const dot = dotColor ?? cssVar('--brand', '#1a4f8a');
+  const dim = list.filter((p) => p.dim);
+  const solid = list.filter((p) => !p.dim);
+  ctx.fillStyle = dot;
+  if (dim.length) {
+    ctx.globalAlpha = 0.18;
+    for (const p of dim) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2.2, 0, Math.PI * 2); ctx.fill(); }
+  }
   ctx.globalAlpha = 0.5;
-  for (const p of list) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2); ctx.fill(); }
+  for (const p of solid) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2.4, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 1;
   if (showFront && frontIdx.length) {
     const fc = frontColor ?? cssVar('--warn', '#b3541e');
@@ -468,7 +480,45 @@ export function scatter(canvas, points, {
     ctx.fillStyle = cssVar('--dim', '#5b6b7f');
     ctx.fillText(`○ 帕累托前沿 ${frontIdx.length} 个（不被任何点同时超过）`, plot.x + 16, plot.y + 21);
   }
-  return { n: list.length, frontIdx, xLo, xHi, yLo, yHi, zeroBase: xZero && yZero };
+  /*
+   * **选中的那一个**画大一点、加实心环：点图能选点，就得看得见"现在选的是谁"。
+   * 选中点最后画（压在点云与前沿之上，不会被盖住）。
+   */
+  if (picked >= 0 && picked < list.length) {
+    const p = list[picked];
+    const pc = pickedColor ?? cssVar('--fg', '#12263f');
+    ctx.beginPath();
+    ctx.arc(X(p.x), Y(p.y), 5.6, 0, Math.PI * 2);
+    ctx.fillStyle = pc;
+    ctx.fill();
+    // 白描边 + 外环：点云密时只靠颜色分不干净，加一圈"留白"最省事
+    ctx.strokeStyle = cssVar('--panel', '#ffffff');
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(X(p.x), Y(p.y), 8.6, 0, Math.PI * 2);
+    ctx.strokeStyle = pc;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+  /*
+   * 坐标与命中测试一起返回：**像素位置只有这张图知道**（轴范围、内边距、DPR 都在这里算过）。
+   * 让调用方自己再推一遍位置，就是"同一件事写两遍"—— 迟早对不上。
+   * `px/py` 是 **CSS 像素**（与 `offsetX/offsetY` 同一空间），可直接用于点击判定。
+   */
+  const placed = list.map((p, i) => ({ i, px: X(p.x), py: Y(p.y), lat: p.lat, lng: p.lng }));
+  const hit = (x, y, tol = 10) => {
+    let best = -1;
+    let bd = tol * tol;
+    // 严格小于：**并列时先出现的赢**（点云里两个候选落在同一像素是常事，
+    // 用 `<=` 会让"最后遍历到的那个"胜出 —— 结果随遍历顺序变，不可预期）
+    for (const q of placed) {
+      const d = (q.px - x) ** 2 + (q.py - y) ** 2;
+      if (d < bd) { bd = d; best = q.i; }
+    }
+    return best;
+  };
+  return { n: list.length, frontIdx, xLo, xHi, yLo, yHi, zeroBase: xZero && yZero, placed, hit, dimmed: dim.length, picked: picked >= 0 ? picked : -1 };
 }
 
 /** **柱状图**（竖直，带坐标轴）：适合看"各项谁高谁低" */

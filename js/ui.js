@@ -50,7 +50,7 @@ const CHART_SPEC = {
  * 五张表覆盖"结论/空间/趋势/异常"，外加一张「重点」放**带名字的业务问题**（联合查询的落地形态）。
  */
 /** 抽屉里三类上下文图的中文名（导出文件名与标题条都用它 —— 只有一处定义） */
-const DRAWER_CHART_NAME = { rank: '排行图', paired: '情景前后对照', stacked: '农事日历' };
+const DRAWER_CHART_NAME = { rank: '排行图', paired: '情景前后对照', stacked: '农事日历', scatter: '情景候选散点图' };
 
 const TABLE_TABS = [
   ['focus', '重点问题'],
@@ -131,6 +131,8 @@ export class UI {
     this.colHidden = UI.loadColHidden();
     /** 当前抽屉里的图（判据与导出要用它核对） */
     this.drawerChartInfo = null;
+    // 情景抽屉这块画布承载两张图：默认先给散点（该建在哪），选点后自动切前后对照（省在哪里）
+    this.scenarioChartView = 'scatter';
     /** 图表面板里用户的选择（换天重画时不该被重置） */
     this.chartPick = { lineIdx: 0, radarIdx: 0 };
 
@@ -158,7 +160,7 @@ export class UI {
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
       'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel', 'btn-pivot-csv',
       'btn-scen-view',
-      'btn-dw-chart-png',
+      'btn-dw-chart-png', 'btn-dw-scen-view',
       'tablebar'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
@@ -228,6 +230,24 @@ export class UI {
       if (text) this.actions?.onDownload?.(text, `透视视图_${v.id ?? 'view'}.csv`);
     });
     refs['btn-scen-view']?.addEventListener?.('click', () => this.actions?.onToggleScenarioView?.());
+    /*
+     * 散点图**点选**：点中的圆点 ⇒ 选中该候选点。
+     * 用图上返回的 `hit()` 做命中测试（像素位置只有画图那一步知道，别在别处重推一遍）；
+     * `tol = 10px`：点云密，太小的容差会"点不中"，太大又会"点一个中另一个"。
+     */
+    refs['btn-dw-scen-view']?.addEventListener?.('click', () => {
+      this.scenarioChartView = this.scenarioChartView === 'scatter' ? 'paired' : 'scatter';
+      this.renderDrawer();
+    });
+    refs['dw-chart']?.addEventListener?.('click', (ev) => {
+      const st = this.scatterPick;
+      if (!st) return;
+      // 画布宽度与存坐标时不一致 ⇒ 坐标已失效：先重画一次（下一次点击就准了）
+      if (st.w && Math.abs(ev.target.clientWidth - st.w) > 1) { this.renderDrawer(); return; }
+      const i = st.hit(ev.offsetX, ev.offsetY, 10);
+      if (i < 0) return;
+      this.actions?.onPickCandidateByIndex?.(i);
+    });
     refs['pivot-sel'].addEventListener('change', (ev) => {
       this.pivotView = Number(ev.target.value) || 0;
       this.renderTables();
@@ -838,9 +858,22 @@ export class UI {
     const wrap = this.refs['dw-chart-wrap'];
     const cvs = this.refs['dw-chart'];
     if (!wrap || !cvs) return;
+    /*
+     * 情景推演这一块画布上有**两张图**：候选散点（该建在哪）与前后对照（省在哪里）。
+     * 默认随状态走 —— 没选点看散点、选了点看前后对照（选点后最想知道"省在哪"）；
+     * 切换按钮可以把另一张调回来（否则选过点之后散点就永远看不到了）。
+     */
+    if (this.drawerTab === 'scenario') {
+      const btn = this.refs['btn-dw-scen-view'];
+      if (btn) {
+        btn.classList.toggle('hidden', !this.scenarioCompare);
+        btn.textContent = this.scenarioChartView === 'scatter' ? '看前后对照' : '看散点图';
+      }
+    }
     // 情景推演的**前后对照**：选过候选点才有，图跟着"当前选中的那个点"走
-    if (this.drawerTab === 'scenario' && this.scenarioCompare) {
+    if (this.drawerTab === 'scenario' && this.scenarioCompare && this.scenarioChartView !== 'scatter') {
       wrap.classList.remove('hidden');
+      this.scatterPick = null;
       this.setChartCaption(cvs, '');
       pairedBars(cvs, this.scenarioCompare, { unit: 'min' });
       this.drawerChartInfo = { kind: 'paired', col: '到收储点 min（现状 → 新建后）', items: this.scenarioCompare };
@@ -851,22 +884,39 @@ export class UI {
      * 选了点则被上面的"前后对照"接管（那才是那一刻该看的图）。
      */
     if (this.drawerTab === 'scenario') {
-      const cands = this.actions?.onScenarioCandidates?.() ?? [];
-      if (cands.length > 2) {
-        const meta = scatter(cvs, cands.map((c) => ({ x: c.improved_ha, y: c.avg_gain_min })), {
+      const sc = this.actions?.onScenarioScatter?.();
+      if (sc && sc.points.length > 2) {
+        /*
+         * ⚠️ 两件都必须在**作图之前**做，它们都改变画布宽度，而命中坐标与画布宽度绑定：
+         *  1) 先显示容器：`hidden` 时 `clientWidth === 0`，`prepare()` 会退回 240px 兜底宽度
+         *     —— 那时算出的坐标属于"240px 的世界"，点选永远点不中（本轮真踩了）；
+         *  2) 先建说明行：它占容器一行、也会改变宽度。
+         * 先算后改，存的坐标就是旧宽度的。
+         */
+        wrap.classList.remove('hidden');
+        this.setChartCaption(cvs, ' ');
+        const meta = scatter(cvs, sc.points, {
           height: 200, xLabel: '受益面积', xUnit: 'ha', yLabel: '平均节省', yUnit: 'min/块',
+          picked: sc.picked,
         });
         if (meta) {
+          // 点选要看这份坐标（像素位置只有这张图知道），换图时必须清掉（否则点到的是上一张图的坐标）
+          // 连画布宽度一起存：宽度变了就说明坐标失效，点选前自己复核（窗口缩放、换布局都会变）
+          this.scatterPick = { hit: meta.hit, points: sc.points, w: cvs.clientWidth };
           wrap.classList.remove('hidden');
           this.setChartCaption(cvs, `散点图：${meta.n} 个候选点 · x = 受益面积（ha，越大受益地块越多）`
             + ` · y = 平均节省（min/块，越大越划算）`
             + ` · 虚线圆点是**帕累托前沿 ${meta.frontIdx.length} 个**（不被任何点同时超过 ⇒ 其余点都有"同时更差"的问题）`
-            + ` · 表格按面积排序只能看一维，这张图回答的是"面积最大 ≠ 最划算"`);
-          this.drawerChartInfo = { kind: 'scatter', col: '受益面积 ha × 平均节省 min', n: meta.n, front: meta.frontIdx.length };
+            + (meta.dimmed ? ` · 视野外 ${meta.dimmed} 个已画淡（跟"只看视野"按钮联动，分布形状不变）` : '')
+            + ` · 表格按面积排序只能看一维，这张图回答的是"**面积最大 ≠ 最划算**"`
+            + ` · **点一下圆点可在图上选中该候选点**（选中的画大一点），表格与地图会一起跟过去`);
+          this.drawerChartInfo = { kind: 'scatter', col: '受益面积 ha × 平均节省 min', n: meta.n,
+            front: meta.frontIdx.length, picked: meta.picked, dimmed: meta.dimmed };
           return;
         }
       }
     }
+    this.scatterPick = null;
     this.setChartCaption(cvs, '');
     const spec = CHART_SPEC[this.drawerTab];
     const ci = spec ? cols.findIndex((c) => c.label === spec.col) : -1;
@@ -883,6 +933,7 @@ export class UI {
       this.drawerChartInfo = null;
       return;
     }
+    // 同①：必须在作图前显示（否则按 240px 兜底宽度画，导出/点选都会对不上）
     wrap.classList.remove('hidden');
     hbars(cvs, items, { unit: spec.col });
     // 带上 kind：'rank' = 排行图（'paired' = 前后对照、'stacked' = 堆叠柱），判据/人都能一眼分辨画的是哪种
@@ -966,8 +1017,12 @@ export class UI {
 
   setScenario(sc) {
     this.scenario = sc;
+    // 选了点 ⇒ 默认给你看"省在哪里"（这是选点后最想知道的事）；想看散点用切换按钮
+    this.scenarioChartView = 'paired';
     this.lastTablesSig = ''; // 强制重画（与表格数据的指纹无关）
     this.renderTables();
+    // 抽屉开着且正在看情景推演 ⇒ 立刻换图（散点 ⇄ 前后对照），不必等切页签
+    if (this.drawerOpen && this.drawerTab === 'scenario') this.renderDrawer();
   }
 
   /**
@@ -1081,6 +1136,15 @@ export class UI {
         : `<option value="${i}">${v.rowLabel} × ${v.colLabel}（${v.rowKeys.length}×${v.colKeys.length}）</option>`)).join('');
     }
     if (views.length) sel.value = String(Math.min(this.pivotView, views.length - 1));
+  }
+
+  /**
+   * **地图视野变了**时该同步的东西：按钮上的候选数、以及抽屉里散点图的"视野外画淡"。
+   * （只重画按钮是不够的 —— 图上的淡/实跟着视野走，不重画就还是旧视野的样子。）
+   */
+  onScenarioViewportChanged() {
+    this.renderScenarioViewBtn();
+    if (this.drawerOpen && this.drawerTab === 'scenario') this.renderDrawer();
   }
 
   /**

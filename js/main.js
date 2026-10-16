@@ -581,10 +581,11 @@ try {
    */
   let moveTimer = 0;
   map.map.on('moveend zoomend', () => {
-    ui.renderScenarioViewBtn();
+    // 按钮数量 + 抽屉里散点图的"视野外画淡"都要跟上（只更新按钮会留下旧视野的图）
+    ui.onScenarioViewportChanged();
     if (!state.scenarioViewOnly) return;
     clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => ui.renderTables(), 250);
+    moveTimer = setTimeout(() => { ui.renderTables(); ui.onScenarioViewportChanged(); }, 250);
   });
   map.map.on('click', (e) => {
     if (ui.activeTable === 'scenario') pickScenario(e.latlng);
@@ -655,6 +656,7 @@ try {
       if (d < bd) { bd = d; best = c; }
     }
     if (!best) return;
+    state.scenarioPick = best;                       // 也留在数据侧：散点图要用它标"当前选的是谁"
     ui.setScenario({ base: scenarioFile.metadata.baseline, cand: best, meta: scenarioFile.metadata });
     // **同屏对比**：把"每个地块省多少分钟"接到地图上，并自动打开情景着图层
     // （原来只有右侧表格的聚合对比，看不出"省在哪里"）
@@ -1002,6 +1004,32 @@ try {
           total: all.length, inView: inside.length, viewOnly: !!state.scenarioViewOnly,
           list: state.scenarioViewOnly ? inside : all,
           bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((v) => Number(v.toFixed(4))),
+        };
+      },
+      /*
+       * 散点图的**点数据**（x = 受益面积 ha、y = 平均节省 min/块）。
+       *
+       * - `dim`：视图外筛选开着时，**视野外**的候选画淡（图与筛选联动，但分布形状不变）；
+       * - `picked`：当前选中的候选（点图点选后要看得见选的是谁）；
+       * - 点的身份只用**下标**（数组顺序 == `scenario.json` 的候选顺序 == 行编号 `B-xxx` 的来源）：
+       *   页面上点中某个点时按这个下标回调选点，不必把坐标也传一份（同一件事写两份迟早对不上）。
+       */
+      onPickCandidateByIndex: (i) => {
+        const c = scenarioFile.candidates[i];
+        if (c) pickScenario({ lat: c.lat, lng: c.lon });
+      },
+      onScenarioScatter: () => {
+        const b = map.map.getBounds();
+        const inView = (c) => c.lat <= b.getNorth() && c.lat >= b.getSouth()
+          && c.lon <= b.getEast() && c.lon >= b.getWest();
+        const all = scenarioFile.candidates;
+        const pick = state.scenarioPick;
+        return {
+          points: all.map((c) => ({
+            x: c.improved_ha, y: c.avg_gain_min,
+            dim: state.scenarioViewOnly ? !inView(c) : false,
+          })),
+          picked: pick ? all.findIndex((c) => c === pick) : -1,
         };
       },
       onToggleScenarioView: () => {
