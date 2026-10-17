@@ -37,7 +37,7 @@ globalThis.__agriBoot = true;
 
 try {
   const [parcelsFC, roadsFC, poiFC, weatherFile, access, isochrones, unitsJson, unitsFC, gridsFC, adminFC,
-    soilFile, elevFile, villagesFC, scenarioFile] = await Promise.all([
+    soilFile, elevFile, villagesFC] = await Promise.all([
     loadJson('data/parcels.geojson'),
     loadJson('data/roads.geojson'),
     loadJson('data/poi.geojson'),
@@ -51,7 +51,6 @@ try {
     loadJson('data/soil.json'),
     loadJson('data/elevation.json'),
     loadJson('data/villages.geojson'),
-    loadJson('data/scenario.json'),
   ]);
 
   // 地图要素与模型输出按**下标对齐**（模型不关心几何，界面靠 i 索引二者）
@@ -445,6 +444,18 @@ try {
   }
 
   const state = { day: 0, variable: 'progress', playing: false, daysPerSec: 4, scenarioViewOnly: false };
+  /*
+   * 情景候选数据（194 KB）**懒加载**：它只在「情景推演」页签用得到，却原来在启动清单里，
+   * 占启动请求量的 13%。这里用**可变更的对象**接住（加载后原地填），
+   * 这样页面各处、以及调试用的 `__agri.scenario.candidates` 仍然照常可用，加载前是空数组。
+   */
+  const scenarioFile = { metadata: {}, candidates: [] };
+  let scenarioPromise = null;
+  const ensureScenario = () => (scenarioPromise ??= loadJson('data/scenario.json').then((d) => {
+    scenarioFile.metadata = d.metadata ?? {};
+    scenarioFile.candidates = d.candidates ?? [];
+    return scenarioFile;
+  }));
 
   // ==================== 导出（CSV / PNG） ====================
   const csvCell = (v) => {
@@ -648,7 +659,8 @@ try {
     })).filter((x) => x.gain > 0.001).sort((x, y) => y.gain - x.gain).slice(0, 12);
   }
 
-  function pickScenario(latlng) {
+  async function pickScenario(latlng) {
+    if (!scenarioFile.candidates.length) await ensureScenario().catch(() => {});
     let best = null;
     let bd = Infinity;
     for (const c of scenarioFile.candidates) {
@@ -943,7 +955,7 @@ try {
       // 关掉情景着色 ⇒ 图例回到当前指标的图例
       onScenarioLegend: (on) => ui.setScenarioLegend(on ? SCENARIO_BINS : null),
       // 页面里所有导出的下载都走这一处（透视视图导出复用同一套：纯前端 Blob，无后端）
-      onDownload: (text, name) => download(new Blob([text], { type: 'text/csv;charset=utf-8' }), name),
+      onDownload: (text, name, mime = 'text/csv;charset=utf-8') => download(new Blob([text], { type: mime }), name),
       /** 图表面板导出 PNG（ui 侧把四张 canvas 拼成一张图，这里只负责落盘） */
       onDownloadPng: async (dataUrl, name) => {
         const blob = await (await fetch(dataUrl)).blob();
@@ -983,6 +995,10 @@ try {
       /** 点"统计网格"一行 ⇒ 与单元同一套高亮（只换空间键为 grid_id） */
       // 情景推演：候选点排行表要"整份离线数据"，页面只映射不改算
       onChartData: () => buildChartData(),
+      onNeedScenario: () => {
+        if (scenarioFile.candidates.length) return;
+        ensureScenario().then(() => { ui.renderTables(); ui.renderDrawer(); }).catch(() => ui.toast('情景数据加载失败', 'warn'));
+      },
       onScenarioCandidates: () => scenarioFile.candidates,
       /*
        * 候选点表：**按当前视野筛**（"该建在哪"通常先看一片区域，154 个候选逐一看太慢）。
@@ -1091,7 +1107,7 @@ try {
   globalThis.__agri = { model, rows, get, map, ui, state, setDay, access, units: unitsJson, ensurePivot, colorOf,
     scenarioColor, scenarioBins: SCENARIO_BINS,
     admin: adminFC, buildTables, exportCsv, exportPng, ADMIN_CODE, theme: THEME.key,
-    scenario: scenarioFile, pickScenario };
+    scenario: scenarioFile, pickScenario, ensureScenario };
 } catch (err) {
   fatal(err);
 }

@@ -160,7 +160,7 @@ export class UI {
       'btn-drawer', 'btn-drawer-top', 'btn-dw-csv', 'btn-dw-export',
       'btn-dw-cols', 'dw-cols', 'dw-chart', 'dw-chart-wrap', 'tb-more', 'pivot-sel', 'btn-pivot-csv',
       'btn-scen-view',
-      'btn-dw-chart-png', 'btn-dw-scen-view',
+      'btn-dw-chart-png', 'btn-dw-scen-view', 'btn-report',
       'tablebar'];
     for (const id of ids) this.refs[id] = document.getElementById(id);
   }
@@ -230,6 +230,11 @@ export class UI {
       if (text) this.actions?.onDownload?.(text, `透视视图_${v.id ?? 'view'}.csv`);
     });
     refs['btn-scen-view']?.addEventListener?.('click', () => this.actions?.onToggleScenarioView?.());
+    // 报告：纯函数生成 HTML ⇒ 直接走同一条下载通道（判据验的是 HTML 本身，不是下载动作）
+    refs['btn-report']?.addEventListener?.('click', () => {
+      const html = this.reportHtml();
+      this.actions?.onDownload?.(html, `农业监测报告_${fmtDay(this.model.days[this.day] ?? '')}.html`, 'text/html');
+    });
     /*
      * 散点图**点选**：点中的圆点 ⇒ 选中该候选点。
      * 用图上返回的 `hit()` 做命中测试（像素位置只有画图那一步知道，别在别处重推一遍）；
@@ -803,6 +808,8 @@ export class UI {
   setTable(key, { drawer = false } = {}) {
     // 透视数据是**懒加载**的：第一次切到这个页签才取（首屏少一份 JSON），加载完成后再重画一次
     if (key === 'pivot') this.actions?.onNeedPivot?.();
+    // 情景候选数据也是懒加载的：第一次切到这个页签才取（首屏少 194 KB）
+    if (key === 'scenario') this.actions?.onNeedScenario?.();
     if (drawer) {
       if (this.drawerTab === key) return;
       this.actions?.onClearHighlight?.({ silent: true });
@@ -1023,6 +1030,80 @@ export class UI {
     this.renderTables();
     // 抽屉开着且正在看情景推演 ⇒ 立刻换图（散点 ⇄ 前后对照），不必等切页签
     if (this.drawerOpen && this.drawerTab === 'scenario') this.renderDrawer();
+  }
+
+  /**
+   * **一页可打印报告**（自包含 HTML 字符串，纯函数 ⇒ 判据可以直接验）。
+   *
+   * 为什么做成 HTML 而不是 PDF/Excel：
+   * - 图片是 `data:` URL ⇒ 一个文件就能发出去，**不引任何外链**（与本项目"纯静态、无外链"的硬线一致）；
+   * - 浏览器里双击就能看、Ctrl+P 就能打印，不依赖任何工具链；
+   * - 关键数、图注、口径**都在同一页**：交付给不看代码的人时，他们要知道"这些数怎么算的"。
+   *
+   * 内容取舍：区域概览（当前帧的关键数）+ 四张图的拼图 + 每张图的一句话口径 + 口径规则原文 + 数据来源。
+   * 不做"把 501 行地块全列出来" —— 那是 CSV/Excel 该干的事，报告是给人读的。
+   */
+  /**
+   * 四张图的拼图（dataURL）。页面停在别的页签时，这四张画布**并不在 DOM 里**，
+   * 直接拼会得到一张空图 —— 报告就成了"没有图的数据报告"。所以必要时**离屏临时画一份**再拼。
+   */
+  chartPanelImage() {
+    const direct = (() => { try { return this.chartPanelPng(); } catch { return ''; } })();
+    if (direct) return direct;
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:absolute;left:-9999px;top:0;width:640px;';
+    document.body.appendChild(tmp);
+    const keep = this.refs['report-tmp'];
+    this.refs['report-tmp'] = tmp;
+    let url = '';
+    // 离屏容器必须有**真实宽度**（宽度为 0 时画布退回 240px 兜底 —— 与本轮点选踩的是同一个坑）
+    try { this.renderChartPanel('report-tmp', 'rp'); url = this.chartPanelPng('rp'); } catch { url = ''; }
+    if (keep === undefined) delete this.refs['report-tmp']; else this.refs['report-tmp'] = keep;
+    tmp.remove();
+    return url;
+  }
+
+  reportHtml() {
+    const m = this.model.meta;
+    const day = fmtDay(this.model.days[this.day] ?? '');
+    const days = this.model.days.length;
+    const chart = this.chartPanelImage();
+    const overview = (this.tables?.questions ?? []).slice(0, 4)
+      .map((q) => `<li><b>${q.title}</b>：${String(q.top ?? '').replace(/</g, '&lt;')}</li>`).join('');
+    const agg = ['progress', 'disease', 'crop', 'water', 'fert']
+      .map((v) => `<li><b>${VARIABLES[v]?.label ?? v}</b>：${aggNote(v)}</li>`).join('');
+    const esc = (x) => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const dayNo = this.day + 1;
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>${esc(m.siteName)} · 农业监测报告（${esc(day)}）</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font: 13px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: #12263f; margin: 0; padding: 18px; background: #fff; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #d8e0ea; }
+  .sub { color: #5b6b7f; font-size: 12px; }
+  ul { margin: 4px 0 8px; padding-left: 20px; }
+  img { width: 100%; max-width: 100%; border: 1px solid #e3e9f0; border-radius: 4px; }
+  footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #d8e0ea; color: #5b6b7f; font-size: 11px; }
+  @media print { body { padding: 0; } .noprint { display: none; } }
+</style></head><body>
+<h1>${esc(m.siteName)} · 农业监测报告</h1>
+<div class="sub">观测日 ${esc(day)}（第 ${dayNo} / ${days} 天）· 种子 ${esc(m.seed)} · 由本项目页面直接生成（离线数据，无外部请求）</div>
+
+<h2>一、当前帧关键数</h2>
+<ul>${overview || '<li>（当前页签没有关键问题数据）</li>'}</ul>
+
+<h2>二、四张常用图</h2>
+${chart ? `<img alt="四张常用图（折线 / 饼 / 柱 / 雷达）" src="${chart}">` : '<p class="sub">图表尚未绘制</p>'}
+<div class="sub">折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像；同一指标在页面、表格、报告里用的是同一份数据（页面不做聚合）。</div>
+
+<h2>三、口径（这些数怎么算的）</h2>
+<ul>${agg}</ul>
+<div class="sub">聚合规则只在代码里写一处（geo.js 的 AGG_RULE），表格、地图、判据三方共用同一份声明。</div>
+
+<footer>地块几何 © OpenStreetMap 贡献者（ODbL）· 气象锚点 NASA POWER（MERRA-2）· 监测数据由本项目模型生成（种子 ${esc(m.seed)}）。<br>
+本报告为自包含 HTML：所有图片内嵌为 data URL，不引用任何外部资源。</footer>
+</body></html>`;
   }
 
   /**
@@ -1351,7 +1432,10 @@ export class UI {
           // 对照表：离线算好的几列并排（没有行列合计的概念，直接照抄）
           cols = v.cols.map((c) => ({ label: c }));
           rows = v.rows.map((row) => ({ cells: row.map((x) => (typeof x === 'number' ? { text: String(x), num: true } : String(x))) }));
-          note = `${v.title} · ${v.rows.length} 行 × ${v.cols.length} 列 · 离线生成，页面只查表`;
+          // **离线写好的说明要上页面**：q14 的"最堵的一天"、q15 的"为什么错峰更管用"都在 `note` 里，
+          // 原来页面只显示"离线生成，页面只查表" —— 结论明明算了、却没人看得到
+          note = `${v.title} · ${v.rows.length} 行 × ${v.cols.length} 列 · 离线生成，页面只查表`
+            + (v.note ? ` · ${v.note}` : '');
           return { cols, rows, note };
         }
         const f = (x) => (x === '' || x === null || x === undefined || Number.isNaN(Number(x)) ? '—' : Number(x).toFixed(v.decimals));
@@ -1368,7 +1452,8 @@ export class UI {
             { text: f(v.grand), num: true, cls: 'dim' },
           ],
         });
-        note = `${v.title} · ${v.agg}(${v.value}) ${v.unit} · ${v.rowKeys.length} × ${v.colKeys.length} · 离线生成，页面只查表`;
+        note = `${v.title} · ${v.agg}(${v.value}) ${v.unit} · ${v.rowKeys.length} × ${v.colKeys.length}`
+          + ` · 离线生成，页面只查表` + (v.note ? ` · ${v.note}` : '');
       }
     } else {
       const list = this.alarmsFor(d);

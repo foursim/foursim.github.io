@@ -184,6 +184,12 @@ const boot = async (w, h, query = '') => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
   await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}${query}` });
   await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
+  /*
+   * **等懒加载的数据**：情景候选（194 KB）不在启动清单里，切到「情景推演」才取。
+   * 判据里"boot 之后就能读到 154 个候选"是大量既有断言的前提，所以在这里统一等它一次
+   * （等价于"页面与它的延迟数据都就绪"）。懒加载本身由 §44 单独验（启动时确实没拉）。
+   */
+  await ev(`globalThis.__agri.ensureScenario ? globalThis.__agri.ensureScenario() : null`);
   await sleep(700);
 };
 
@@ -1316,7 +1322,7 @@ check('透视控件（视图选择器 + 导出视图）**只在抽屉的透视�
       csvHead:lines[1].split(','), csvLines:lines.length, note:document.getElementById('tb-note').textContent};})()`);
   check('页面「透视视图」也能渲染**对照表**（q12 单产两套口径）：列名与行数照离线 JSON，导出 CSV 同源',
     // 视图数写死是故意的：少一个视图（离线没生成/页面没读）必须当场红
-    list.idx >= 0 && list.kind === 'list' && list.nViews === 8
+    list.idx >= 0 && list.kind === 'list' && list.nViews === 9
       && list.head.join(',') === list.cols.join(',') && list.bodyRows === list.nRows
       && list.csvHead.join(',') === list.cols.join(',') && list.csvLines === list.nRows + 2
       && /只查表/.test(list.note),
@@ -2729,6 +2735,139 @@ check('**图与"只看视野"联动**：开了筛选后，视野外的候选在�
   s41d.dim1 === 0 && s41d.dim2 === s41d.total - s41d.inView2 && s41d.dim2 > 0 && s41d.capDim,
   `筛选关闭时淡画 ${s41d.dim1} 个（应为 0）· 缩到小区域后淡画 ${s41d.dim2} / ${s41d.total}`
     + `（独立复算视野外 ${s41d.total - s41d.inView2} 个）· 说明行提到"已画淡"=${s41d.capDim}`);
+
+
+// ===================== 42. 排产看板：q14 按日压力 + q15 错峰/增点，都在页面上 =====================
+console.log('\n=== 42. 排产看板（q14 按日压力 + q15 结论） ===');
+await boot(1440, 900);
+// 离线侧（已被 DuckDB 交叉验证过的 CSV）作为对账基准
+const q14c = fs.readFileSync('tables/query/q14_收获排产压力_按日_.csv', 'utf8').trim().split(/\r?\n/);
+const q15c = fs.readFileSync('tables/query/q15_排产建议_错峰_vs_增点_三个数_.csv', 'utf8').trim().split(/\r?\n/);
+const q15rows = q15c.slice(1).map((l) => l.split(','));
+const q14peak = q14c.slice(1).map((l) => l.split(','))
+  .reduce((a, c) => (Number(c[c.length - 1]) > Number(a[a.length - 1]) ? c : a));
+const s42 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  document.querySelector('#tb-tabs button[data-tab="pivot"]').click();
+  a.ensurePivot();
+  for(let i=0;i<60 && !ui.pivotData;i++) await sleep(100);
+  const views=ui.pivotData?.views??[];
+  const sel=document.getElementById('pivot-sel');
+  const idx=views.findIndex(v=>/排产建议/.test(v.title||''));
+  if(idx<0) return {n:views.length, idx};
+  sel.value=String(idx); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  await sleep(200);
+  const tbl=document.querySelector('#tb-body .tbl');
+  const head=[...tbl.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+  const trs=[...tbl.querySelectorAll('tbody tr')].map(tr=>[...tr.children].map(td=>td.textContent.trim()));
+  // 再切到 q14（按日压力）确认它也在页面上
+  const idx14=views.findIndex(v=>/收获排产压力/.test(v.title||''));
+  sel.value=String(idx14); sel.dispatchEvent(new Event('change',{bubbles:true}));
+  await sleep(200);
+  const tbl14=document.querySelector('#tb-body .tbl');
+  const n14=[...tbl14.querySelectorAll('tbody tr')].length;
+  const head14=[...tbl14.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+  return {n:views.length, idx, idx14, head, trs, n14, head14,
+    note14:document.querySelector('#tb-note').textContent.replace(/\s+/g,' ')};})()`);
+check('**排产建议（错峰 vs 增点）进页面**：3 行 × 4 列，逐格与离线表（已被 DuckDB 交叉验证过）一致',
+  s42.idx >= 0 && s42.head.length === 4 && s42.trs.length === q15rows.length
+    && s42.trs.every((r, i) => Math.abs(Number(String(r[1]).replace(/[^0-9.-]/g, '')) - Number(q15rows[i][1])) < 0.06
+      && Math.abs(Number(String(r[2]).replace(/[^0-9.-]/g, '')) - Number(q15rows[i][2])) < 0.002),
+  `${s42.trs.length} 行 · 表头 ${(s42.head ?? []).join('|')} · `
+    + s42.trs.map((r) => `${String(r[0]).slice(0, 6)}=${r[1]}/${r[2]}`).join(' · '));
+check('排产建议的**结论方向**在页面上读得出来：错峰的降幅 > 增点（与"堵在量不在距离"一致）',
+  s42.trs.length === 3
+    && Number(String(s42.trs[1][2]).replace(/[^0-9.-]/g, '')) > Number(String(s42.trs[2][2]).replace(/[^0-9.-]/g, '')),
+  `错峰 ${s42.trs[1]?.[2]} vs 增点 ${s42.trs[2]?.[2]}`);
+check('**按日压力表（q14）也在页面上**，且表注点出最堵的一天（与离线 CSV 的最大值一致）',
+  s42.n14 === q14c.length - 1 && s42.n14 > 3 && s42.note14.replace(/[^0-9]/g, '').includes(q14peak[0]),
+  `${s42.n14} 个收获日（离线 ${q14c.length - 1}）· 表注「${String(s42.note14).slice(0, 90)}…」`
+    + ` · 离线峰值日 ${q14peak[0]}（运力占用 ${q14peak[q14peak.length - 1]} t·min）`);
+
+
+// ===================== 43. 一页可打印报告（自包含 HTML） =====================
+console.log('\n=== 43. 可打印报告（自包含 HTML） ===');
+await boot(1440, 900);
+const s43 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  document.getElementById('btn-drawer').click();
+  await new Promise(r=>setTimeout(r,250));
+  const html=ui.reportHtml();
+  const els=[...document.querySelectorAll('#btn-report')].map(b=>({shown:!!b.offsetParent, label:b.textContent.trim()}));
+  return {len:html.length, head:html.slice(0,40),
+    hasDoctype:/^<!doctype html>/i.test(html.trim()),
+    sections:['当前帧关键数','四张常用图','口径'].filter(k=>html.includes(k)).length,
+    imgs:(html.match(/<img[^>]*>/g)||[]).length,
+    dataImgs:(html.match(/<img[^>]*src="data:image/g)||[]).length,
+    extRefs:['src="http','href="http','src="//','href="//','src="'+String.fromCharCode(47)+String.fromCharCode(47)]
+      .reduce((n,k)=>n+html.split(k).length-1,0),
+    extTags:(html.match(/<(script|link)\b/gi)||[]).length,
+    aggRule:/排除不播种/.test(html)&&/取最严重/.test(html),
+    attrs:/OpenStreetMap/.test(html)&&/NASA POWER/.test(html),
+    site:(ui.model.meta.siteName&&html.includes(ui.model.meta.siteName)),
+    day:html.includes('观测日'),
+    button:els[0]||null};})()`);
+check('报告按钮在位，`reportHtml()` 产出**完整 HTML 文档**（doctype + 三个章节）',
+  !!s43.button?.shown && /报告/.test(s43.button?.label ?? '')
+    && s43.hasDoctype && s43.sections === 3 && s43.len > 2000,
+  `按钮「${s43.button?.label}」（可见=${s43.button?.shown}）· ${s43.len} 字节 · 章节 ${s43.sections}/3`
+    + ` · 站点名/观测日在文档里=${s43.site}/${s43.day}`);
+check('报告**自包含**：图片全部是 `data:image/png` 内嵌，**没有任何外链**（src/href 里没有 //，也没有 script/link 标签）',
+  s43.imgs === 1 && s43.dataImgs === 1 && s43.extRefs === 0 && s43.extTags === 0,
+  `图片 ${s43.imgs} 张（data URL ${s43.dataImgs} 张）· 外链 ${s43.extRefs} 处 · script/link 标签 ${s43.extTags} 个`);
+check('报告里**写着口径**（进度"排除不播种"、病级"取最严重"）与数据来源（OSM / NASA POWER）',
+  s43.aggRule && s43.attrs,
+  `聚合口径原文在内=${s43.aggRule} · 数据来源在内=${s43.attrs}`);
+
+
+// ===================== 44. 审核：启动负载、耗时基线、素材规模 =====================
+console.log('\n=== 44. 审核：启动负载与耗时基线 ===');
+// 这里**不能用 boot()**：boot() 会主动等懒加载的数据（为了让别的判据确定）。
+// 本节要量的正是"启动那一刻有没有拉"，所以走一次裸导航，读到第一刻的状态再说。
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
+await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}` });
+await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
+// 启动时**不该**已经拉过情景数据（194 KB，只在情景页签用得到）
+const s44a = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+  const before=a.scenario.candidates.length;
+  // 换天耗时：取 20 天平均（UI 不做聚合，setDay 会把表格/地图/图都刷新一遍）
+  const t=[];
+  const d0=a.state.day;
+  for(let k=0;k<20;k++){const st=performance.now(); a.setDay((d0+k*7)%a.model.days.length); t.push(performance.now()-st);}
+  a.setDay(d0);
+  const avg=t.reduce((x,y)=>x+y,0)/t.length, worst=Math.max(...t);
+  const nav=performance.getEntriesByType('navigation')[0]||{};
+  // 切到「情景推演」⇒ 懒加载触发，数据到位、表也在
+  document.querySelector('#tb-tabs button[data-tab="scenario"]').click();
+  for(let i=0;i<60 && !a.scenario.candidates.length;i++) await sleep(100);
+  await sleep(300);
+  const after=a.scenario.candidates.length;
+  const rows=document.querySelectorAll('#tb-body .tbl tbody tr').length;
+  return {before, after, rows, avg, worst,
+    dom:nav.domContentLoadedEventEnd, load:nav.loadEventEnd, transfer:nav.transferSize};})()`);
+check('**情景数据懒加载**：启动时一条都没拉（`candidates=0`），切到「情景推演」才到位（154）且表照常渲染',
+  s44a.before === 0 && s44a.after === 154 && s44a.rows === 154,
+  `启动时 ${s44a.before} 条 → 切页签后 ${s44a.after} 条 · 表 ${s44a.rows} 行（少了 194 KB 的启动请求）`);
+check('**启动耗时**（导航计时，实测记录在案）：DOMContentLoaded / load 都在预算内',
+  s44a.dom > 0 && s44a.dom < 4000 && s44a.load < 6000,
+  `DOMContentLoaded ${Math.round(s44a.dom)}ms · load ${Math.round(s44a.load)}ms（预算 4000 / 6000）`);
+check('**换天耗时基线**（20 次平均）：表格 + 地图 + 图一次全刷，不能慢到影响回放（12 天/秒 ⇒ 每帧预算 83ms）',
+  s44a.avg < 80,
+  `平均 ${s44a.avg.toFixed(1)}ms（最慢 ${s44a.worst.toFixed(1)}ms）· 预算 80ms/帧`);
+// 素材规模（node 侧直接量：启动清单 + 页面代码，防止"悄悄变胖"）
+{
+  const boot = ['parcels.geojson', 'roads.geojson', 'poi.geojson', 'weather_daily.json', 'access.json',
+    'isochrones.geojson', 'units.json', 'units.geojson', 'grids.geojson', 'admin.geojson', 'soil.json',
+    'elevation.json', 'villages.geojson'];
+  const k = (f) => (fs.existsSync(f) ? fs.statSync(f).size / 1024 : 0);
+  const bootKB = boot.reduce((n, f) => n + k(`data/${f}`), 0);
+  const jsKB = fs.readdirSync('js').filter((f) => f.endsWith('.js')).reduce((n, f) => n + k(`js/${f}`), 0);
+  const lazyKB = k('data/zones.geojson');
+  check('**素材规模**在预算内：启动数据 < 1.5 MB、页面 JS < 320 KB（懒加载的大件单列）',
+    bootKB < 1500 && jsKB < 320,
+    `启动数据 ${bootKB.toFixed(0)} KB（预算 1500）· JS ${jsKB.toFixed(0)} KB（预算 320）`
+      + ` · 懒加载（不计入启动）：zones ${lazyKB.toFixed(0)} KB + scenario 194 KB + pivot 37 KB`);
+}
 
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

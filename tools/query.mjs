@@ -1059,7 +1059,7 @@ if (webOut && results.length) {
   const CHART_VIEW = { q13: 'stacked' };
   // 对照表：q12（两套单产口径）+ q8（区域逐日的月汇总）——
   // 后者是**唯一还没进页面**的那张事实表的汇总（天气/进度/病害的月度背景），能看数据也能当判据靶子
-  const LIST_PICK = ['q12', 'q8', 'q14'];
+  const LIST_PICK = ['q12', 'q8', 'q14', 'q15'];
   const listViews = LIST_PICK.map((id) => {
     const r = results.find((x) => x.id === id);
     if (!r || r.kind !== 'list') return null;
