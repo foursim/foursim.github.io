@@ -1,4 +1,9 @@
 ym,event_type,val
+2025-10,fertilize,108
+2024-04,sow,57
+2025-05,fertilize,104
+2024-09,sow,15
+2025-09,sow,13
 2024-10,sow,116
 2024-11,sow,26
 2025-11,fertilize,38
@@ -17,8 +22,3 @@ ym,event_type,val
 2025-09,harvest,144
 2025-11,sow,16
 2025-04,sow,59
-2025-10,fertilize,108
-2024-04,sow,57
-2025-05,fertilize,104
-2024-09,sow,15
-2025-09,sow,13

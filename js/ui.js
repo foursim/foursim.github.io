@@ -9,6 +9,7 @@
  */
 import { VARIABLES, legendItems, gradientCss, fmtDay, colorOf, aggNote, EVENT_STYLE } from './geo.js';
 import { THEME, cssVar, PALETTE } from './theme.js';
+import { buildReportHtml } from './report.js';
 import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange, scatter } from './charts.js';
 
 const LAYERS = [
@@ -232,7 +233,7 @@ export class UI {
     refs['btn-scen-view']?.addEventListener?.('click', () => this.actions?.onToggleScenarioView?.());
     // 报告：纯函数生成 HTML ⇒ 直接走同一条下载通道（判据验的是 HTML 本身，不是下载动作）
     refs['btn-report']?.addEventListener?.('click', () => {
-      const html = this.reportHtml();
+      const html = this.reportHtml(this.actions?.onMapImage?.() ?? '');
       this.actions?.onDownload?.(html, `农业监测报告_${fmtDay(this.model.days[this.day] ?? '')}.html`, 'text/html');
     });
     /*
@@ -1048,62 +1049,46 @@ export class UI {
    * 直接拼会得到一张空图 —— 报告就成了"没有图的数据报告"。所以必要时**离屏临时画一份**再拼。
    */
   chartPanelImage() {
+    /*
+     * 缓存：连点两次「报告」不该重画四张图。
+     * 键要含**所有影响画面的状态**（日期、选中地块、指标、折线的对象/可见序列、雷达的对比对象）——
+     * 少写一项就会拿到上一帧的图，那是"报告与屏幕不一致"里最难看的一种。
+     */
+    const key = [this.day, this.selected?.i ?? '', this.variable,
+      this.chartPick?.lineIdx ?? 0, this.chartPick?.radarIdx ?? 0,
+      [...(this.chartVisible ?? [])].sort().join('')].join('|');
+    if (this._chartImg?.key === key && this._chartImg.url) return this._chartImg.url;
+    const keep = (url) => { if (url) this._chartImg = { key, url }; return url; };
     const direct = (() => { try { return this.chartPanelPng(); } catch { return ''; } })();
-    if (direct) return direct;
+    if (direct) return keep(direct);
     const tmp = document.createElement('div');
     tmp.style.cssText = 'position:absolute;left:-9999px;top:0;width:640px;';
     document.body.appendChild(tmp);
-    const keep = this.refs['report-tmp'];
+    const keepRef = this.refs['report-tmp'];
     this.refs['report-tmp'] = tmp;
     let url = '';
     // 离屏容器必须有**真实宽度**（宽度为 0 时画布退回 240px 兜底 —— 与本轮点选踩的是同一个坑）
     try { this.renderChartPanel('report-tmp', 'rp'); url = this.chartPanelPng('rp'); } catch { url = ''; }
-    if (keep === undefined) delete this.refs['report-tmp']; else this.refs['report-tmp'] = keep;
+    if (keepRef === undefined) delete this.refs['report-tmp']; else this.refs['report-tmp'] = keepRef;
     tmp.remove();
-    return url;
+    return keep(url);
   }
 
-  reportHtml() {
-    const m = this.model.meta;
-    const day = fmtDay(this.model.days[this.day] ?? '');
-    const days = this.model.days.length;
-    const chart = this.chartPanelImage();
-    const overview = (this.tables?.questions ?? []).slice(0, 4)
-      .map((q) => `<li><b>${q.title}</b>：${String(q.top ?? '').replace(/</g, '&lt;')}</li>`).join('');
-    const agg = ['progress', 'disease', 'crop', 'water', 'fert']
-      .map((v) => `<li><b>${VARIABLES[v]?.label ?? v}</b>：${aggNote(v)}</li>`).join('');
-    const esc = (x) => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    const dayNo = this.day + 1;
-    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<title>${esc(m.siteName)} · 农业监测报告（${esc(day)}）</title>
-<style>
-  @page { size: A4; margin: 14mm; }
-  body { font: 13px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: #12263f; margin: 0; padding: 18px; background: #fff; }
-  h1 { font-size: 19px; margin: 0 0 4px; }
-  h2 { font-size: 14px; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #d8e0ea; }
-  .sub { color: #5b6b7f; font-size: 12px; }
-  ul { margin: 4px 0 8px; padding-left: 20px; }
-  img { width: 100%; max-width: 100%; border: 1px solid #e3e9f0; border-radius: 4px; }
-  footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #d8e0ea; color: #5b6b7f; font-size: 11px; }
-  @media print { body { padding: 0; } .noprint { display: none; } }
-</style></head><body>
-<h1>${esc(m.siteName)} · 农业监测报告</h1>
-<div class="sub">观测日 ${esc(day)}（第 ${dayNo} / ${days} 天）· 种子 ${esc(m.seed)} · 由本项目页面直接生成（离线数据，无外部请求）</div>
-
-<h2>一、当前帧关键数</h2>
-<ul>${overview || '<li>（当前页签没有关键问题数据）</li>'}</ul>
-
-<h2>二、四张常用图</h2>
-${chart ? `<img alt="四张常用图（折线 / 饼 / 柱 / 雷达）" src="${chart}">` : '<p class="sub">图表尚未绘制</p>'}
-<div class="sub">折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像；同一指标在页面、表格、报告里用的是同一份数据（页面不做聚合）。</div>
-
-<h2>三、口径（这些数怎么算的）</h2>
-<ul>${agg}</ul>
-<div class="sub">聚合规则只在代码里写一处（geo.js 的 AGG_RULE），表格、地图、判据三方共用同一份声明。</div>
-
-<footer>地块几何 © OpenStreetMap 贡献者（ODbL）· 气象锚点 NASA POWER（MERRA-2）· 监测数据由本项目模型生成（种子 ${esc(m.seed)}）。<br>
-本报告为自包含 HTML：所有图片内嵌为 data URL，不引用任何外部资源。</footer>
-</body></html>`;
+  /** 一页可打印报告：只负责**凑料**（数据与两张图），模板在 `report.js`（纯函数，可单独验） */
+  reportHtml(mapUrl = '') {
+    return buildReportHtml({
+      meta: this.model.meta,
+      day: fmtDay(this.model.days[this.day] ?? ''),
+      dayNo: this.day + 1,
+      days: this.model.days.length,
+      variableLabel: VARIABLES[this.variable]?.label ?? this.variable,
+      overview: (this.tables?.questions ?? []).slice(0, 4)
+        .map((q) => `<b>${String(q.title ?? '').replace(/</g, '&lt;')}</b>：${String(q.top ?? '').replace(/</g, '&lt;')}`),
+      aggLines: ['progress', 'disease', 'crop', 'water', 'fert']
+        .map((v) => `<b>${VARIABLES[v]?.label ?? v}</b>：${aggNote(v)}`),
+      chartUrl: this.chartPanelImage(),
+      mapUrl,
+    });
   }
 
   /**

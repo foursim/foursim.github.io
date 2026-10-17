@@ -80,6 +80,25 @@ const check = (label, ok, detail = '') => {
     /smoke:browser/.test(ready),
     ready);
 
+  /*
+   * 路网是启动清单里最大的一块（曾 459 KB）。精简后必须同时满足：
+   * 体积达标 + 坐标不超过 6 位小数 + **功能属性 highway 一个都不能少**（样式与离线可达性都靠它）
+   * + 署名上移到 metadata（ODbL 要求署名，精简不能连署名一起删）。
+   * 这条判据也是"重跑 data:roads 后忘了 trim"的报警器。
+   */
+  {
+    const raw = fs.readFileSync('data/roads.geojson', 'utf8');
+    const g = JSON.parse(raw);
+    const kb = Buffer.byteLength(raw) / 1024;
+    const decOk = raw.match(/\d+\.\d{7,}/g) === null;
+    const hwOk = g.features.length > 1000 && g.features.every((f) => f.properties && f.properties.highway);
+    const attrOk = !!(g.metadata && g.metadata.attribution && g.metadata.attribution.license);
+    check('路网已精简且功能属性齐全（≤ 340 KB · 坐标 ≤ 6 位小数 · highway 全覆盖 · 署名在 metadata）',
+      kb <= 340 && decOk && hwOk && attrOk,
+      `${kb.toFixed(0)} KB（459 KB 原版）· 坐标精度达标=${decOk} · ${g.features.length} 段 highway 全覆盖=${hwOk}`
+        + ` · 署名=${g.metadata?.attribution?.license ?? '缺'}`);
+  }
+
   check('页面源码里没有外部脚本/样式引用（纯静态硬线的静态兜底）',
     ext.length === 0, ext.length ? `外链：${ext.join(',')}` : `扫描 ${files.length} 个文件：只有本地引用`);
 }

@@ -502,7 +502,12 @@ try {
    * 为了不引 `html2canvas`（会破坏"零依赖"），只做 canvas 合成；要连标签一起截，就得引依赖。
    * 换来的好处是导出的图自带标题/日期/图例，贴进汇报材料不用再解释。
    */
-  function exportPng() {
+  /**
+   * 地图快照（画布）：标题条 + 可见图层 + 图例。
+   * 拆出来是因为**两处都要它**：导出 PNG（下载）与报告（内嵌成 data URL）。
+   * 原来这段和下载写在一个函数里，报告只能自己再画一遍 —— 同一件事写两份。
+   */
+  function snapshotCanvas() {
     const el = $('map');
     const box = el.getBoundingClientRect();
     const c = document.createElement('canvas');
@@ -561,10 +566,16 @@ try {
       ctx.font = '12px system-ui, sans-serif';
       ctx.fillText(String(it.label).slice(0, 16), pad + 28, y + 11);
     });
+    c.dataset.drawn = String(drawn);
+    return c;
+  }
+
+  function exportPng() {
+    const c = snapshotCanvas();
     c.toBlob((blob) => {
       if (blob) download(blob, `农业监测地图_${ymdAt(state.day)}_${state.variable}.png`);
     }, 'image/png');
-    ui.toast(`已导出地图（${drawn} 个图层；不含 DOM 标签）`, 'ok');
+    ui.toast(`已导出地图（${c.dataset.drawn} 个图层；不含 DOM 标签）`, 'ok');
   }
 
   const map = new AgriMap({
@@ -983,6 +994,8 @@ try {
           + (r.sort ? `（按${r.sort.label}${r.sort.dir > 0 ? '升序' : '降序'}）` : ''), 'ok');
       },
       onExportPng: () => exportPng(),
+      // 报告里要嵌当前帧地图（同一份快照，只是不下载）
+      onMapImage: () => snapshotCanvas().toDataURL('image/png'),
       /**
        * **表格 → 地图**：点"经营单元"一行 ⇒ 把该单元的成员地块全高亮并框进视野。
        * 方向反过来（地图 → 表格）由选中地块驱动面板详情，两者共用同一份 `rows`，不会对不上号。
