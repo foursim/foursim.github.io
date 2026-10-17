@@ -845,7 +845,11 @@ function mdPreview(res, { maxRows = 8, maxCols = 6 } = {}) {
 
 const __t0 = Date.now();
 const T = loadTables(TABLES);
-console.log(`读取 ${TABLES}：${T.size} 张表、${[...T.values()].reduce((a, t) => a + t.rows.length, 0)} 行`);
+/*
+ * 横幅**不打印总行数**：那需要把每张表都解析一遍（等于把懒加载作废，而且每次运行都白付）。
+ * 真正解析了多少张表，由末尾那行 `[耗时] … 解析 N/M 张表` 说明。
+ */
+console.log(`读取 ${TABLES}：${T.size} 张表（惰性解析：用到哪张解析哪张）`);
 
 if (has('list')) {
   console.log('\n预置查询：');
@@ -863,7 +867,7 @@ if (arg('join')) {
   process.exit(0);
 }
 
-const only = arg('q');
+const only = arg('q') || arg('only');
 const wantCheckOnly = has('check');
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -1147,6 +1151,21 @@ if (webOut && results.length) {
     ? `${v.id} ${v.rows.length}×${v.cols.length}`
     : `${v.id} ${v.rowKeys.length}×${v.colKeys.length}`);
   console.log(`[写出] ${webOut}（${views.length} 个静态视图：${views.map(desc).join(' / ')}，${(fs.statSync(file).size / 1024).toFixed(0)} KB）`);
+}
+
+/*
+ * **`--only` 是调试循环**：只跑你要的那一个查询，跳过判据区（判据要看全量数据，
+ * 是"全量体检"那件事的一部分）。导出（--web/--json/--xlsx）在判据之前，所以不受影响。
+ */
+if (only && !results.length) {
+  console.error(`\n[only] 没有匹配的查询 id：${only}（可用：${PRESETS.map((p) => p.id).join(' ')}）`);
+  process.exit(1);
+}
+
+if (only) {
+  console.log(`\n[only] 只跑了 ${only} · 跳过判据区（要全量体检就跑 npm run query）`);
+  console.log(`[耗时] ${Date.now() - __t0}ms · 解析 ${T.loaded}/${T.size} 张表`);
+  process.exit(0);
 }
 
 // ===================== 判据 =====================
