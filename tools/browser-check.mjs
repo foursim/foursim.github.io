@@ -2791,7 +2791,8 @@ await boot(1440, 900);
 const s43 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
   document.getElementById('btn-drawer').click();
   await new Promise(r=>setTimeout(r,250));
-  const html=ui.reportHtml(ui.actions?.onMapImage?.() ?? '');
+  const sc=ui.scatterImage();
+  const html=ui.reportHtml(ui.actions?.onMapImage?.() ?? '', sc.url);
   const els=[...document.querySelectorAll('#btn-report')].map(b=>({shown:!!b.offsetParent, label:b.textContent.trim()}));
   return {len:html.length, head:html.slice(0,40),
     hasDoctype:/^<!doctype html>/i.test(html.trim()),
@@ -2805,6 +2806,7 @@ const s43 = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
     attrs:/OpenStreetMap/.test(html)&&/NASA POWER/.test(html),
     site:(ui.model.meta.siteName&&html.includes(ui.model.meta.siteName)),
     day:html.includes('观测日'),
+    scatterImg:{url:!!sc.url, front:sc.front, n:sc.n},
     button:els[0]||null, cache:(()=>{
       const u1=ui.chartPanelImage();
       const t1=performance.now(); const u2=ui.chartPanelImage(); const dt=performance.now()-t1;
@@ -2818,10 +2820,10 @@ check('报告按钮在位，`reportHtml()` 产出**完整 HTML 文档**（doctyp
     && s43.hasDoctype && s43.sections === 3 && s43.len > 2000,
   `按钮「${s43.button?.label}」（可见=${s43.button?.shown}）· ${s43.len} 字节 · 章节 ${s43.sections}/3`
     + ` · 站点名/观测日在文档里=${s43.site}/${s43.day}`);
-check('报告**自包含**：两张图（当前帧地图 + 四张图拼图）都是 `data:image` 内嵌，**没有任何外链**，也没有 script/link',
-  s43.imgs === 2 && s43.dataImgs === 2 && s43.extRefs === 0 && s43.extTags === 0,
+check('报告**自包含**：三张图（地图 + 情景散点 + 四张图拼图）都是 `data:image` 内嵌，**零外链**，也没有 script/link',
+  s43.imgs === 3 && s43.dataImgs === 3 && s43.extRefs === 0 && s43.extTags === 0,
   `图片 ${s43.imgs} 张（data URL ${s43.dataImgs} 张；含当前帧地图）· 外链 ${s43.extRefs} 处`
-    + ` · script/link 标签 ${s43.extTags} 个`);
+    + ` · script/link 标签 ${s43.extTags} 个 · 散点 ${s43.scatterImg?.n} 点 / 前沿 ${s43.scatterImg?.front} 个`);
 check('报告图**有缓存**：同一天连取两次是同一张（第二次几乎不耗时），换天后自动失效（不拿旧图）',
   s43.cache?.same === true && s43.cache?.diff === true && s43.cache?.dt < 50,
   `同图=${s43.cache?.same}（第二次 ${s43.cache?.dt?.toFixed(1)}ms）· 换天后换图=${s43.cache?.diff}`);

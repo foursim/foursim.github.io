@@ -233,7 +233,12 @@ export class UI {
     refs['btn-scen-view']?.addEventListener?.('click', () => this.actions?.onToggleScenarioView?.());
     // 报告：纯函数生成 HTML ⇒ 直接走同一条下载通道（判据验的是 HTML 本身，不是下载动作）
     refs['btn-report']?.addEventListener?.('click', () => {
-      const html = this.reportHtml(this.actions?.onMapImage?.() ?? '');
+      const sc = this.scatterImage();
+      const scNote = sc.url
+        ? `${sc.n} 个候选点 · 虚线圆点是帕累托前沿 ${sc.front} 个（不被任何点同时超过）`
+          + ` · 前沿从左上往右下走 ⇒ 面积越大、单位节省越低（"面积最大 ≠ 最划算"）`
+        : '';
+      const html = this.reportHtml(this.actions?.onMapImage?.() ?? '', sc.url, scNote);
       this.actions?.onDownload?.(html, `农业监测报告_${fmtDay(this.model.days[this.day] ?? '')}.html`, 'text/html');
     });
     /*
@@ -1074,8 +1079,29 @@ export class UI {
     return keep(url);
   }
 
-  /** 一页可打印报告：只负责**凑料**（数据与两张图），模板在 `report.js`（纯函数，可单独验） */
-  reportHtml(mapUrl = '') {
+  /**
+   * 情景候选散点图（离屏画一张，给报告用）：
+   * 散点只在「情景推演」抽屉里出现过，报告要它就得自己画 —— 与 `chartPanelImage()` 同样的做法。
+   */
+  scatterImage() {
+    const sc = this.actions?.onScenarioScatter?.();
+    if (!sc || sc.points.length < 3) return { url: '', front: 0, n: 0, dimmed: 0 };
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:absolute;left:-9999px;top:0;width:560px;';
+    document.body.appendChild(tmp);
+    const cvs = document.createElement('canvas');
+    cvs.style.width = '100%';
+    tmp.appendChild(cvs);
+    const meta = scatter(cvs, sc.points, {
+      height: 240, xLabel: '受益面积', xUnit: 'ha', yLabel: '平均节省', yUnit: 'min/块', picked: sc.picked,
+    });
+    const url = cvs.toDataURL('image/png');
+    tmp.remove();
+    return { url, front: meta?.frontIdx.length ?? 0, n: meta?.n ?? 0, dimmed: meta?.dimmed ?? 0 };
+  }
+
+  /** 一页可打印报告：只负责**凑料**（数据与几张图），模板在 `report.js`（纯函数，可单独验） */
+  reportHtml(mapUrl = '', scatterUrl = '', scatterNote = '') {
     return buildReportHtml({
       meta: this.model.meta,
       day: fmtDay(this.model.days[this.day] ?? ''),
@@ -1088,6 +1114,8 @@ export class UI {
         .map((v) => `<b>${VARIABLES[v]?.label ?? v}</b>：${aggNote(v)}`),
       chartUrl: this.chartPanelImage(),
       mapUrl,
+      scatterUrl,
+      scatterNote,
     });
   }
 

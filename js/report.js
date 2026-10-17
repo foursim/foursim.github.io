@@ -26,7 +26,7 @@ const esc = (x) => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
  */
 export function buildReportHtml({
   meta = {}, day = '', dayNo = 1, days = 1, variableLabel = '',
-  overview = [], aggLines = [], chartUrl = '', mapUrl = '',
+  overview = [], aggLines = [], chartUrl = '', mapUrl = '', scatterUrl = '', scatterNote = '',
 }) {
   const sections = ['一、当前帧关键数'];
   const mapSection = mapUrl
@@ -35,8 +35,15 @@ export function buildReportHtml({
 <div class="sub">着色：${esc(variableLabel)}（与屏幕上同一帧、同一套聚合口径）；标题条与图例已画在图内。</div>`
     : '';
   if (mapUrl) sections.push('二、地图（当前帧）');
-  const chartNo = mapUrl ? '三' : '二';
-  const aggNo = mapUrl ? '四' : '三';
+  const scatterSection = scatterUrl
+    ? `<h2>${mapUrl ? '三' : '二'}、情景候选散点（受益面积 × 平均节省）</h2>
+<img alt="情景候选散点图（含帕累托前沿）" src="${scatterUrl}">
+<div class="sub">${esc(scatterNote)}</div>`
+    : '';
+  const afterScatter = (mapUrl ? 1 : 0) + (scatterUrl ? 1 : 0);
+  const CN = ['一', '二', '三', '四', '五'];
+  const chartNo = CN[1 + afterScatter];
+  const aggNo = CN[2 + afterScatter];
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>${esc(meta.siteName)} · 农业监测报告（${esc(day)}）</title>
 <style>
@@ -57,6 +64,7 @@ export function buildReportHtml({
 <ul>${overview.length ? overview.map((t) => `<li>${t}</li>`).join('') : '<li>（当前页签没有关键问题数据）</li>'}</ul>
 
 ${mapSection}
+${scatterSection}
 
 <h2>${chartNo}、四张常用图</h2>
 ${chartUrl ? `<img alt="四张常用图（折线 / 饼 / 柱 / 雷达）" src="${chartUrl}">` : '<p class="sub">图表尚未绘制</p>'}

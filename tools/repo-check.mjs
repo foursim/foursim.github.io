@@ -99,6 +99,21 @@ const check = (label, ok, detail = '') => {
         + ` · 署名=${g.metadata?.attribution?.license ?? '缺'}`);
   }
 
+  /*
+   * **离线产物体积预算**（实测基线 16.5 MB，其中 `fact_parcel_daily.csv` 13.7 MB = 501 块 × 549 天，
+   * 是模型输出的固有规模）。这里不设"墙钟耗时"阈值 —— 那随机器变，会变成假失败；
+   * 但体积是确定的：**悄悄翻倍**（重复导出、多了份全量副本、格式没压缩）一定要当场发现。
+   */
+  {
+    const dirSize = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => {
+      const p = path.join(dir, e.name);
+      return n + (e.isDirectory() ? dirSize(p) : fs.statSync(p).size);
+    }, 0);
+    const mb = dirSize('tables') / 1024 / 1024;
+    check('离线产物体积在预算内（tables/ ≤ 20 MB；实测基线 16.5 MB，大头是 fact_parcel_daily 13.7 MB）',
+      mb <= 20, `${mb.toFixed(1)} MB / 预算 20 MB`);
+  }
+
   check('页面源码里没有外部脚本/样式引用（纯静态硬线的静态兜底）',
     ext.length === 0, ext.length ? `外链：${ext.join(',')}` : `扫描 ${files.length} 个文件：只有本地引用`);
 }
