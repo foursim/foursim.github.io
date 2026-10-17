@@ -102,24 +102,62 @@ const ELEMENTS = loadElementIndex();
  * 读全部表。数值列按数据元字典的 `data_type` 转数 ——
  * ⚠️ 编码/标识列必须留文本：`09186` 转成数字会**吃掉前导零**（这个坑在导出侧踩过一次）。
  */
-function loadTables(dir) {
-  const out = new Map();
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.csv'))) {
-    const name = f.replace(/\.csv$/, '');
-    const [head, ...rows] = parseCsv(fs.readFileSync(path.join(dir, f), 'utf8'));
-    const recs = rows.map((r) => {
-      const o = {};
-      head.forEach((h, i) => {
-        const meta = ELEMENTS.get(`${name}.${h}`);
-        const raw = r[i] ?? '';
-        const isNum = meta ? meta.type === 'number' : (!/(_code|_id)$/.test(h) && /^-?\d+(\.\d+)?$/.test(raw));
-        o[h] = raw === '' ? '' : (isNum ? Number(raw) : raw);
-      });
-      return o;
-    });
-    out.set(name, { columns: head, rows: recs, rawRows: rows });
+/** 解析单张表（列级决策**只算一次**，见下面的注释） */
+function parseTableFile(file, name) {
+  const [head, ...rows] = parseCsv(fs.readFileSync(file, 'utf8'));
+  /*
+   * **列级决策一次算好**：`meta` 查表与 `_code/_id` 的判定只取决于**列名**，
+   * 原来放在单元格循环里 ⇒ 275k 行 × 20 列 = 550 万次 Map.get + 正则（加载 4.9s 的主因）。
+   * 另外把"没有数据元字典的列"用**抽样**判一次是否数值（原实现每格都跑一次数值正则）；
+   * 抽样只判"这一列看起来是不是数"，具体值仍然逐格 `Number()`，语义不变。
+   */
+  const plan = head.map((h) => {
+    const meta = ELEMENTS.get(`${name}.${h}`);
+    if (meta) return { h, kind: meta.type === 'number' ? 'num' : 'txt' };
+    if (/(_code|_id)$/.test(h)) return { h, kind: 'txt' };
+    const probe = rows.slice(0, 64).filter((r) => (r[head.indexOf(h)] ?? '') !== '');
+    const looksNum = probe.length > 0 && probe.every((r) => /^-?\d+(\.\d+)?$/.test(r[head.indexOf(h)] ?? ''));
+    return { h, kind: looksNum ? 'num' : 'txt' };
+  });
+  const recs = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const o = {};
+    for (let c = 0; c < plan.length; c++) {
+      const { h, kind } = plan[c];
+      const raw = r[c] ?? '';
+      o[h] = raw === '' ? '' : (kind === 'num' ? Number(raw) : raw);
+    }
+    recs[i] = o;
   }
-  return out;
+  return { columns: head, rows: recs, rawRows: rows };
+}
+
+/**
+ * 表注册表：**懒解析**（第一次 `get` 才读盘解析）。
+ * `--only q14` 这类单表场景不必为 16 MB 付全额代价；`values/entries` 会强制全量（少数全表校验用）。
+ */
+class TableStore {
+  constructor(dir, files) { this.dir = dir; this.files = files; this.cache = new Map(); }
+  get(name) {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const f = path.join(this.dir, `${name}.csv`);
+    if (!fs.existsSync(f)) return undefined;
+    const t = parseTableFile(f, name);
+    this.cache.set(name, t);
+    return t;
+  }
+  has(name) { return fs.existsSync(path.join(this.dir, `${name}.csv`)); }
+  get size() { return this.files.length; }
+  get loaded() { return this.cache.size; }
+  names() { return this.files.map((f) => path.basename(f, '.csv')); }
+  *keys() { yield* this.names(); }
+  *values() { for (const k of this.names()) yield this.get(k); }
+  *entries() { for (const k of this.names()) yield [k, this.get(k)]; }
+}
+
+function loadTables(dir) {
+  return new TableStore(dir, fs.readdirSync(dir).filter((x) => x.endsWith('.csv')).map((f) => path.join(dir, f)));
 }
 
 // ===================== 原语：星型连接 =====================
@@ -805,6 +843,7 @@ function mdPreview(res, { maxRows = 8, maxCols = 6 } = {}) {
 
 // ===================== 主流程 =====================
 
+const __t0 = Date.now();
 const T = loadTables(TABLES);
 console.log(`读取 ${TABLES}：${T.size} 张表、${[...T.values()].reduce((a, t) => a + t.rows.length, 0)} 行`);
 
@@ -829,6 +868,11 @@ const wantCheckOnly = has('check');
 fs.mkdirSync(OUT, { recursive: true });
 
 const results = [];
+/**
+ * 取某个查询的 spec：**直接复用主循环算好的结果**。
+ * 判据区原来用 `PRESETS.find(...).build(T)` 又算了一遍（6 个查询白跑，q4 还要再扫 27 万行）。
+ */
+const specOf = (id) => results.find((r) => r.id === id)?.spec;
 if (!wantCheckOnly || only) {
   for (const p of PRESETS) {
     if (only && p.id !== only) continue;
@@ -1134,7 +1178,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 }
 
 {
-  const p3 = PRESETS.find((p) => p.id === 'q3').build(T);
+  const p3 = specOf('q3');
   const pv = pivot(p3.rows, p3.pivot);
   const sumCell = [...pv.matrix.flat()].reduce((a, b) => a + (Number(b) || 0), 0);
   const sumSrc = p3.rows.reduce((a, r) => a + (Number(r.area_ha) || 0), 0);
@@ -1146,7 +1190,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 }
 
 {
-  const p4 = PRESETS.find((p) => p.id === 'q4').build(T);
+  const p4 = specOf('q4');
   const pv = pivot(p4.rows, p4.pivot);
   const placed = pv.matrix.flat().filter((v) => v !== '').length;
   const expectCells = pv.rowKeys.length * pv.colKeys.length;
@@ -1156,7 +1200,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 }
 
 {
-  const p1 = PRESETS.find((p) => p.id === 'q1').build(T);
+  const p1 = specOf('q1');
   const pv = pivot(p1.rows, p1.pivot);
   const bases = new Set(p1.rows.map((r) => r.yield_basis));
   // 反过来用**粗维度**（行=年、列=季序）：一个格子必然同时含籽粒/鲜重/干花 ⇒ 必须被标记出来。
@@ -1169,7 +1213,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 
 {
   // 独立复算 q10 的平均单产（只取非空值），与查询结果比 —— 交叉验证能抓，但这条不依赖 DuckDB 在场
-  const p10 = PRESETS.find((p) => p.id === 'q10').build(T);
+  const p10 = specOf('q10');
   const rows = T.get('fact_parcel_season').rows;
   const acc = new Map();
   for (const r of rows) {
@@ -1195,7 +1239,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
    * 单产两套口径的判据：① 面积加权必须等于 Σ总产 ÷ Σ面积（独立复算，不依赖另一套引擎）；
    * ② 与"季等权"**确实不同**（若两者恒等，说明面积加权没生效 —— 不过是把等权换个名字）。
    */
-  const p12 = PRESETS.find((p) => p.id === 'q12').build(T);
+  const p12 = specOf('q12');
   const need = p12.rows.filter((r) => r.yield_t_ha_eq !== '' && r.yield_t_ha_area !== '');
   const wrong = need.filter((r) => Math.abs(Number(r.yield_t_ha_area) - Number(r.yield_t_total) / Number(r.area_ha)) > 1e-6);
   const diff = need.filter((r) => Math.abs(Number(r.yield_t_ha_eq) - Number(r.yield_t_ha_area)) > 1e-9).length;
@@ -1205,7 +1249,7 @@ check('CSV 解析**无错位**（每行列数与表头一致 —— 字段内含
 }
 
 {
-  const p6 = PRESETS.find((p) => p.id === 'q6').build(T);
+  const p6 = specOf('q6');
   const g = p6.rows.filter((r) => r.level === 'Gemeinde');
   const up = p6.rows.filter((r) => r.level === 'Kreis');
   const sum = (arr, k) => arr.reduce((x, r) => x + r[k], 0);
@@ -1416,5 +1460,7 @@ if (webOut) {
     bad.length ? `乱的：${bad.join('、')}` : `已验 ${checked.join('、')}（其余透视的行列键不是纯时间格式，这条判据覆盖不到）`);
 }
 
+// 一行耗时分布（不是阈值，是记录）：懒解析后"实际解析了几张表"比"总秒数"更能说明问题
+console.log(`[耗时] ${Date.now() - __t0}ms · 解析 ${T.loaded}/${T.size} 张表（懒加载：只解析查询真正用到的）`);
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 process.exit(fail ? 1 : 0);

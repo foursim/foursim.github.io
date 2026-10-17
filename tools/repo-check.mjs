@@ -12,6 +12,7 @@
  * 跑法：npm run repo:check（已接在 data:all 末尾）
  */
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 
 let pass = 0;
@@ -146,6 +147,20 @@ const check = (label, ok, detail = '') => {
   check('CSS 里引用的**本地文件都存在**（同源 404 隐患：vendored leaflet 曾引用 3 张不存在的图）',
     missing.length === 0, missing.length ? missing.join('；') : `扫描 ${cssFiles.length} 个 CSS：全部可解析`);
 }
+
+/*
+ * **待推送提醒**（只提醒、不算判据）：网络不稳时"本地提交了没推"很容易被忘掉。
+ * 比的是本地 `origin/main` 引用 —— 不需要联网 ✔（没有 fetch 时它就是上次推送/拉取时的状态）。
+ * 刻意**不做成 check**：CI 里 HEAD 本来就领先 origin/main，那会让流水线无故变红。
+ */
+try {
+  const n = Number(execSync('git rev-list --count origin/main..HEAD', { cwd: process.cwd(), encoding: 'utf8' }).trim());
+  if (n > 0) {
+    const log = execSync('git log --oneline origin/main..HEAD', { cwd: process.cwd(), encoding: 'utf8' }).trim().split('\n');
+    console.log(`\n⚠️  有 ${n} 笔提交**尚未推送**（网络恢复后记得 git push）：`);
+    for (const l of log.slice(0, 5)) console.log(`   ${l}`);
+  }
+} catch (e) { /* 没有 origin 引用/不是 git 仓库：跳过 —— 但**别静默**（变量写错过一次，被空 catch 藏了） */ console.log(`  （待推送检查跳过：${String(e.message).slice(0, 60)}）`); }
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
 process.exit(fail ? 1 : 0);
