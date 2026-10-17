@@ -868,6 +868,11 @@ if (arg('join')) {
 }
 
 const only = arg('q') || arg('only');
+// `--list`：只列可用的查询 id（配 --only 使用；不用跑一遍才知道 id 拼错没）
+if (has('list')) {
+  for (const p of PRESETS) console.log(`${p.id.padEnd(5)} ${p.title}`);
+  process.exit(0);
+}
 const wantCheckOnly = has('check');
 fs.mkdirSync(OUT, { recursive: true });
 
