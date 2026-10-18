@@ -20,10 +20,19 @@ const STEPS = [
 ];
 
 const VERBOSE = process.argv.includes('--verbose') || process.argv.includes('-v');
+const onlyArg = (() => {
+  const i = process.argv.indexOf('--only');
+  return i > 0 ? process.argv[i + 1] : null;
+})();
 const rows = [];
 let failed = null;
 const t0 = Date.now();
-for (const [cmd, label] of STEPS) {
+const picked = onlyArg ? STEPS.filter(([c, l]) => c.includes(onlyArg) || l.includes(onlyArg)) : STEPS;
+if (!picked.length) {
+  console.error(`\n--only 没匹配到步骤：${onlyArg}\n可用：${STEPS.map(([c]) => c).join(' | ')}`);
+  process.exit(1);
+}
+for (const [cmd, label] of picked) {
   const t = Date.now();
   const r = spawnSync(cmd, { shell: true, encoding: 'utf8' });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;

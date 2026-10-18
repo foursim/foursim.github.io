@@ -138,8 +138,19 @@ function parseTableFile(file, name) {
  * `--only q14` 这类单表场景不必为 16 MB 付全额代价；`values/entries` 会强制全量（少数全表校验用）。
  */
 class TableStore {
-  constructor(dir, files) { this.dir = dir; this.files = files; this.cache = new Map(); }
+  constructor(dir, files) {
+    this.dir = dir;
+    this.files = files;
+    this.cache = new Map();
+    this.tracing = null;              // 当前正在构建的查询 id（由主循环设置）
+    this.reads = new Map();           // 查询 id → 读到的表名集合
+  }
   get(name) {
+    // **依赖追踪**：记下"当前正在构建的查询读了哪张表"（`--deps` 打印，判据也用它）
+    if (this.tracing) {
+      if (!this.reads.has(this.tracing)) this.reads.set(this.tracing, new Set());
+      this.reads.get(this.tracing).add(name);
+    }
     if (this.cache.has(name)) return this.cache.get(name);
     const f = path.join(this.dir, `${name}.csv`);
     if (!fs.existsSync(f)) return undefined;
@@ -885,7 +896,9 @@ const specOf = (id) => results.find((r) => r.id === id)?.spec;
 if (!wantCheckOnly || only) {
   for (const p of PRESETS) {
     if (only && p.id !== only) continue;
+    T.tracing = p.id;
     const spec = p.build(T);
+    T.tracing = null;
     let res;
     if (spec.kind === 'pivot') {
       const pv = pivot(spec.rows, spec.pivot);
@@ -1171,6 +1184,28 @@ if (only) {
   console.log(`\n[only] 只跑了 ${only} · 跳过判据区（要全量体检就跑 npm run query）`);
   console.log(`[耗时] ${Date.now() - __t0}ms · 解析 ${T.loaded}/${T.size} 张表`);
   process.exit(0);
+}
+
+// `--deps`：打印"每个查询读了哪几张表"（交付裁剪与性能分析的起点）
+if (has('deps')) {
+  console.log('\n=== 查询 → 表依赖（运行时追踪，不是人工声明）===');
+  for (const p of PRESETS) {
+    const set = T.reads.get(p.id);
+    console.log(`  ${p.id.padEnd(5)} ${set && set.size ? [...set].join(', ') : '（未读任何表）'}`);
+  }
+}
+
+{
+  /*
+   * **每个查询至少读到一张表**：表名写错（`T.get('fact_xxx')` 返回 undefined）或构建提前返回时，
+   * 它会"0 依赖"却照样产出一张空表 —— 静默出错最难查。
+   * 依赖用**运行时追踪**（不是人工声明：声明会漂，追踪不会）。
+   */
+  const empty = [...T.reads.entries()].filter(([, set]) => !set || set.size === 0).map(([id]) => id);
+  const nReads = [...T.reads.values()].reduce((n, set) => n + set.size, 0);
+  check('每个查询至少读到**一张表**（0 依赖 = 表名写错/提前返回 ⇒ 会静默产出空表）',
+    T.reads.size > 0 && empty.length === 0,
+    `${T.reads.size} 个查询 · 共 ${nReads} 次表读取` + (empty.length ? ` · 0 依赖：${empty.join('、')}` : ''));
 }
 
 // ===================== 判据 =====================
