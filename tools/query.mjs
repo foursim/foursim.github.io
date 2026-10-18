@@ -1133,7 +1133,8 @@ if (xlsxOut && results.length) {
 
 // ---------- 页面用的**静态透视视图**（页面只查表，一行计算都不做） ----------
 const webOut = arg('web');
-if (webOut && results.length) {
+// `--deps` 是审计命令：不写网页产物（否则每次审计都在 data/pivot.json 留一个"只差时间戳"的脏文件）
+if (webOut && results.length && !has('deps')) {
   /*
    * 为什么不在页面里现算透视：**页面要保持纯静态、零依赖、首屏不卡**（见 README「纯静态保证」）。
    * 透视是离线工具的事，页面只 fetch 这份 JSON 然后把矩阵画成表 —— 和 `data/scenario.json` 一个思路。
@@ -1219,6 +1220,47 @@ if (only) {
  * 列级依赖是**主循环构建时**记录的（`T.sampleTrace` 在构建前打开），这里只打印，不重跑查询。
  */
 if (has('deps')) {
+  /*
+   * `--json`：把依赖写成**机器可读**的 `tables/query/deps.json`（供交付脚本 / CI 消费）。
+   * 只写文件、跳过判据区：这条命令的产物是文件，不是屏幕上的字（人读的那份不带 `--json`）。
+   */
+  if (has('json')) {
+    const tables = {};
+    for (const name of T.names()) {
+      const t = T.get(name);
+      if (!t) continue;
+      const read = new Set();
+      const readBy = [];
+      for (const p of PRESETS) {
+        const cs = T.cols.get(p.id)?.get(name);
+        if (cs?.size) { readBy.push(p.id); for (const c of cs) read.add(c); }
+      }
+      tables[name] = {
+        columns: t.columns,
+        readColumns: [...read].sort(),
+        unreadColumns: t.columns.filter((c) => !read.has(c)),
+        readBy,
+        rows: t.rows.length,
+      };
+    }
+    const queries = {};
+    for (const p of PRESETS) {
+      const perTable = T.cols.get(p.id) ?? new Map();
+      const cols = {};
+      for (const [tb, cs] of perTable) cols[tb] = [...cs].sort();
+      queries[p.id] = { tables: [...(T.reads.get(p.id) ?? [])].sort(), columns: cols };
+    }
+    const out = path.join(TABLES, 'query', 'deps.json');
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, `${JSON.stringify({
+      note: '运行时追踪：表 + 列（列级由前 3 行 Proxy 记录真实属性访问）',
+      generatedAt: new Date().toISOString(),
+      queries,
+      tables,
+    }, null, 2)}\n`, 'utf8');
+    console.log(`[写出] ${path.relative(process.cwd(), out)}（${PRESETS.length} 个查询 · ${Object.keys(tables).length} 张表）`);
+    process.exit(0);
+  }
   console.log('\n=== 查询 → 依赖（运行时追踪：表 + 列）===');
   for (const p of PRESETS) {
     const set = T.reads.get(p.id);

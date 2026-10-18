@@ -1,0 +1,1158 @@
+{
+  "note": "运行时追踪：表 + 列（列级由前 3 行 Proxy 记录真实属性访问）",
+  "generatedAt": "2026-10-18T20:23:57.072Z",
+  "queries": {
+    "q1": {
+      "tables": [
+        "dim_crop",
+        "dim_parcel",
+        "fact_parcel_season"
+      ],
+      "columns": {
+        "dim_parcel": [
+          "area_ha",
+          "grid_id",
+          "landuse",
+          "parcel_code",
+          "parcel_id",
+          "soil_organic_matter",
+          "soil_texture",
+          "t_min_to_store",
+          "unit_id"
+        ],
+        "dim_crop": [
+          "base_temp_c",
+          "crop_code",
+          "hierarchy_l1",
+          "yield_basis",
+          "yield_ref"
+        ],
+        "fact_parcel_season": [
+          "crop_code",
+          "crop_name_zh",
+          "disease_level_max",
+          "gdd_need_cd",
+          "harvest_day",
+          "harvest_deadline",
+          "parcel_id",
+          "season_seq",
+          "season_year",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "treated",
+          "yield_t",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q2": {
+      "tables": [
+        "dim_grid",
+        "dim_unit",
+        "fact_unit_decade"
+      ],
+      "columns": {
+        "dim_unit": [
+          "dominant_crop",
+          "fallow_ha",
+          "grid_id",
+          "unit_code",
+          "unit_id"
+        ],
+        "dim_grid": [
+          "grid_code",
+          "grid_id",
+          "grid_m"
+        ],
+        "fact_unit_decade": [
+          "area_ha",
+          "date_end",
+          "date_start",
+          "days",
+          "decade_key",
+          "decade_seq",
+          "disease_level_max",
+          "disease_parcels_ge3",
+          "dominant_crop",
+          "fertility_index_mean",
+          "grid_id",
+          "harvested_ha",
+          "n_parcels",
+          "precip_sum_mm",
+          "progress_area_mean",
+          "progress_mean",
+          "progress_p10",
+          "progress_p90",
+          "soil_wetness_mean",
+          "source_id",
+          "sown_ha",
+          "synthetic",
+          "temp_mean_c",
+          "unit_code",
+          "unit_id",
+          "water_index_mean"
+        ]
+      }
+    },
+    "q3": {
+      "tables": [
+        "dim_admin",
+        "dim_grid",
+        "dim_parcel",
+        "dim_unit"
+      ],
+      "columns": {
+        "dim_unit": [
+          "dominant_crop",
+          "n_parcels",
+          "unit_code",
+          "unit_id"
+        ],
+        "dim_grid": [
+          "grid_code",
+          "grid_id",
+          "grid_m"
+        ],
+        "dim_admin": [
+          "admin_code",
+          "level",
+          "name",
+          "parent_code"
+        ],
+        "dim_parcel": [
+          "access_m",
+          "admin_code",
+          "area_ha",
+          "centroid_lat",
+          "centroid_lon",
+          "crop_code",
+          "crop_name_zh",
+          "crs",
+          "disease_level_max",
+          "elevation_m",
+          "fallow",
+          "gdd_need_cd",
+          "grid_id",
+          "harvest_day",
+          "land_quality_grade",
+          "landuse",
+          "n_zones",
+          "parcel_code",
+          "parcel_id",
+          "season_count",
+          "soil_organic_matter",
+          "soil_ph",
+          "soil_quality",
+          "soil_quality_source",
+          "soil_texture",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "t_min_to_store",
+          "temp_offset_c",
+          "treated",
+          "unit_id",
+          "yield_t_ha_avg",
+          "yield_t_total"
+        ]
+      }
+    },
+    "q4": {
+      "tables": [
+        "dim_variable",
+        "fact_observation"
+      ],
+      "columns": {
+        "dim_variable": [
+          "name_zh",
+          "temporal_grain",
+          "uom",
+          "variable_code"
+        ],
+        "fact_observation": [
+          "observed_property",
+          "phenomenon_time",
+          "quality_flag",
+          "result_uom",
+          "result_value",
+          "source_id",
+          "spatial_id",
+          "spatial_level",
+          "synthetic",
+          "thing_id",
+          "variable_code"
+        ]
+      }
+    },
+    "q5": {
+      "tables": [
+        "dim_admin",
+        "dim_grid",
+        "dim_parcel",
+        "dim_unit"
+      ],
+      "columns": {
+        "dim_unit": [
+          "dominant_crop",
+          "n_parcels",
+          "unit_code",
+          "unit_id"
+        ],
+        "dim_grid": [
+          "grid_code",
+          "grid_id",
+          "grid_m"
+        ],
+        "dim_admin": [
+          "admin_code",
+          "level",
+          "name",
+          "parent_code"
+        ],
+        "dim_parcel": [
+          "access_m",
+          "admin_code",
+          "area_ha",
+          "centroid_lat",
+          "centroid_lon",
+          "crop_code",
+          "crop_name_zh",
+          "crs",
+          "disease_level_max",
+          "elevation_m",
+          "fallow",
+          "gdd_need_cd",
+          "grid_id",
+          "harvest_day",
+          "land_quality_grade",
+          "landuse",
+          "n_zones",
+          "parcel_code",
+          "parcel_id",
+          "season_count",
+          "soil_organic_matter",
+          "soil_ph",
+          "soil_quality",
+          "soil_quality_source",
+          "soil_texture",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "t_min_to_store",
+          "temp_offset_c",
+          "treated",
+          "unit_id",
+          "yield_t_ha_avg",
+          "yield_t_total"
+        ]
+      }
+    },
+    "q6": {
+      "tables": [
+        "dim_admin",
+        "dim_grid",
+        "dim_parcel",
+        "dim_unit"
+      ],
+      "columns": {
+        "dim_unit": [
+          "dominant_crop",
+          "n_parcels",
+          "unit_code",
+          "unit_id"
+        ],
+        "dim_grid": [
+          "grid_code",
+          "grid_id",
+          "grid_m"
+        ],
+        "dim_admin": [
+          "admin_code",
+          "level",
+          "name",
+          "parent_code"
+        ],
+        "dim_parcel": [
+          "access_m",
+          "admin_code",
+          "area_ha",
+          "centroid_lat",
+          "centroid_lon",
+          "crop_code",
+          "crop_name_zh",
+          "crs",
+          "disease_level_max",
+          "elevation_m",
+          "fallow",
+          "gdd_need_cd",
+          "grid_id",
+          "harvest_day",
+          "land_quality_grade",
+          "landuse",
+          "n_zones",
+          "parcel_code",
+          "parcel_id",
+          "season_count",
+          "soil_organic_matter",
+          "soil_ph",
+          "soil_quality",
+          "soil_quality_source",
+          "soil_texture",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "t_min_to_store",
+          "temp_offset_c",
+          "treated",
+          "unit_id",
+          "yield_t_ha_avg",
+          "yield_t_total"
+        ]
+      }
+    },
+    "q7": {
+      "tables": [
+        "dim_parcel",
+        "fact_zone"
+      ],
+      "columns": {
+        "dim_parcel": [
+          "crop_name_zh",
+          "parcel_id",
+          "unit_id"
+        ],
+        "fact_zone": [
+          "area_ha_est",
+          "n_points_est",
+          "parcel_id",
+          "sample_m",
+          "source_id",
+          "synthetic",
+          "zone_center_value",
+          "zone_code"
+        ]
+      }
+    },
+    "q12": {
+      "tables": [
+        "dim_crop",
+        "dim_parcel",
+        "fact_parcel_season"
+      ],
+      "columns": {
+        "dim_parcel": [
+          "area_ha",
+          "grid_id",
+          "landuse",
+          "parcel_code",
+          "parcel_id",
+          "soil_organic_matter",
+          "soil_texture",
+          "t_min_to_store",
+          "unit_id"
+        ],
+        "dim_crop": [
+          "base_temp_c",
+          "crop_code",
+          "hierarchy_l1",
+          "yield_basis",
+          "yield_ref"
+        ],
+        "fact_parcel_season": [
+          "crop_code",
+          "crop_name_zh",
+          "disease_level_max",
+          "gdd_need_cd",
+          "harvest_day",
+          "harvest_deadline",
+          "parcel_id",
+          "season_seq",
+          "season_year",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "treated",
+          "yield_t",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q8": {
+      "tables": [
+        "fact_region_daily"
+      ],
+      "columns": {
+        "fact_region_daily": [
+          "crop_progress",
+          "date_key",
+          "disease_level_max",
+          "humidity_pct",
+          "precip_mm"
+        ]
+      }
+    },
+    "q9": {
+      "tables": [
+        "fact_parcel_event"
+      ],
+      "columns": {
+        "fact_parcel_event": [
+          "event_day",
+          "event_type",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q10": {
+      "tables": [
+        "fact_parcel_season"
+      ],
+      "columns": {
+        "fact_parcel_season": [
+          "crop_code",
+          "disease_level_max",
+          "yield_t",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q11": {
+      "tables": [
+        "fact_unit_decade"
+      ],
+      "columns": {
+        "fact_unit_decade": [
+          "decade_key",
+          "disease_level_max",
+          "harvested_ha",
+          "progress_area_mean",
+          "progress_mean",
+          "sown_ha",
+          "unit_id"
+        ]
+      }
+    },
+    "q14": {
+      "tables": [
+        "dim_crop",
+        "dim_parcel",
+        "fact_parcel_season"
+      ],
+      "columns": {
+        "dim_parcel": [
+          "area_ha",
+          "grid_id",
+          "landuse",
+          "parcel_code",
+          "parcel_id",
+          "soil_organic_matter",
+          "soil_texture",
+          "t_min_to_store",
+          "unit_id"
+        ],
+        "dim_crop": [
+          "base_temp_c",
+          "crop_code",
+          "hierarchy_l1",
+          "yield_basis",
+          "yield_ref"
+        ],
+        "fact_parcel_season": [
+          "crop_code",
+          "crop_name_zh",
+          "disease_level_max",
+          "gdd_need_cd",
+          "harvest_day",
+          "harvest_deadline",
+          "parcel_id",
+          "season_seq",
+          "season_year",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "treated",
+          "yield_t",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q15": {
+      "tables": [
+        "dim_crop",
+        "dim_parcel",
+        "fact_parcel_season"
+      ],
+      "columns": {
+        "dim_parcel": [
+          "area_ha",
+          "grid_id",
+          "landuse",
+          "parcel_code",
+          "parcel_id",
+          "soil_organic_matter",
+          "soil_texture",
+          "t_min_to_store",
+          "unit_id"
+        ],
+        "dim_crop": [
+          "base_temp_c",
+          "crop_code",
+          "hierarchy_l1",
+          "yield_basis",
+          "yield_ref"
+        ],
+        "fact_parcel_season": [
+          "crop_code",
+          "crop_name_zh",
+          "disease_level_max",
+          "gdd_need_cd",
+          "harvest_day",
+          "harvest_deadline",
+          "parcel_id",
+          "season_seq",
+          "season_year",
+          "source_id",
+          "sow_day",
+          "synthetic",
+          "treated",
+          "yield_t",
+          "yield_t_ha"
+        ]
+      }
+    },
+    "q13": {
+      "tables": [
+        "fact_parcel_event"
+      ],
+      "columns": {
+        "fact_parcel_event": [
+          "event_day",
+          "event_type"
+        ]
+      }
+    }
+  },
+  "tables": {
+    "dim_admin": {
+      "columns": [
+        "admin_code",
+        "parent_code",
+        "level",
+        "name",
+        "country",
+        "state",
+        "postal_code",
+        "scheme",
+        "source_id",
+        "license"
+      ],
+      "readColumns": [
+        "admin_code",
+        "level",
+        "name",
+        "parent_code"
+      ],
+      "unreadColumns": [
+        "country",
+        "state",
+        "postal_code",
+        "scheme",
+        "source_id",
+        "license"
+      ],
+      "readBy": [
+        "q3",
+        "q5",
+        "q6"
+      ],
+      "rows": 2
+    },
+    "dim_crop": {
+      "columns": [
+        "crop_code",
+        "crop_name_zh",
+        "crop_name_en",
+        "hierarchy_l1",
+        "base_temp_c",
+        "gdd_need_cd",
+        "yield_ref",
+        "yield_ref_source",
+        "yield_uom",
+        "yield_basis",
+        "sow_window",
+        "harvest_md",
+        "disease_code"
+      ],
+      "readColumns": [
+        "base_temp_c",
+        "crop_code",
+        "hierarchy_l1",
+        "yield_basis",
+        "yield_ref"
+      ],
+      "unreadColumns": [
+        "crop_name_zh",
+        "crop_name_en",
+        "gdd_need_cd",
+        "yield_ref_source",
+        "yield_uom",
+        "sow_window",
+        "harvest_md",
+        "disease_code"
+      ],
+      "readBy": [
+        "q1",
+        "q12",
+        "q14",
+        "q15"
+      ],
+      "rows": 8
+    },
+    "dim_data_element": {
+      "columns": [
+        "table_name",
+        "column_name",
+        "name_zh",
+        "name_en",
+        "definition",
+        "data_type",
+        "data_format",
+        "value_range",
+        "uom",
+        "obligation",
+        "source_id",
+        "synthetic",
+        "note"
+      ],
+      "readColumns": [],
+      "unreadColumns": [
+        "table_name",
+        "column_name",
+        "name_zh",
+        "name_en",
+        "definition",
+        "data_type",
+        "data_format",
+        "value_range",
+        "uom",
+        "obligation",
+        "source_id",
+        "synthetic",
+        "note"
+      ],
+      "readBy": [],
+      "rows": 179
+    },
+    "dim_date": {
+      "columns": [
+        "date_key",
+        "year",
+        "month",
+        "day",
+        "doy",
+        "is_growing_season"
+      ],
+      "readColumns": [],
+      "unreadColumns": [
+        "date_key",
+        "year",
+        "month",
+        "day",
+        "doy",
+        "is_growing_season"
+      ],
+      "readBy": [],
+      "rows": 549
+    },
+    "dim_grid": {
+      "columns": [
+        "grid_id",
+        "grid_code",
+        "admin_code",
+        "grid_m",
+        "n_parcels",
+        "crs",
+        "source_id"
+      ],
+      "readColumns": [
+        "grid_code",
+        "grid_id",
+        "grid_m"
+      ],
+      "unreadColumns": [
+        "admin_code",
+        "n_parcels",
+        "crs",
+        "source_id"
+      ],
+      "readBy": [
+        "q2",
+        "q3",
+        "q5",
+        "q6"
+      ],
+      "rows": 217
+    },
+    "dim_parcel": {
+      "columns": [
+        "parcel_id",
+        "parcel_code",
+        "admin_code",
+        "unit_id",
+        "grid_id",
+        "area_ha",
+        "centroid_lon",
+        "centroid_lat",
+        "landuse",
+        "crop_code",
+        "crop_name_zh",
+        "fallow",
+        "sow_day",
+        "harvest_day",
+        "season_count",
+        "gdd_need_cd",
+        "yield_t_ha_avg",
+        "yield_t_total",
+        "disease_level_max",
+        "treated",
+        "t_min_to_store",
+        "access_m",
+        "soil_quality",
+        "soil_quality_source",
+        "soil_texture",
+        "soil_ph",
+        "soil_organic_matter",
+        "elevation_m",
+        "temp_offset_c",
+        "land_quality_grade",
+        "n_zones",
+        "source_id",
+        "synthetic",
+        "crs"
+      ],
+      "readColumns": [
+        "access_m",
+        "admin_code",
+        "area_ha",
+        "centroid_lat",
+        "centroid_lon",
+        "crop_code",
+        "crop_name_zh",
+        "crs",
+        "disease_level_max",
+        "elevation_m",
+        "fallow",
+        "gdd_need_cd",
+        "grid_id",
+        "harvest_day",
+        "land_quality_grade",
+        "landuse",
+        "n_zones",
+        "parcel_code",
+        "parcel_id",
+        "season_count",
+        "soil_organic_matter",
+        "soil_ph",
+        "soil_quality",
+        "soil_quality_source",
+        "soil_texture",
+        "source_id",
+        "sow_day",
+        "synthetic",
+        "t_min_to_store",
+        "temp_offset_c",
+        "treated",
+        "unit_id",
+        "yield_t_ha_avg",
+        "yield_t_total"
+      ],
+      "unreadColumns": [],
+      "readBy": [
+        "q1",
+        "q3",
+        "q5",
+        "q6",
+        "q7",
+        "q12",
+        "q14",
+        "q15"
+      ],
+      "rows": 501
+    },
+    "dim_source": {
+      "columns": [
+        "source_id",
+        "name",
+        "url",
+        "license",
+        "synthetic",
+        "usage"
+      ],
+      "readColumns": [],
+      "unreadColumns": [
+        "source_id",
+        "name",
+        "url",
+        "license",
+        "synthetic",
+        "usage"
+      ],
+      "readBy": [],
+      "rows": 9
+    },
+    "dim_unit": {
+      "columns": [
+        "unit_id",
+        "unit_code",
+        "grid_id",
+        "n_parcels",
+        "area_ha",
+        "dominant_crop",
+        "crop_mix",
+        "fallow_ha",
+        "source_id"
+      ],
+      "readColumns": [
+        "dominant_crop",
+        "fallow_ha",
+        "grid_id",
+        "n_parcels",
+        "unit_code",
+        "unit_id"
+      ],
+      "unreadColumns": [
+        "area_ha",
+        "crop_mix",
+        "source_id"
+      ],
+      "readBy": [
+        "q2",
+        "q3",
+        "q5",
+        "q6"
+      ],
+      "rows": 62
+    },
+    "dim_variable": {
+      "columns": [
+        "variable_code",
+        "name_zh",
+        "name_en",
+        "definition",
+        "data_type",
+        "value_range",
+        "uom",
+        "spatial_level",
+        "temporal_grain",
+        "source_id",
+        "synthetic",
+        "alarm_rule",
+        "standard_ref"
+      ],
+      "readColumns": [
+        "name_zh",
+        "temporal_grain",
+        "uom",
+        "variable_code"
+      ],
+      "unreadColumns": [
+        "name_en",
+        "definition",
+        "data_type",
+        "value_range",
+        "spatial_level",
+        "source_id",
+        "synthetic",
+        "alarm_rule",
+        "standard_ref"
+      ],
+      "readBy": [
+        "q4"
+      ],
+      "rows": 16
+    },
+    "fact_observation": {
+      "columns": [
+        "thing_id",
+        "spatial_level",
+        "spatial_id",
+        "variable_code",
+        "observed_property",
+        "phenomenon_time",
+        "result_value",
+        "result_uom",
+        "source_id",
+        "synthetic",
+        "quality_flag"
+      ],
+      "readColumns": [
+        "observed_property",
+        "phenomenon_time",
+        "quality_flag",
+        "result_uom",
+        "result_value",
+        "source_id",
+        "spatial_id",
+        "spatial_level",
+        "synthetic",
+        "thing_id",
+        "variable_code"
+      ],
+      "unreadColumns": [],
+      "readBy": [
+        "q4"
+      ],
+      "rows": 4392
+    },
+    "fact_parcel_daily": {
+      "columns": [
+        "parcel_id",
+        "date_key",
+        "crop_progress",
+        "water_index",
+        "fertility_index",
+        "disease_index",
+        "disease_level",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [],
+      "unreadColumns": [
+        "parcel_id",
+        "date_key",
+        "crop_progress",
+        "water_index",
+        "fertility_index",
+        "disease_index",
+        "disease_level",
+        "source_id",
+        "synthetic"
+      ],
+      "readBy": [],
+      "rows": 275049
+    },
+    "fact_parcel_event": {
+      "columns": [
+        "parcel_id",
+        "event_day",
+        "event_type",
+        "crop_code",
+        "crop_name_zh",
+        "yield_t_ha",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [
+        "event_day",
+        "event_type",
+        "yield_t_ha"
+      ],
+      "unreadColumns": [
+        "parcel_id",
+        "crop_code",
+        "crop_name_zh",
+        "source_id",
+        "synthetic"
+      ],
+      "readBy": [
+        "q9",
+        "q13"
+      ],
+      "rows": 1981
+    },
+    "fact_parcel_season": {
+      "columns": [
+        "parcel_id",
+        "season_seq",
+        "season_year",
+        "crop_code",
+        "crop_name_zh",
+        "sow_day",
+        "harvest_deadline",
+        "harvest_day",
+        "gdd_need_cd",
+        "yield_t_ha",
+        "yield_t",
+        "disease_level_max",
+        "treated",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [
+        "crop_code",
+        "crop_name_zh",
+        "disease_level_max",
+        "gdd_need_cd",
+        "harvest_day",
+        "harvest_deadline",
+        "parcel_id",
+        "season_seq",
+        "season_year",
+        "source_id",
+        "sow_day",
+        "synthetic",
+        "treated",
+        "yield_t",
+        "yield_t_ha"
+      ],
+      "unreadColumns": [],
+      "readBy": [
+        "q1",
+        "q12",
+        "q10",
+        "q14",
+        "q15"
+      ],
+      "rows": 586
+    },
+    "fact_region_daily": {
+      "columns": [
+        "date_key",
+        "temp_mean_c",
+        "humidity_pct",
+        "precip_mm",
+        "soil_wetness_root",
+        "crop_progress",
+        "disease_level_max",
+        "water_index",
+        "fertility_index",
+        "harvested_ha_today",
+        "sown_ha_today",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [
+        "crop_progress",
+        "date_key",
+        "disease_level_max",
+        "humidity_pct",
+        "precip_mm"
+      ],
+      "unreadColumns": [
+        "temp_mean_c",
+        "soil_wetness_root",
+        "water_index",
+        "fertility_index",
+        "harvested_ha_today",
+        "sown_ha_today",
+        "source_id",
+        "synthetic"
+      ],
+      "readBy": [
+        "q8"
+      ],
+      "rows": 549
+    },
+    "fact_unit_decade": {
+      "columns": [
+        "decade_key",
+        "decade_seq",
+        "date_start",
+        "date_end",
+        "days",
+        "unit_id",
+        "unit_code",
+        "grid_id",
+        "dominant_crop",
+        "area_ha",
+        "n_parcels",
+        "temp_mean_c",
+        "precip_sum_mm",
+        "soil_wetness_mean",
+        "progress_mean",
+        "progress_area_mean",
+        "progress_p10",
+        "progress_p90",
+        "disease_level_max",
+        "disease_parcels_ge3",
+        "water_index_mean",
+        "fertility_index_mean",
+        "harvested_ha",
+        "sown_ha",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [
+        "area_ha",
+        "date_end",
+        "date_start",
+        "days",
+        "decade_key",
+        "decade_seq",
+        "disease_level_max",
+        "disease_parcels_ge3",
+        "dominant_crop",
+        "fertility_index_mean",
+        "grid_id",
+        "harvested_ha",
+        "n_parcels",
+        "precip_sum_mm",
+        "progress_area_mean",
+        "progress_mean",
+        "progress_p10",
+        "progress_p90",
+        "soil_wetness_mean",
+        "source_id",
+        "sown_ha",
+        "synthetic",
+        "temp_mean_c",
+        "unit_code",
+        "unit_id",
+        "water_index_mean"
+      ],
+      "unreadColumns": [],
+      "readBy": [
+        "q2",
+        "q11"
+      ],
+      "rows": 3348
+    },
+    "fact_zone": {
+      "columns": [
+        "parcel_id",
+        "zone_code",
+        "zone_center_value",
+        "n_points_est",
+        "area_ha_est",
+        "sample_m",
+        "source_id",
+        "synthetic"
+      ],
+      "readColumns": [
+        "area_ha_est",
+        "n_points_est",
+        "parcel_id",
+        "sample_m",
+        "source_id",
+        "synthetic",
+        "zone_center_value",
+        "zone_code"
+      ],
+      "unreadColumns": [],
+      "readBy": [
+        "q7"
+      ],
+      "rows": 744
+    },
+    "meta_dataset": {
+      "columns": [
+        "metadata_group",
+        "element_name",
+        "element_value",
+        "obligation",
+        "data_type"
+      ],
+      "readColumns": [],
+      "unreadColumns": [
+        "metadata_group",
+        "element_name",
+        "element_value",
+        "obligation",
+        "data_type"
+      ],
+      "readBy": [],
+      "rows": 18
+    }
+  }
+}

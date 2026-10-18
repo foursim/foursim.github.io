@@ -8,7 +8,7 @@
     "test": "node tools/agro-smoke.mjs",
     "test:agro": "node tools/agro-smoke.mjs",
     "test:browser": "node tools/browser-check.mjs",
-    "data:all": "npm run data:parcels && npm run data:roads && npm run trim:geojson && npm run data:poi && npm run data:admin && npm run data:places && npm run data:elevation && npm run data:soil && npm run data:weather && npm run data:access && npm run data:units && npm run data:zones && npm run data:scenario && npm run data:check && npm test && npm run export:tables && npm run query && npm run query:sql && npm run repo:check",
+    "data:all": "npm run data:parcels && npm run data:roads && npm run trim:geojson && npm run data:poi && npm run data:admin && npm run data:places && npm run data:elevation && npm run data:soil && npm run data:weather && npm run data:access && npm run data:units && npm run data:zones && npm run data:scenario && npm run data:check && npm test && npm run export:tables && npm run query && npm run query:sql && npm run deliver && npm run repo:check",
     "data:admin": "node tools/fetch-data.mjs admin --out data",
     "data:places": "node tools/fetch-data.mjs places --out data",
     "data:elevation": "node tools/fetch-data.mjs elevation --out data",
@@ -34,6 +34,7 @@
     "smoke:browser": "node tools/browser-check.mjs --smoke",
     "trim:geojson": "node tools/trim-geojson.mjs",
     "test:tables": "node tools/tables-test.mjs",
-    "cols": "node tools/col-usage.mjs"
+    "cols": "node tools/col-usage.mjs",
+    "deliver": "node tools/deliver.mjs"
   }
 }
