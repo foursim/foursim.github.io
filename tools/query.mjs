@@ -144,6 +144,8 @@ class TableStore {
     this.cache = new Map();
     this.tracing = null;              // 当前正在构建的查询 id（由主循环设置）
     this.reads = new Map();           // 查询 id → 读到的表名集合
+    this.sampleTrace = false;         // `--deps` 时打开：给前几行套 Proxy 记录**列级**依赖
+    this.cols = new Map();            // 查询 id → (表名 → 读到的列集合)
   }
   get(name) {
     // **依赖追踪**：记下"当前正在构建的查询读了哪张表"（`--deps` 打印，判据也用它）
@@ -155,6 +157,30 @@ class TableStore {
     const f = path.join(this.dir, `${name}.csv`);
     if (!fs.existsSync(f)) return undefined;
     const t = parseTableFile(f, name);
+    /*
+     * **列级追踪**（只在 `--deps` 审计模式下开）：给前 3 行套 Proxy，记录"谁读了哪一列"。
+     *
+     * 为什么用 Proxy 而不是静态扫描：静态扫描分不清"注释里提到"和"真的读了" ——
+     * 上一版就因此把 206 列全算成"有引用"（等于没查）。Proxy 记录的是**真实属性访问**。
+     * 为什么只包前 3 行：查询对同一张表的每一行读的列是一样的（按列名读或整体遍历），
+     * 采样 3 行足够，且不影响性能。**只在审计模式开**：正常跑不套代理，零风险零开销。
+     */
+    if (this.sampleTrace) {
+      for (let i = 0; i < Math.min(3, t.rows.length); i++) {
+        const raw = t.rows[i];
+        t.rows[i] = new Proxy(raw, {
+          get: (o, k) => {
+            if (this.tracing && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k)) {
+              if (!this.cols.has(this.tracing)) this.cols.set(this.tracing, new Map());
+              const perTable = this.cols.get(this.tracing);
+              if (!perTable.has(name)) perTable.set(name, new Set());
+              perTable.get(name).add(k);
+            }
+            return o[k];
+          },
+        });
+      }
+    }
     this.cache.set(name, t);
     return t;
   }
@@ -885,6 +911,8 @@ if (has('list')) {
   process.exit(0);
 }
 const wantCheckOnly = has('check');
+// `--deps`：**在构建之前**打开列级采样（Proxy 只在首次解析时套上去）
+T.sampleTrace = has('deps');
 fs.mkdirSync(OUT, { recursive: true });
 
 const results = [];
@@ -1186,13 +1214,48 @@ if (only) {
   process.exit(0);
 }
 
-// `--deps`：打印"每个查询读了哪几张表"（交付裁剪与性能分析的起点）
+/*
+ * `--deps`：打印"每个查询读了哪几张表、哪几列"（交付裁剪与性能分析的起点）。
+ * 列级依赖是**主循环构建时**记录的（`T.sampleTrace` 在构建前打开），这里只打印，不重跑查询。
+ */
 if (has('deps')) {
-  console.log('\n=== 查询 → 表依赖（运行时追踪，不是人工声明）===');
+  console.log('\n=== 查询 → 依赖（运行时追踪：表 + 列）===');
   for (const p of PRESETS) {
     const set = T.reads.get(p.id);
+    const perTable = T.cols.get(p.id) ?? new Map();
     console.log(`  ${p.id.padEnd(5)} ${set && set.size ? [...set].join(', ') : '（未读任何表）'}`);
+    for (const [tb, cs] of perTable) console.log(`        ${tb}: ${[...cs].sort().join(', ')}`);
   }
+  // 汇总：每张表"读到几列 / 共几列" + **一次都没被读到的列**（比静态扫描可信）
+  console.log('\n=== 每张表的列使用情况（未读列 = 可信的可疑清单）===');
+  for (const name of T.names()) {
+    const t = T.get(name);
+    if (!t) continue;
+    const read = new Set();
+    for (const perTable of T.cols.values()) {
+      const cs = perTable.get(name);
+      if (cs) for (const c of cs) read.add(c);
+    }
+    const unread = t.columns.filter((c) => !read.has(c));
+    console.log(`  ${name.padEnd(26)} ${String(t.columns.length).padStart(3)} 列 · 读 ${String(read.size).padStart(3)} 列`
+      + (unread.length ? ` · **未读**: ${unread.join(', ')}` : ' · 未读: 无'));
+  }
+  /*
+   * **交付裁剪建议**：哪些表"一个查询都不读"。
+   * ⚠️ 不等于是"可以删"：这些表可能仍被 Excel 导出、数据元字典、离线校验或页面 JSON 用到 ——
+   * 只说明**查询这条链**不需要它。裁剪前必须确认其余消费方。
+   */
+  console.log('\n=== 交付裁剪参考：查询链完全不读的表 ===');
+  const zero = T.names().filter((n) => {
+    for (const perTable of T.cols.values()) if (perTable.get(n)?.size) return false;
+    return T.get(n);
+  });
+  for (const n of zero) {
+    const t = T.get(n);
+    const kb = (fs.statSync(path.join(TABLES, `${n}.csv`)).size / 1024).toFixed(0);
+    console.log(`  ${n.padEnd(26)} ${kb.padStart(6)} KB · ${t.columns.length} 列（**未被任何查询读取**）`);
+  }
+  console.log('（注意：仍可能被 Excel 导出 / 数据元字典 / 离线校验用到 —— 删前先确认其余消费方）');
 }
 
 {
