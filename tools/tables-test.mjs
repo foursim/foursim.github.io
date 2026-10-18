@@ -28,8 +28,13 @@ const ctx = {
       { id: 'u2', code: '09186162-U-0002', crop: null, area: 12.0, n: 5, progress: null, disease: 1, water: 0.8, fert: 0.5, tMin: 4.2 },
     ],
     grids: [{ id: 'g1', code: 'G250-3403-21501', crop: '牧草', area: 16.3, n: 8, progress: null, disease: 1, water: 0.5, fert: 0.5, tMin: 5.0 }],
-    crops: [{ code: 'wheat', name: '冬小麦', area: 300, parcels: 100, share: 0.3 }],
-    questions: [{ key: 'frost', title: '霜冻风险', hits: [1, 2], ha: 12.5, top: '最冷 -3.2℃', note: '气象阈值' }],
+    crops: [
+      { code: 'wheat', name: '冬小麦', n: 100, area: 300, yieldHa: 6.4, yieldT: 1920, basis: '籽粒', ref: 6.2 },
+      // 无收获数据的作物：单产/总产要渲染成 `—`（0 会被读成"绝收"）
+      { code: 'grass', name: '牧草', n: 40, area: 120, yieldHa: 0, yieldT: 0, basis: '', ref: null },
+    ],
+    questions: [{ key: 'frost', title: '霜冻风险', hits: [1, 2, 3, 4, 5], ha: 12.5, top: '最冷 -3.2℃',
+      desc: '气象阈值 · 播种后 3 天', level: 'bad' }],
   },
   model: {
     days: Array.from({ length: DAYS }, (_, i) => `2024070${i + 1}`),
@@ -116,6 +121,31 @@ console.log('\n=== tables.js 纯函数判据（node，无浏览器） ===');
   check('统计网格表：9 列，且 `progress=null` 同样渲染成 `—`（两个空间键同一套规则）',
     r.cols.length === 9 && r.rows[0].cells[4].text === '—',
     `列 ${r.cols.length} 个 · 第 5 列 = ${r.rows[0].cells[4].text}`);
+}
+
+// ---- focus：命中块数 ≥5 时带 level 类，且行带 data-question ----
+{
+  const r = buildTable('focus', ctx);
+  check('重点问题表：5 列、行带 `data-question`（点击高亮的入口）、命中 ≥5 块时带等级类',
+    r.cols.length === 5 && /data-question="frost"/.test(r.rows[0].attrs) && r.rows[0].cls === 'bad',
+    `列 ${r.cols.length} 个 · cls=${r.rows[0].cls || '（无）'} · 命中 ${r.rows[0].cells[1].text} 块`);
+}
+
+// ---- crops：无收获数据时是 `—`（不是 0，0 会被读成"绝收"）----
+{
+  const r = buildTable('crops', ctx);
+  check('作物表：7 列，无单产的作物渲染 `—`（与"0 产量"区分开），行带 `data-crop`',
+    r.cols.length === 7 && r.rows[0].cells[3].text === '6.4' && r.rows[1].cells[3].text === '—'
+      && /data-crop="wheat"/.test(r.rows[0].attrs),
+    `首行单产 ${r.rows[0].cells[3].text} · 无收获那行 ${r.rows[1].cells[3].text}`);
+}
+
+// ---- charts：合法的空数据（面板自己画），不能让表格逻辑崩 ----
+{
+  const r = buildTable('charts', ctx);
+  check('图表页签：给一列合法的空数据（面板自己画图），表注说明用途',
+    r.cols.length === 1 && r.rows.length === 0 && /图表/.test(r.note),
+    `列 ${r.cols.length} · ${r.rows.length} 行 · 「${r.note.slice(0, 20)}…」`);
 }
 
 console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

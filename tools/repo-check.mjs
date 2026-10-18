@@ -77,9 +77,16 @@ const check = (label, ok, detail = '') => {
    * 而当时的 ready 只跑 query/repo，照样一片绿。这条判据钉住它：谁把 smoke 拿掉，这里就红。
    */
   const ready = (JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts ?? {}).ready ?? '';
+  /*
+   * `ready` 现在是个 runner（`node tools/ready.mjs`），步骤写在它自己的 STEPS 表里。
+   * 所以不能在 package.json 的字符串里找 `smoke:browser`（找到的是"没有"）——
+   * 要看**runner 实际会跑什么**。这一步判据当场抓住过我改 runner 时把冒烟漏掉。
+   */
+  const runnerFile = /node (tools\/[\w.-]+\.mjs)/.exec(ready)?.[1];
+  const runnerText = runnerFile && fs.existsSync(runnerFile) ? fs.readFileSync(runnerFile, 'utf8') : '';
   check('`ready` 里含**页面冒烟**（`smoke:browser`）—— 否则"改坏了页面"这件事在 ready 里看不出来',
-    /smoke:browser/.test(ready),
-    ready);
+    /smoke:browser/.test(ready) || /smoke:browser/.test(runnerText),
+    runnerFile ? `via ${runnerFile}` : ready);
 
   /*
    * 路网是启动清单里最大的一块（曾 459 KB）。精简后必须同时满足：
