@@ -15,3 +15,6 @@ tables/fact_parcel_daily.csv
 # LibreOffice/OpenOffice 打开 CSV 时会写这种锁文件（文件被占用 ⇒ 导出会 EBUSY）。
 # 它们是“某人正开着这个文件”的信号，**不是产物**，绝不能提交。
 .~lock.*#
+
+# 交付包（`npm run pack` 的产物，随时可重打）
+dist/

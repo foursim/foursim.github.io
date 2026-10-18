@@ -56,6 +56,9 @@ npm run cols            # 列依赖扫描（哪些表列在代码里一次都没
 npm run query -- --deps # 查询 → 依赖（**运行时追踪**：表 + 列；附「交付裁剪参考」）
 npm run query -- --deps --json # 同上，但落 `tables/query/deps.json`（机器可读，供交付脚本消费）
 npm run deliver          # 生成 `tables/交付清单.md`（必带 / 按需 / 说明 三组 + 4 条判据）
+npm run pack             # 按清单打交付包到 `dist/agri-deliver-<日期>/`（页面 + 数据，约 6.3 MB）
+npm run pack -- --with-daily   # 连按需长表 fact_parcel_daily 一起带（约 20 MB）
+npm run pack -- --smoke  # 打完再对着**包目录**跑一次页面冒烟（证明"打开是好的"）
 npm run test:browser    # 真浏览器验收 216 条（Chrome/Edge，找不到浏览器时自动跳过）
 npm run export:tables   # 单独重跑表格导出（含 31 条导出判据，失败即非 0 退出）
 npm run export:daily    # 按需落盘"地块 × 日"长表（275,049 行 / 13.7 MB；默认不生成，另有 2 条判据）
@@ -611,6 +614,17 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 - **运距告警阈值定在数据之外**：`dim_variable` 里 `T_MIN_STORE` 的告警是 "> 12 min"，而本演示区运距**最大只有 11.8 分**
   ⇒ 这条告警永远不会触发（"看着有、其实没有"的能力最容易被误认）⇒ 阈值如实标注，q5 改用实测分位数（p90 / p50）。
 
+### 本轮（交付包）抓到的真 bug / 教训
+
+- **静态核对 ≠ 交付物能起来**：包里 5 条判据（表数/字节数/按需/引用/缓存）都是**静态**的，
+  页面真跑起来才说明"这份交付物打开是好的" ⇒ 加了 `pack --smoke`：给 browser-check 加 `--root`，
+  对着**包目录**跑同一个冒烟。反向验证：删掉包里的 `data/weather_daily.json` ⇒ 退出码 1，且直接说
+  `data/weather_daily.json → HTTP 404`；放回去 ⇒ 5/0。
+- **标签必须随模式变**：`--with-daily` 时按需表本来就该在包里，判据标签却还写着"包里没有 gitignore
+  忽略的东西" ⇒ **自相矛盾**（同一条输出里先说"没有"再说"已带"）。标签要么跟着模式走，要么别写死。
+- **规则只写一处**：`deliver`（写清单）与 `pack`（打交付包）必须用同一套分组，否则"清单说必带、
+  包里却没有"。已抽成 `tools/lib/deliver-groups.mjs`，两边 import 同一份。
+
 ### 本轮（交付清单）抓到的真 bug / 教训
 
 - **"四舍五入成 0"会把小表误判成空文件**：交付清单判据原本用 `(size/1024).toFixed(0) > 0`，
@@ -925,6 +939,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 | **路网精简（启动最大一块）** | `data/roads.geojson` **459 KB → 328 KB（−28.5%）**：量过才知道不是"路太曲折"（1576 段一共 6588 点、平均 4.2 点/段），而是**坐标满精度**（`11.557973123456789` ≈ 0.1 nm 级）+ **每段重复一份授权串**。修法：坐标 6 位小数（≈0.11 m）、只删确认没人读的属性（`highway`/`name` 有功能依赖必须留）、**署名上移到 `metadata.attribution`**（ODbL 要求署名）。判据盯住"重跑 data:roads 忘了 trim" | 卫生 1 条 |
 | **报告含当前帧地图** | 把 `exportPng()` 里"画快照"与"下载"拆开（`snapshotCanvas()`）⇒ 报告与导出 PNG 用同一份快照；报告两张图（地图 + 四张图拼图）都是 `data:` URL、零外链 | （并入报告 3 条） |
 | **报告加"情景散点"一节** | 报告现在三张图：当前帧地图 + **情景候选散点（含帕累托前沿）** + 四张常用图拼图，全部 `data:` URL。散点只在抽屉里出现过，报告要它就得**离屏现画一张**（`scatterImage()`，与 `chartPanelImage()` 同一做法） | （并入报告 3 条） |
+| **交付包（`npm run pack`）** | 按清单分组打 `dist/agri-deliver-<日期>/`：页面（`index.html`/`js`/`vendor`/`style.css`）+ `data/*`（JSON/GeoJSON，排除 `_` 前缀缓存）+ 表（必带 12 + 说明 4 + 两份 md + Excel）≈ **6.3 MB**；`--with-daily` 加按需长表 ≈ 20 MB。5 条静态判据（表数/逐字节等长/按需是否带/页面引用逐个存在/不含缓存），`--smoke` 再加一条**包内页面冒烟** | 5～6 条 |
 | **交付清单（`npm run deliver`）** | 读运行时依赖追踪（`deps.json`）+ 文件实际状态，生成 `tables/交付清单.md`，分三组且规则可验证：**必带**（被查询读到，12 张）· **按需**（`.gitignore` 里忽略、`export:daily` 才生成，1 张）· **说明**（词典/元数据/日期维，4 张）。4 条判据：覆盖全部查询 · 三组不重不漏 = 全部表 · 行数一致且字节数 > 0 · 「必带」组每张表**真的被读到过至少一列**（不是靠表名匹配） | 4 条 |
 | **查询 → 依赖做到列级** | `--deps` 现在连**列**一起给：给前 3 行套 Proxy 记录真实属性访问（不是静态扫描 —— 上一版按「词边界」扫，`name`/`level` 撞上注释就「算用过」，206 列全绿等于没查）。实测：`dim_parcel` **34/34 列**、`fact_parcel_season` **15/15**、`fact_unit_decade` **26/26** 全被读到；并列出「查询链完全不读的表」作为**交付裁剪参考**（`dim_data_element`/`dim_date`/`dim_source`/`meta_dataset`/`fact_parcel_daily`）。其中 `fact_parcel_daily` 14 MB 本来就是 `export-tables --daily` 的**按需**长表，不是查询依赖 —— 与项目原设计一致 | ← 只作参考（无判据） |
 | **查询 → 表依赖（运行时追踪）** | `--deps` 打印"每个查询读了哪几张表"（实测 15 个查询共 36 次表读取）；并加一条判据：**每个查询至少读到一张表** —— 表名写错（`T.get('fact_xxx')` 返回 undefined）或构建提前返回时，它会"0 依赖"却照样产出空表，属于最难查的静默失败。用追踪而不用人工声明：**声明会漂，追踪不会** | 查询 +1 条 |

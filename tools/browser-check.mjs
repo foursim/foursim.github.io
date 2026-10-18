@@ -19,7 +19,13 @@ import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/*
+ * `--root <dir>`：换个根目录跑同一套检查（主要用途：**验交付包能不能起来** ——
+ * 包里页面跑不起来，前面所有数据判据都不算数）。默认还是仓库根。
+ */
+const rootArg = process.argv.indexOf('--root');
+const ROOT = rootArg > 0 && process.argv[rootArg + 1] ? path.resolve(process.argv[rootArg + 1]) : REPO_ROOT;
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
 /*
@@ -92,7 +98,7 @@ const server = http.createServer(async (req, res) => {
   url = url.slice(PREFIX.length);
   if (url === '' || url === '/') url = '/index.html';
   try {
-    const b = await fs.promises.readFile(path.join(ROOT, url));
+    const b = await fs.promises.readFile(path.join(ROOT, url.replace(/^\//, '')));
     res.writeHead(200, { 'content-type': MIME[path.extname(url)] || 'application/octet-stream' });
     res.end(b);
   } catch { res.writeHead(404); res.end('404'); }

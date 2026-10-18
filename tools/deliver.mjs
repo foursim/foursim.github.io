@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { classify } from './lib/deliver-groups.mjs';
 
 const ROOT = process.cwd();
 const TABLES = path.join(ROOT, 'tables');
@@ -46,20 +47,8 @@ if (force || stale) {
 }
 const deps = JSON.parse(fs.readFileSync(DEPS, 'utf8'));
 
-/* ---------- ② 分组 ---------- */
-// 按需表：`.gitignore` 里显式忽略的 tables/*.csv（"由 xxx 重算" 的中间产物）
-const ignored = new Set(
-  fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8')
-    .split(/\r?\n/)
-    .filter((l) => l && !l.startsWith('#'))
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('tables/') && l.endsWith('.csv'))
-    .map((l) => path.basename(l, '.csv')),
-);
-const all = Object.keys(deps.tables);
-const must = all.filter((n) => (deps.tables[n].readBy ?? []).length && !ignored.has(n));
-const optional = all.filter((n) => ignored.has(n));
-const docs = all.filter((n) => !must.includes(n) && !optional.includes(n));
+/* ---------- ② 分组（规则在 tools/lib/deliver-groups.mjs，与 pack 共用同一份） ---------- */
+const { must, optional, docs, all } = classify(deps);
 
 // 用**字节**判断存在性/非空：`dim_admin` 只有 2 行（<1 KB），四舍五入成 "0 KB" 会被误判成空文件
 const bytesOf = (n) => {
