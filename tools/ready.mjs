@@ -19,6 +19,7 @@ const STEPS = [
   ['npm run repo:check', '仓库卫生'],
 ];
 
+const VERBOSE = process.argv.includes('--verbose') || process.argv.includes('-v');
 const rows = [];
 let failed = null;
 const t0 = Date.now();
@@ -31,8 +32,11 @@ for (const [cmd, label] of STEPS) {
   const fail = m ? Number(m[2]) : null;
   const ok = r.status === 0 && (fail === null || fail === 0);
   rows.push({ label, cmd, ok, pass, fail, ms: Date.now() - t });
+  // `-v/--verbose`：每一步都打完整输出（红的时候默认只给最后 12 行，有时不够）
+  if (VERBOSE) console.log(`\n--- ${label} (${cmd}) ---\n${out.trim()}`);
   if (!ok) {
-    failed = { label, cmd, out: out.trim().split(/\r?\n/).slice(-12).join('\n') };
+    const tail = VERBOSE ? out.trim() : out.trim().split(/\r?\n/).slice(-12).join('\n');
+    failed = { label, cmd, out: tail };
     break;
   }
 }

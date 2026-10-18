@@ -43,11 +43,22 @@ const suspects = [];
 for (const f of files) {
   const head = fs.readFileSync(path.join(TABLES, f), 'utf8').split(/\r?\n/, 1)[0].split(',').map((x) => x.replace(/"/g, ''));
   totalCols += head.length;
+  /*
+   * 只认**代码上下文**里的出现（这是本工具从"偏宽松"往"可信"走的一步）：
+   *   `r.<col>` / `properties.<col>` / `x['<col>']` / `<col>:`（对象键）
+   * 仅仅在注释或文案里出现同一个词（`name`、`level`、`crs` 这类通用词）**不算** ——
+   * 上一版按"词边界在任意位置出现"算，结果 206 列全"有引用"，等于什么都没查。
+   */
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = (c) => [
+    new RegExp(`\\.${esc(c)}(?![A-Za-z0-9_])`),          // r.<col> / properties.<col>
+    new RegExp(`\\[['\"]${esc(c)}['\"]\\]`),            // x['<col>']
+    new RegExp(`(^|[^A-Za-z0-9_])${esc(c)}\\s*:`),        // <col>: （对象键）
+  ];
   const miss = head.filter((c) => {
     if (!c) return false;
-    // 词边界匹配（列名是标识符风格，\b 对下划线/数字也成立）
-    const re = new RegExp(`(^|[^A-Za-z0-9_])${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_]|$)`);
-    return !sources.some((s) => re.test(s.text));
+    const ps = patterns(c);
+    return !sources.some((s) => ps.some((re) => re.test(s.text)));
   });
   if (miss.length) suspects.push({ table: f.replace(/\.csv$/, ''), miss, n: head.length });
 }
