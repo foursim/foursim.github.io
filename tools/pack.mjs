@@ -19,6 +19,7 @@ const TABLES = path.join(ROOT, 'tables');
 const DEPS = path.join(TABLES, 'query', 'deps.json');
 const withDaily = process.argv.includes('--with-daily');
 const runSmoke = process.argv.includes('--smoke');
+const wantZip = process.argv.includes('--zip');
 const stamp = new Date().toISOString().slice(0, 10);
 const OUT = path.join(ROOT, 'dist', `agri-deliver-${stamp}`);
 
@@ -28,6 +29,31 @@ const check = (label, cond, detail = '') => {
   if (cond) { pass++; console.log(`  [OK]   ${label}${detail ? ` — ${detail}` : ''}`); }
   else { fail++; console.log(`  [FAIL] ${label}${detail ? ` — ${detail}` : ''}`); }
 };
+
+/**
+ * 读 zip 的**中央目录**（只读，不依赖任何外部工具）。
+ * 结构：EOCD（`PK\x05\x06`，从尾部往前找）→ 目录条目数/偏移 → 逐条 `PK\x01\x02`。
+ */
+function listZip(file) {
+  const b = fs.readFileSync(file);
+  let eocd = -1;
+  for (let i = b.length - 22; i >= 0 && i > b.length - 22 - 65535; i--) {
+    if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('找不到 EOCD（不是 zip？）');
+  const count = b.readUInt16LE(eocd + 10);
+  let off = b.readUInt32LE(eocd + 16);
+  const names = [];
+  for (let i = 0; i < count; i++) {
+    if (off + 46 > b.length || b.readUInt32LE(off) !== 0x02014b50) break;
+    const nameLen = b.readUInt16LE(off + 28);
+    const extraLen = b.readUInt16LE(off + 30);
+    const commentLen = b.readUInt16LE(off + 32);
+    names.push(b.toString('utf8', off + 46, off + 46 + nameLen));
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return names;
+}
 
 if (!fs.existsSync(DEPS)) {
   console.log('[依赖] deps.json 不存在 ⇒ 先跑一次 deliver');
@@ -106,6 +132,25 @@ fs.writeFileSync(path.join(OUT, '交付说明.txt'), lines2, 'utf8');
 
 console.log(`[打包] ${path.relative(ROOT, OUT)} · ${copied.length} 项 · ${totalMB} MB`);
 
+/* ---------- ④' 压缩包（业务方拿走时更常见的形式） ---------- */
+const zipPath = path.join(ROOT, 'dist', `agri-deliver-${stamp}.zip`);
+let zipErr = '';
+if (wantZip) {
+  fs.rmSync(zipPath, { force: true });
+  try {
+    if (process.platform === 'win32') {
+      // Windows 自带 PowerShell 的 Compress-Archive（免装第三方工具）
+      execFileSync('powershell', ['-NoProfile', '-Command',
+        `Compress-Archive -Path '${OUT}\\*' -DestinationPath '${zipPath}' -Force`], { stdio: 'ignore' });
+    } else {
+      execFileSync('zip', ['-qr', zipPath, '.'], { cwd: OUT, stdio: 'ignore' });
+    }
+    console.log(`[压缩] ${path.relative(ROOT, zipPath)} · ${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB`);
+  } catch (e) {
+    zipErr = e.message.split('\n')[0];
+  }
+}
+
 /* ---------- ⑤ 判据 ---------- */
 console.log('\n=== 交付包判据 ===');
 const csvInPack = fs.readdirSync(path.join(OUT, 'tables')).filter((f) => f.endsWith('.csv')).map((f) => path.basename(f, '.csv'));
@@ -153,6 +198,28 @@ check(withDaily
   !fs.existsSync(path.join(OUT, 'data', '_soil_samples.json'))
     && (withDaily || !fs.existsSync(path.join(OUT, 'tables', 'fact_parcel_daily.csv'))),
   `data/_soil_samples.json 未带 · fact_parcel_daily ${withDaily ? '已带' : '未带'}`);
+
+if (wantZip) {
+  /*
+   * 压缩包要**真能读出来**：只判"文件存在且非空"会被"压了个空目录"骗过。
+   * 不用外部工具（Git Bash 的 `tar` 是 GNU tar，不认 zip；`unzip` 又不保证有）——
+   * 直接读 zip 的**中央目录**（EOCD + 每条目录记录），零依赖、跨平台。
+   */
+  let entries = [];
+  if (!zipErr) {
+    try {
+      entries = listZip(zipPath);
+    } catch (e) {
+      zipErr = `读取压缩包失败：${e.message}`;
+    }
+  }
+  const hasPrefix = (p) => entries.some((e) => e.replace(/\\/g, '/').startsWith(p));
+  const hasName = (p) => entries.some((e) => e.replace(/\\/g, '/').endsWith(p));
+  check('`--zip` 产出的压缩包**能被解析**，且结构完整（`index.html` + `tables/` 下的 CSV + `data/`）',
+    !zipErr && entries.length > 0 && hasName('index.html') && hasPrefix('tables/')
+      && entries.some((e) => e.endsWith('.csv')) && hasPrefix('data/'),
+    zipErr || `${entries.length} 个条目 · ${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB`);
+}
 
 if (runSmoke) {
   /*

@@ -58,7 +58,7 @@ const check = (label, ok, detail = '') => {
   const wanted = [
     'tables/农业监测数据.xlsx', 'tables/query/透视与联合查询.xlsx', 'tables/query/透视与联合查询.md',
     'data/pivot.json', 'tables/query/results-self.json', 'tools/query.mjs', 'tools/query-sql.mjs',
-    'tools/duck-run.py', 'tools/repo-check.mjs',
+    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md',
   ];
   // ⚠️ 只查"存在"会被同名**空文件**骗过（0 字节的 data/pivot.json 照样绿），所以连体积一起查
   const bad = wanted.filter((f) => README.includes(f) && (!fs.existsSync(f) || fs.statSync(f).size < 64));
@@ -120,6 +120,24 @@ const check = (label, ok, detail = '') => {
     const mb = dirSize('tables') / 1024 / 1024;
     check('离线产物体积在预算内（tables/ ≤ 20 MB；实测基线 16.5 MB，大头是 fact_parcel_daily 13.7 MB）',
       mb <= 20, `${mb.toFixed(1)} MB / 预算 20 MB`);
+  }
+
+  /*
+   * **文档里的命令必须真的存在**：`docs/*.md` 里写的 `npm run xxx` 若在 `package.json` 里找不到，
+   * 说明文档已经腐烂（改名/删脚本时最容易漏改文档）。这条判据把"文档"变成可验证的。
+   */
+  {
+    const docsDir = path.join(process.cwd(), 'docs');
+    const docs = fs.existsSync(docsDir) ? fs.readdirSync(docsDir).filter((f) => f.endsWith('.md')) : [];
+    const scripts = Object.keys(JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts ?? {});
+    const used = new Set();
+    for (const f of docs) {
+      const text = fs.readFileSync(path.join(docsDir, f), 'utf8');
+      for (const m of text.matchAll(/npm run ([\w:-]+)/g)) used.add(m[1]);
+    }
+    const bad = [...used].filter((n) => !scripts.includes(n));
+    check('`docs/` 里提到的每个 `npm run xxx` 都真的存在于 `package.json` scripts（防文档腐烂）',
+      bad.length === 0, bad.length ? `文档里不存在：${bad.join(', ')}` : `${docs.length} 篇 · ${used.size} 个命令逐个核过`);
   }
 
   check('页面源码里没有外部脚本/样式引用（纯静态硬线的静态兜底）',

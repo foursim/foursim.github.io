@@ -44,6 +44,10 @@ tools/agro-smoke.mjs  模型判据（40 条，node）
 tools/browser-check.mjs 真浏览器验收（216 条，CDP 真实鼠标；找不到浏览器时跳过）
 ```
 
+## 想直接上手
+
+看不下去长文档就直接翻 [`docs/五分钟上手.md`](docs/五分钟上手.md)：想做的事 → 敲什么（查数 / 改页面 / 交付 / 排查）。
+
 ## 快速开始
 
 ```bash
