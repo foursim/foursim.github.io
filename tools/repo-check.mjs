@@ -123,6 +123,26 @@ const check = (label, ok, detail = '') => {
   }
 
   /*
+   * **HTML 里的站内链接/图片必须真的存在**。
+   * 依据：本轮把入口从 `guide.html` 换成 `index.html`（模拟页挪到 `sim.html`），改名时最容易漏改引用，
+   * 而静态站点上的死链**不会报错**，只会点了没反应或 404。
+   */
+  {
+    const pages = ['index.html', 'sim.html'].filter((f) => fs.existsSync(f));
+    const broken = [];
+    for (const f of pages) {
+      const html = fs.readFileSync(f, 'utf8');
+      for (const m of html.matchAll(/(?:src|href)="([^"#]+)"/g)) {
+        const target = m[1];
+        if (/^(https?:|data:|mailto:|javascript:)/.test(target) || target.startsWith('#')) continue;
+        if (!fs.existsSync(target.replace(/^\//, ''))) broken.push(`${f} → ${target}`);
+      }
+    }
+    check('HTML 里的**站内链接与图片都真的存在**（改名后漏改引用 = 死链，静态站点不会报错）',
+      broken.length === 0, broken.length ? broken.slice(0, 4).join(' · ') : `${pages.join(' + ')} 逐个核过`);
+  }
+
+  /*
    * **导览页的类名不许与主页面重名**。
    * 依据：本轮 `guide.css` 里写了 `.stat { ... }`，而 `style.css` 已有 `.stat`（区域概览用，`display:flex`）——
    * 结果导览页的数字卡片被排成一行（"501 地块（990.17 ha）"挤在一起）。样式冲突不会报错，只会"看着别扭"。

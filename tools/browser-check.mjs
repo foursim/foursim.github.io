@@ -1229,6 +1229,23 @@ await boot(1440, 900);
   check('**file:// 直接打开**时不白屏：内联兜底给出原因与做法（模块脚本被拦时 fatal() 根本不会执行）',
     !!fb && !fb.error && fb.shown && !fb.boot && /静态服务器/.test(fb.text),
     fb?.error ? `无法测：${fb.error}` : `兜底提示已显示（模块未执行 boot=${fb?.boot}）：${(fb?.text ?? '').slice(0, 60)}`);
+
+  /*
+   * 导览页（入口）在 file:// 下**要提前说清**"模拟地图需要 http 服务"：
+   * 否则点「打开模拟地图」进去只看到"页面没有启动"，会以为是网站坏了。
+   */
+  const guideUrl = `file:///${path.resolve('index.html').replace(/\\/g, '/')}`;
+  let tip = null;
+  try {
+    await send('Page.navigate', { url: `${guideUrl}?t=${Date.now()}` });
+    await sleep(700);
+    tip = await ev(`(()=>{const t=document.querySelector('.g-tip');return {shown:!!t, text:t?t.textContent.replace(/\s+/g,' ').slice(0,120):'', imgs:[...document.querySelectorAll('.shot img')].filter(i=>i.naturalWidth>0).length};})()`);
+  } catch (err) {
+    tip = { error: String(err.message ?? err).slice(0, 80) };
+  }
+  check('导览页在 **file:// 打开时就提前提示**"模拟地图需要 http 服务"（而不是点进去才看到白屏）',
+    !!tip && !tip.error && tip.shown && /http/.test(tip.text) && tip.imgs === 4,
+    tip?.error ? `无法测：${tip.error}` : (tip?.text ?? '').slice(0, 80));
 }
 await boot(1440, 900);
 await shot('static-1440x900');

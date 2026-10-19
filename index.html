@@ -149,5 +149,21 @@
   </footer>
 
 </main>
+
+<script>
+  /*
+   * 用 file:// 直接双击打开时，导览页本身能看（纯文字 + 图片），但「打开模拟地图」会失败：
+   * 模拟页是 ES 模块 + fetch 本地 JSON，file:// 下会被 CORS 拦掉（页面会显示兜底提示）。
+   * 与其让人点进去看一片白，不如**在点击之前**把话说明白。这段内联、无依赖，不改任何行为。
+   */
+  if (location.protocol === 'file:') {
+    var cta = document.querySelector('.cta');
+    if (cta) {
+      cta.insertAdjacentHTML('afterend',
+        '<p class="g-tip">当前是直接双击打开（<code>file://</code>）：<b>模拟地图需要 http 服务</b>。'
+        + '在本目录执行 <code>python -m http.server 8000</code>，再访问 <code>http://localhost:8000</code> 即可。</p>');
+    }
+  }
+</script>
 </body>
 </html>
