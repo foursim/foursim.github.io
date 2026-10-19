@@ -2988,6 +2988,8 @@ console.log('\n=== 45. 导览页 ===');
   check('打开站点根（`/`）**默认进入导览页**，且导览页里有去模拟主页面的入口（不是直接落到模拟页）',
     !root.isSim && root.shots === 4 && root.toSim && /导览/.test(root.title),
     `标题「${root.title}」· 截图 ${root.shots} 张 · 去主页面入口 ${root.toSim ? '有' : '无'} · 落在模拟页=${root.isSim}`);
+  await ev(`window.scrollTo(0, 0)`);
+  await sleep(120);
   await shot('导览页-1440x900');
   // 窄屏：导览页是"给人看的"，手机上排版塌了比功能坏更难发现
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844 });
