@@ -78,7 +78,7 @@ const cp = (rel) => {
 };
 
 /* ---------- ② 页面 ---------- */
-['index.html', 'style.css', 'js', 'vendor'].forEach(cp);
+['index.html', 'guide.html', 'style.css', 'guide.css', 'js', 'vendor', 'img'].forEach(cp);
 // data：**排除** `_` 前缀（取数缓存，`.gitignore` 里也忽略了）
 for (const f of fs.readdirSync(path.join(ROOT, 'data'))) {
   if (f.startsWith('_')) continue;
@@ -115,7 +115,9 @@ const lines2 = [
   '  tables/交付清单.md  哪张表被哪个查询读、哪一列没被读到',
   '  tables/数据字典.md  每个字段的含义、单位、口径',
   '  data/*  页面用的静态数据（JSON + GeoJSON）',
-  '  js/ vendor/ style.css index.html  纯静态页面',
+  '  guide.html guide.css          导览页（数据是什么、四张数据截图、基础操作）',
+  '  img/                          导览页用的数据截图',
+  '  js/ vendor/ style.css index.html  模拟主页面（纯静态）',
   '',
   '三、口径与边界（与清单一致）',
   '  · 全部数据来自确定性模型，synthetic=1 的列是模拟值；',
@@ -188,7 +190,12 @@ check(withDaily
     for (const m of src.matchAll(/['"`](data\/[\w./-]+\.(?:json|geojson))['"`]/g)) refs.add(m[1]);
   }
   const missing = [...refs].filter((r) => !fs.existsSync(path.join(OUT, r)));
-  check('**页面引用的本地文件**都在包里（`index.html` 的 src/href + `js/` 里的 data/*.json|geojson）',
+  check('**导览页也在包里**（它是交付物的入口：没有它，业务方拿到包不知道从哪儿看）',
+  fs.existsSync(path.join(OUT, 'guide.html')) && fs.existsSync(path.join(OUT, 'guide.css'))
+    && fs.existsSync(path.join(OUT, 'img')) && fs.readdirSync(path.join(OUT, 'img')).length >= 4,
+  `guide.html/${'guide.css'}/img ${fs.existsSync(path.join(OUT, 'img')) ? fs.readdirSync(path.join(OUT, 'img')).length : 0} 张`);
+
+check('**页面引用的本地文件**都在包里（`index.html` 的 src/href + `js/` 里的 data/*.json|geojson）',
     missing.length === 0, missing.length ? `缺：${missing.join(', ')}` : `${refs.size} 个引用逐个核过`);
 }
 

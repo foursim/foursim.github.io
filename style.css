@@ -115,10 +115,35 @@ code { background: var(--panel-3); padding: 1px 4px; border-radius: 4px; }
 .group { display: flex; align-items: center; gap: 6px; }
 .group.time { flex: 1 1 320px; min-width: 240px; }
 .group.right { margin-left: auto; }
-#day-slider { flex: 1 1 160px; accent-color: var(--brand-2); min-width: 120px; }
+/*
+ * 时间轴 = 拖动条 + 下方日期刻度。
+ * 刻度不是"每格一天"：549 天铺进 ~500px，每格不到 1px，只会糊成一片；
+ * 刻度给的是**位置感**（"我在 2024 Q3 附近"），精确日期仍由右侧 `#day-label` 负责。
+ */
+.time-slider { flex: 1 1 160px; min-width: 120px; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+#day-slider { width: 100%; accent-color: var(--brand-2); }
+.day-ticks { position: relative; height: 12px; }
+.day-ticks span {
+  position: absolute; top: 0; font-size: 9.5px; line-height: 12px; white-space: nowrap;
+  color: rgba(255, 255, 255, 0.66); font-variant-numeric: tabular-nums;
+  /* 刻度线压在数字上方，和滑块轨道对齐 */
+}
+.day-ticks span::before {
+  content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 3px;
+  background: currentColor; opacity: 0.6;
+}
+.day-ticks span.on { color: #ffffff; font-weight: 600; }
+.day-ticks span.on::before { background: var(--poi-silo); opacity: 1; }
 .day { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 84px; color: var(--topbar-fg); }
 .speeds { display: flex; gap: 4px; }
 #theme-sel { padding: 3px 6px; font-size: 12px; }
+/* 顶栏里的站内链接（导览）：用与按钮一致的观感，否则在深蓝底上是默认蓝字 */
+.toplink {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border-radius: var(--radius); text-decoration: none; font-size: 13px;
+  color: var(--topbar-fg); background: var(--topbar-btn-bg); border: 1px solid var(--topbar-btn-line);
+}
+.toplink:hover { border-color: var(--topbar-fg); }
 
 /* ---------- 面板 ---------- */
 /*

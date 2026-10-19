@@ -15,12 +15,17 @@
     <div class="brand">农业监测 <span id="site-name" class="dim"></span></div>
     <div class="group time">
       <button id="btn-play" title="播放/暂停（空格）">▶</button>
-      <input id="day-slider" type="range" min="0" max="0" value="0" aria-label="时间轴">
+      <div class="time-slider">
+        <input id="day-slider" type="range" min="0" max="0" value="0" aria-label="时间轴">
+        <!-- 日期刻度：标出季度分界（跨度不足一年按月），拖到哪儿不用先看右边日期猜 -->
+        <div id="day-ticks" class="day-ticks" aria-hidden="true"></div>
+      </div>
       <span id="day-label" class="day"></span>
       <span id="speed-group" class="speeds"></span>
     </div>
     <div class="group right">
       <button id="btn-drawer-top" title="打开数据视图（全行表格 + 筛选 + 排序）">数据视图</button>
+      <a class="toplink" href="guide.html" title="回到导览页：这份数据是什么、怎么用">导览</a>
       <button id="btn-help" title="数据来源与模型口径">说明</button>
     </div>
   </header>

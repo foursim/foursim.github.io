@@ -58,7 +58,7 @@ const check = (label, ok, detail = '') => {
   const wanted = [
     'tables/农业监测数据.xlsx', 'tables/query/透视与联合查询.xlsx', 'tables/query/透视与联合查询.md',
     'data/pivot.json', 'tables/query/results-self.json', 'tools/query.mjs', 'tools/query-sql.mjs',
-    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md',
+    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md', 'guide.html', 'guide.css',
   ];
   // ⚠️ 只查"存在"会被同名**空文件**骗过（0 字节的 data/pivot.json 照样绿），所以连体积一起查
   const bad = wanted.filter((f) => README.includes(f) && (!fs.existsSync(f) || fs.statSync(f).size < 64));
@@ -120,6 +120,20 @@ const check = (label, ok, detail = '') => {
     const mb = dirSize('tables') / 1024 / 1024;
     check('离线产物体积在预算内（tables/ ≤ 20 MB；实测基线 16.5 MB，大头是 fact_parcel_daily 13.7 MB）',
       mb <= 20, `${mb.toFixed(1)} MB / 预算 20 MB`);
+  }
+
+  /*
+   * **导览页的类名不许与主页面重名**。
+   * 依据：本轮 `guide.css` 里写了 `.stat { ... }`，而 `style.css` 已有 `.stat`（区域概览用，`display:flex`）——
+   * 结果导览页的数字卡片被排成一行（"501 地块（990.17 ha）"挤在一起）。样式冲突不会报错，只会"看着别扭"。
+   */
+  {
+    const classesOf = (f) => new Set([...fs.readFileSync(f, 'utf8').matchAll(/\.([A-Za-z][\w-]*)/g)].map((m) => m[1]));
+    const clash = fs.existsSync('guide.css')
+      ? [...classesOf('guide.css')].filter((c) => classesOf('style.css').has(c))
+      : [];
+    check('导览页样式（`guide.css`）的类名**不与主页面（`style.css`）重名**',
+      clash.length === 0, clash.length ? `重名：${clash.join(', ')}` : '两文件类名互不重叠');
   }
 
   /*

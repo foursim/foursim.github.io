@@ -2888,6 +2888,58 @@ check('**换天耗时基线**（20 次平均）：表格 + 地图 + 图一次全
       + ` · 懒加载（不计入启动）：zones ${lazyKB.toFixed(0)} KB + scenario 194 KB + pivot 37 KB`);
 }
 
+// ===================== 45. 导览页（guide.html）：图都在、链能通、无报错 =====================
+console.log('\n=== 45. 导览页 ===');
+{
+  /*
+   * 导览页是本轮新增的"入口"：它讲主页面、用 4 张数据截图做展示。
+   * 最容易坏的两处：图没加载（文件移走后忘了改路径）、配色没接上（另起一套颜色 ⇒ 像两个系统）。
+   * 所以这里查的是**渲染结果**（`naturalWidth`、计算后的 CSS 变量），不是"文件存在"。
+   */
+  pageErrors.length = 0;
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/guide.html?t=${Date.now()}` });
+  await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.shot img').length === 4`), '导览页渲染');
+  // 等图片解码完成（`complete` 在缓存命中时可能瞬间为 true，但 naturalWidth 只有在真拿到像素时才 > 0）
+  await waitFor(() => ev(`[...document.querySelectorAll('.shot img')].every(i => i.complete)`), '图片加载');
+  const g = await ev(`(() => {
+    const imgs = [...document.querySelectorAll('.shot img')];
+    const link = document.querySelector('a[href="index.html"]');
+    return {
+      title: document.title,
+      shots: imgs.length,
+      loaded: imgs.filter(i => i.naturalWidth > 0).map(i => i.naturalWidth + 'x' + i.naturalHeight),
+      broken: imgs.filter(i => !(i.naturalWidth > 0)).map(i => i.getAttribute('src')),
+      cta: !!link,
+      steps: document.querySelectorAll('.step').length,
+      brand: getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(),
+      topbar: getComputedStyle(document.querySelector('.g-head')).backgroundColor,
+    };
+  })()`);
+  check('导览页能打开，**4 张数据截图都真的加载出来**（`naturalWidth > 0`，不是"文件在但没显示"）',
+    g.shots === 4 && g.loaded.length === 4,
+    `${g.shots} 张 · ${g.loaded.join(', ')}${g.broken.length ? ` · 坏图：${g.broken.join(', ')}` : ''}`);
+  check('导览页**复用主页面同一套政企配色**（读的是同一份 `style.css` 令牌），不是另起一套',
+    g.brand === '#1a4f8a' && g.topbar === 'rgb(26, 79, 138)',
+    `--brand = ${g.brand} · 顶栏 = ${g.topbar}`);
+  check('导览页**有回主页面的入口**，且讲了基础操作',
+    g.cta && g.steps >= 5, `入口 ${g.cta ? '有' : '无'} · 操作步骤 ${g.steps} 条`);
+  check('导览页加载期**无异常**（`Runtime.exceptionThrown` / `console.error` 一条都不该有）',
+    pageErrors.length === 0, pageErrors.slice(0, 2).join(' ｜ ') || '无');
+  await shot('导览页-1440x900');
+  // 窄屏：导览页是"给人看的"，手机上排版塌了比功能坏更难发现
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844 });
+  await sleep(260);
+  const narrow = await ev(`(() => {
+    const w = document.documentElement.clientWidth;
+    return { overflow: document.documentElement.scrollWidth - w, cols: getComputedStyle(document.querySelector('.shots')).gridTemplateColumns.split(' ').length };
+  })()`);
+  check('窄屏（390px）**不横向溢出**，截图卡片退成单列',
+    narrow.overflow <= 1 && narrow.cols === 1, `横向溢出 ${narrow.overflow}px · 截图列数 ${narrow.cols}`);
+  await shot('导览页-390x844');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
+}
+
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
   if (!SMOKE) console.log(`截图目录：${OUT}`);

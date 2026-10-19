@@ -130,7 +130,7 @@ export class UI {
   }
 
   cacheDom() {
-    const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-label', 'btn-play', 'speed-group',
+    const ids = ['app', 'topbar', 'site-name', 'day-slider', 'day-ticks', 'day-label', 'btn-play', 'speed-group',
       'btn-help', 'layer-list', 'var-group', 'legend', 'legend-title', 'stats', 'alarm-count',
       'alarms', 'detail', 'cropbars', 'bottombar', 'toast', 'modal', 'modal-body', 'modal-close',
       'tb-tabs', 'tb-body', 'tb-note', 'hl-note', 'btn-clear-hl', 'btn-tb-expand',
@@ -165,6 +165,7 @@ export class UI {
     this.refs['speed-group'].innerHTML = [[1, '1×'], [4, '4×'], [12, '12×']]
       .map(([d, l]) => `<button class="mini" data-days="${d}">${l}</button>`).join('');
     this.refs['day-slider'].max = String(this.model.days.length - 1);
+    this.renderDayTicks();
     this.refs['tb-tabs'].innerHTML = TABLE_TABS
       .map(([k, label]) => `<button class="mini" data-tab="${k}">${label}</button>`).join('');
     this.refs['dw-tabs'].innerHTML = TABLE_TABS
@@ -397,12 +398,61 @@ export class UI {
     });
   }
 
+  /**
+   * 拖动条下方的**日期刻度**：跨度 > 24 个月标年、> 12 个月标季度、否则标月。
+   *
+   * 位置按 `下标/(n-1)` 算，与 range 的取值映射一致（首尾半格误差 < 1 天，肉眼不可见）。
+   * 首个刻度左对齐、末个右对齐，否则一半文字会溢出容器。
+   */
+  renderDayTicks() {
+    const box = this.refs['day-ticks'];
+    if (!box) return;
+    const days = this.model.days;
+    const n = days.length;
+    if (n < 2) { box.innerHTML = ''; this._ticks = []; return; }
+    const ym = (s) => ({ y: Number(s.slice(0, 4)), m: Number(s.slice(4, 6)) });
+    const first = ym(days[0]);
+    const last = ym(days[n - 1]);
+    const spanMonths = (last.y - first.y) * 12 + (last.m - first.m) + 1;
+    const step = spanMonths > 24 ? 12 : spanMonths > 12 ? 3 : 1;
+    const ticks = [];
+    let prevMonthIdx = -1;
+    days.forEach((s, i) => {
+      const { y, m } = ym(s);
+      const monthIdx = (y - first.y) * 12 + (m - first.m);
+      if (monthIdx === prevMonthIdx) return;             // 同月只取第一天
+      prevMonthIdx = monthIdx;
+      if (monthIdx % step !== 0) return;
+      // 末尾 6% 内不再落刻度：会和右侧 `#day-label` 的日期挤在一起
+      if (i / (n - 1) > 0.94 && ticks.length) return;
+      ticks.push({ i, label: step === 12 ? `${y}` : `${y}-${String(m).padStart(2, '0')}` });
+    });
+    this._ticks = ticks;
+    box.innerHTML = ticks.map((t, k) => {
+      const pct = (t.i / (n - 1)) * 100;
+      const shift = k === 0 ? '0' : k === ticks.length - 1 ? '-100%' : '-50%';
+      return `<span style="left:${pct.toFixed(2)}%;transform:translateX(${shift})">${t.label}</span>`;
+    }).join('');
+  }
+
+  /** 高亮"已走过"的最后一个刻度（播放时每帧都会调，所以只在变化时改 DOM） */
+  markDayTick(day) {
+    const box = this.refs['day-ticks'];
+    if (!box || !this._ticks || !this._ticks.length) return;
+    let active = -1;
+    for (let k = 0; k < this._ticks.length; k++) if (this._ticks[k].i <= day) active = k;
+    if (active === this._tickActive) return;
+    this._tickActive = active;
+    [...box.children].forEach((el, k) => el.classList.toggle('on', k === active));
+  }
+
   // ==================== 每帧（改变日期时） ====================
   setDay(day) {
     this.day = day;
     this.refs['day-slider'].value = String(day);
     const ymd = this.model.days[day];
     this.refs['day-label'].textContent = fmtDay(ymd);
+    this.markDayTick(day);
     this.renderStats();
     this.renderAlarms();
     this.renderDetail();
