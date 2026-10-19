@@ -136,7 +136,27 @@ const check = (label, ok, detail = '') => {
       for (const m of text.matchAll(/npm run ([\w:-]+)/g)) used.add(m[1]);
     }
     const bad = [...used].filter((n) => !scripts.includes(n));
-    check('`docs/` 里提到的每个 `npm run xxx` 都真的存在于 `package.json` scripts（防文档腐烂）',
+    /*
+   * **产物换行必须是 LF**：`csv.writer` 默认行尾是 `\r\n`，而 git 索引里是 LF ⇒
+   * 每次重跑都在提交里塞进"整文件改动"（纯换行差异，把真改动淹掉）。这条判据钉住它。
+   * 只读前 64 KB：行尾差异在任意一行的末尾都能看出来，不必读整个 14 MB 的文件。
+   */
+  {
+    const dirs = ['tables', 'tables/query', 'tables/query/sql'];
+    const bad = [];
+    for (const d of dirs) {
+      if (!fs.existsSync(d)) continue;
+      for (const f of fs.readdirSync(d).filter((x) => x.endsWith('.csv'))) {
+        const p = path.join(d, f);
+        const buf = fs.readFileSync(p).subarray(0, 64 * 1024);
+        if (buf.includes(0x0d)) bad.push(p);
+      }
+    }
+    check('产物 CSV **只用 LF 换行**（CRLF 会让每次重跑都产生"整文件 diff"，把真改动淹掉）',
+      bad.length === 0, bad.length ? `CRLF：${bad.slice(0, 3).join(', ')}` : '已扫 3 个目录的 CSV 前 64 KB');
+  }
+
+  check('`docs/` 里提到的每个 `npm run xxx` 都真的存在于 `package.json` scripts（防文档腐烂）',
       bad.length === 0, bad.length ? `文档里不存在：${bad.join(', ')}` : `${docs.length} 篇 · ${used.size} 个命令逐个核过`);
   }
 

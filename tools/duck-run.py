@@ -39,10 +39,14 @@ def main():
         rows = rel.fetchall()
         out = pathlib.Path(q['out'])
         out.parent.mkdir(parents=True, exist_ok=True)
+        # **写出的 CSV 要稳定**：SQL 没有 ORDER BY 时行序不保证（实测同一条"小麦/籽粒/2025"
+        # 在两次运行间换了行号），提交里就会出现"只有行序变了"的整文件 diff。
+        # 排序只影响这份**给人看的产物**，用于比对的 `rows` 保持原样（比对按 key 对齐）。
+        stable = sorted(rows, key=lambda r: tuple('' if x is None else str(x) for x in r))
         with out.open('w', newline='', encoding='utf-8') as f:
-            w = csv.writer(f)
+            w = csv.writer(f, lineterminator='\n')   # LF，与 git 索引一致
             w.writerow(cols)
-            w.writerows(rows)
+            w.writerows(stable)
         results.append({'id': q['id'], 'cols': cols, 'rows': [[None if x is None else x for x in r] for r in rows]})
     payload = {'ok': True, 'duckdb': duckdb.__version__, 'results': results}
     if len(sys.argv) > 2:
