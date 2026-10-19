@@ -12,7 +12,10 @@
 > （它当初只是为了验证"道路与地点数据展示"），只保留了"路网 + 地点"作为监测数据的空间载体。
 
 ```
-index.html            页面骨架（含 Leaflet 的 script 与 CSS 引用）
+index.html            入口：导览页（数据是什么 / 四张数据截图 / 基础操作）
+sim.html              模拟主页面骨架（含 Leaflet 的 script 与 CSS 引用）
+guide.css             导览页样式（只写布局，配色复用 style.css 的 :root 令牌）
+img/                  导览页用的四张数据截图
 style.css             深色主题；**grid 真布局**（面板不浮在图上，任何两块都不可能重叠）
 js/agro.js            农业监测模型（确定性、无 DOM）：气象生成 / 作物与农事 / 进度 / 水肥 / 病害
 js/geo.js             颜色标度与格式化（地图、图例、指标卡共用同一份，避免三处漂移）
@@ -48,8 +51,11 @@ tools/browser-check.mjs 真浏览器验收（216 条，CDP 真实鼠标；找不
 
 | 页面 | 用途 |
 |---|---|
-| `guide.html` | **导览页**：这份数据是什么、四张数据截图、基础操作、口径边界。第一次打开从这里进 |
-| `index.html` | **模拟主页面**：GIS 地图 + 时间轴 + 表格 + 数据视图 + 情景推演 |
+| `index.html` | **入口 · 导览页**：这份数据是什么、四张数据截图、基础操作、口径边界。**打开站点默认就是这一页** |
+| `sim.html` | **模拟主页面**：GIS 地图 + 时间轴 + 表格 + 数据视图 + 情景推演 |
+
+入口是导览页（不是模拟页）：静态站点在 `/` 上只会返回 `index.html`，所以导览必须占用这个文件名。
+"打开默认进导览"这件事有判据守着（走一次不给文件名的导航，断言落地页是导览页）。
 
 两页共用同一份 `style.css`（政企深蓝配色令牌），样式类名互不重叠（有判据守着）。
 
@@ -83,8 +89,9 @@ npm run serve:sub       # 同上，但挂在子路径下 → http://localhost:80
 npm run serve:lan       # 再打印局域网地址，手机同网段可直接打开（测窄屏）
 ```
 
-⚠️ **必须走 http 服务**：`file://` 直接双击 `index.html` 会被浏览器的 ES 模块与 CORS 规则拦住
+⚠️ **必须走 http 服务**：`file://` 直接双击 `sim.html` 会被浏览器的 ES 模块与 CORS 规则拦住
 （模块脚本、`fetch('data/*.json')` 都不允许），页面会停在"页面初始化失败"。
+（导览页 `index.html` 只是静态文字与图片，双击能看；但"进入模拟地图"之后仍需 http 服务。）
 
 `tools/serve.mjs` 是零依赖的 node 静态服务器（不用 python、不用 `npx serve`）：
 `.geojson` 会给对 `application/json`、响应带 `no-store`（改完刷新即生效）、
@@ -964,7 +971,7 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 | **报告含当前帧地图** | 把 `exportPng()` 里"画快照"与"下载"拆开（`snapshotCanvas()`）⇒ 报告与导出 PNG 用同一份快照；报告两张图（地图 + 四张图拼图）都是 `data:` URL、零外链 | （并入报告 3 条） |
 | **报告加"情景散点"一节** | 报告现在三张图：当前帧地图 + **情景候选散点（含帕累托前沿）** + 四张常用图拼图，全部 `data:` URL。散点只在抽屉里出现过，报告要它就得**离屏现画一张**（`scatterImage()`，与 `chartPanelImage()` 同一做法） | （并入报告 3 条） |
 | **产物稳定可复现** | `duck-run.py` 的 CSV 改成 **LF**（`csv.writer` 默认 `\r\n`，与 git 索引不一致 ⇒ 每次重跑都产生"整文件 diff"），写出的 SQL 产物**按行内容排序**（SQL 没有 `ORDER BY` 时行序不保证）。验证：**连跑三次对产物算 md5，三次一致**。判据扫 `tables/**/*.csv` 前 64 KB 不许有 `\r` | 1 条 |
-| **交付包（`npm run pack`）** | 按清单分组打 `dist/agri-deliver-<日期>/`：页面（`index.html`/`js`/`vendor`/`style.css`）+ `data/*`（JSON/GeoJSON，排除 `_` 前缀缓存）+ 表（必带 12 + 说明 4 + 两份 md + Excel）≈ **6.3 MB**；`--with-daily` 加按需长表 ≈ 20 MB。5 条静态判据（表数/逐字节等长/按需是否带/页面引用逐个存在/不含缓存），`--smoke` 再加一条**包内页面冒烟** | 5～6 条 |
+| **交付包（`npm run pack`）** | 按清单分组打 `dist/agri-deliver-<日期>/`：入口导览页（`index.html`/`guide.css`/`img`）+ 模拟页（`sim.html`/`js`/`vendor`/`style.css`）+ `data/*`（JSON/GeoJSON，排除 `_` 前缀缓存）+ 表（必带 12 + 说明 4 + 两份 md + Excel）≈ **6.3 MB**；`--with-daily` 加按需长表 ≈ 20 MB。5 条静态判据（表数/逐字节等长/按需是否带/页面引用逐个存在/不含缓存），`--smoke` 再加一条**包内页面冒烟** | 5～6 条 |
 | **交付清单（`npm run deliver`）** | 读运行时依赖追踪（`deps.json`）+ 文件实际状态，生成 `tables/交付清单.md`，分三组且规则可验证：**必带**（被查询读到，12 张）· **按需**（`.gitignore` 里忽略、`export:daily` 才生成，1 张）· **说明**（词典/元数据/日期维，4 张）。4 条判据：覆盖全部查询 · 三组不重不漏 = 全部表 · 行数一致且字节数 > 0 · 「必带」组每张表**真的被读到过至少一列**（不是靠表名匹配） | 4 条 |
 | **查询 → 依赖做到列级** | `--deps` 现在连**列**一起给：给前 3 行套 Proxy 记录真实属性访问（不是静态扫描 —— 上一版按「词边界」扫，`name`/`level` 撞上注释就「算用过」，206 列全绿等于没查）。实测：`dim_parcel` **34/34 列**、`fact_parcel_season` **15/15**、`fact_unit_decade` **26/26** 全被读到；并列出「查询链完全不读的表」作为**交付裁剪参考**（`dim_data_element`/`dim_date`/`dim_source`/`meta_dataset`/`fact_parcel_daily`）。其中 `fact_parcel_daily` 14 MB 本来就是 `export-tables --daily` 的**按需**长表，不是查询依赖 —— 与项目原设计一致 | ← 只作参考（无判据） |
 | **查询 → 表依赖（运行时追踪）** | `--deps` 打印"每个查询读了哪几张表"（实测 15 个查询共 36 次表读取）；并加一条判据：**每个查询至少读到一张表** —— 表名写错（`T.get('fact_xxx')` 返回 undefined）或构建提前返回时，它会"0 依赖"却照样产出空表，属于最难查的静默失败。用追踪而不用人工声明：**声明会漂，追踪不会** | 查询 +1 条 |

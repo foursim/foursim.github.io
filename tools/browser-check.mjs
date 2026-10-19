@@ -188,7 +188,7 @@ async function click(sel) {
 let t0 = Date.now();          // 记一次"页面起来花了多久"（smoke 模式下会打出来）
 const boot = async (w, h, query = '') => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}${query}` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}${query}` });
   await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
   /*
    * **等懒加载的数据**：情景候选（194 KB）不在启动清单里，切到「情景推演」才取。
@@ -1165,7 +1165,7 @@ await boot(1440, 900);
 }
 
 {
-  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'style.css'];
+  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'sim.html', 'style.css', 'guide.css'];
   const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1])
     .concat([...src.matchAll(/from\s+["'](https?:\/\/[^"']+)/g)].map((m) => m[1]));
@@ -1189,7 +1189,7 @@ await boot(1440, 900);
     py = spawn('python', ['-m', 'http.server', String(pyPort), '--bind', '127.0.0.1'], { cwd: process.cwd(), stdio: 'ignore' });
     await sleep(1400);
     await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await send('Page.navigate', { url: `http://127.0.0.1:${pyPort}/index.html?t=${Date.now()}` });
+    await send('Page.navigate', { url: `http://127.0.0.1:${pyPort}/sim.html?t=${Date.now()}` });
     await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), 'python http.server 就绪');
     info = await ev(`(()=>{const a=globalThis.__agri;return {parcels:a.model.parcels.length, map:!!document.querySelector('.leaflet-container'), fatal:!!document.querySelector('.fatal')};})()`);
   } catch (err) {
@@ -1207,7 +1207,7 @@ await boot(1440, 900);
   // 数据缺失：要给出**可读提示**（白屏是最糟的失败形态）
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*parcels.geojson*'] });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}&blocked=1` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}&blocked=1` });
   await sleep(3600);
   const fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, text:f?f.textContent.replace(/\s+/g,' '):''};})()`);
   await send('Network.setBlockedURLs', { urls: [] });
@@ -1217,11 +1217,11 @@ await boot(1440, 900);
 
 {
   // 真·file:// 打开：模块脚本被 CORS 拦掉 ⇒ 走内联兜底（这段内联脚本正是为此而存在）
-  const fileUrl = `file:///${path.resolve('index.html').replace(/\\/g, '/')}`;
+  const fileUrl = `file:///${path.resolve('sim.html').replace(/\\/g, '/')}`;
   let fb = null;
   try {
     await send('Page.navigate', { url: `${fileUrl}?t=${Date.now()}` });
-    await sleep(6300);   // 兜底脚本的判定超时是 5s（见 index.html），这里必须等得比它久
+    await sleep(6300);   // 兜底脚本的判定超时是 5s（见 sim.html），这里必须等得比它久
     fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, boot:!!globalThis.__agriBoot, text:f?f.textContent.replace(/\s+/g,' ').slice(0,140):''};})()`);
   } catch (err) {
     fb = { error: String(err.message ?? err).slice(0, 80) };
@@ -2843,7 +2843,7 @@ console.log('\n=== 44. 审核：启动负载与耗时基线 ===');
 // 这里**不能用 boot()**：boot() 会主动等懒加载的数据（为了让别的判据确定）。
 // 本节要量的正是"启动那一刻有没有拉"，所以走一次裸导航，读到第一刻的状态再说。
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
-await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}` });
+await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}` });
 await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
 // 启动时**不该**已经拉过情景数据（194 KB，只在情景页签用得到）
 const s44a = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
@@ -2888,7 +2888,7 @@ check('**换天耗时基线**（20 次平均）：表格 + 地图 + 图一次全
       + ` · 懒加载（不计入启动）：zones ${lazyKB.toFixed(0)} KB + scenario 194 KB + pivot 37 KB`);
 }
 
-// ===================== 45. 导览页（guide.html）：图都在、链能通、无报错 =====================
+// ===================== 45. 导览页（入口 index.html）：图都在、链能通、无报错 =====================
 console.log('\n=== 45. 导览页 ===');
 {
   /*
@@ -2898,13 +2898,13 @@ console.log('\n=== 45. 导览页 ===');
    */
   pageErrors.length = 0;
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/guide.html?t=${Date.now()}` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}` });
   await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.shot img').length === 4`), '导览页渲染');
   // 等图片解码完成（`complete` 在缓存命中时可能瞬间为 true，但 naturalWidth 只有在真拿到像素时才 > 0）
   await waitFor(() => ev(`[...document.querySelectorAll('.shot img')].every(i => i.complete)`), '图片加载');
   const g = await ev(`(() => {
     const imgs = [...document.querySelectorAll('.shot img')];
-    const link = document.querySelector('a[href="index.html"]');
+    const link = document.querySelector('a[href="sim.html"]');
     return {
       title: document.title,
       shots: imgs.length,
@@ -2926,6 +2926,23 @@ console.log('\n=== 45. 导览页 ===');
     g.cta && g.steps >= 5, `入口 ${g.cta ? '有' : '无'} · 操作步骤 ${g.steps} 条`);
   check('导览页加载期**无异常**（`Runtime.exceptionThrown` / `console.error` 一条都不该有）',
     pageErrors.length === 0, pageErrors.slice(0, 2).join(' ｜ ') || '无');
+
+  /*
+   * **打开站点根（`/`）默认就是导览页** —— 这是"入口"的定义，不能靠文件名约定口头保证。
+   * 走一次不给文件名的导航：拿到的必须是导览页（有截图卡、有去主页面的入口），
+   * 而不是直接落到模拟页（有 `#day-slider` 就说明落错了）。
+   */
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/?t=${Date.now()}` });
+  await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.shot').length > 0`), '站点根进入导览页');
+  const root = await ev(`({
+    title: document.title,
+    shots: document.querySelectorAll('.shot').length,
+    toSim: !!document.querySelector('a[href="sim.html"]'),
+    isSim: !!document.getElementById('day-slider'),
+  })`);
+  check('打开站点根（`/`）**默认进入导览页**，且导览页里有去模拟主页面的入口（不是直接落到模拟页）',
+    !root.isSim && root.shots === 4 && root.toSim && /导览/.test(root.title),
+    `标题「${root.title}」· 截图 ${root.shots} 张 · 去主页面入口 ${root.toSim ? '有' : '无'} · 落在模拟页=${root.isSim}`);
   await shot('导览页-1440x900');
   // 窄屏：导览页是"给人看的"，手机上排版塌了比功能坏更难发现
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844 });

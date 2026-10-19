@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>农业监测 · GIS 可视化</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0e0c'/%3E%3Cpath d='M6 20l7-10 6 9 3-5 4 6z' fill='%235fa83c'/%3E%3Ccircle cx='24' cy='9' r='3' fill='%23e0c050'/%3E%3C/svg%3E">
+<!-- Leaflet 本地内置（vendor/leaflet）：运行时零外部请求，符合"纯静态 + GitHub Pages 子路径"的约束 -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">农业监测 <span id="site-name" class="dim"></span></div>
+    <div class="group time">
+      <button id="btn-play" title="播放/暂停（空格）">▶</button>
+      <div class="time-slider">
+        <input id="day-slider" type="range" min="0" max="0" value="0" aria-label="时间轴">
+        <!-- 日期刻度：标出季度分界（跨度不足一年按月），拖到哪儿不用先看右边日期猜 -->
+        <div id="day-ticks" class="day-ticks" aria-hidden="true"></div>
+      </div>
+      <span id="day-label" class="day"></span>
+      <span id="speed-group" class="speeds"></span>
+    </div>
+    <div class="group right">
+      <button id="btn-drawer-top" title="打开数据视图（全行表格 + 筛选 + 排序）">数据视图</button>
+      <a class="toplink" href="index.html" title="回到导览页：这份数据是什么、怎么用">导览</a>
+      <button id="btn-help" title="数据来源与模型口径">说明</button>
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <!-- 地图下方的表格区：几张小表（当前帧指标 / 单元 / 收成 / 告警），一屏内可核数 -->
+  <section id="tablebar">
+    <div class="tb-head">
+      <div id="tb-tabs" class="tb-tabs"></div>
+      <!-- 窄列宽下页签折行会吃掉表体，所以把"排后面的表"收进下拉（≤1240px 才出现） -->
+      <select id="tb-more" class="mini" title="更多表格" aria-label="更多表格"></select>
+      <div class="tb-actions">
+        <span id="hl-note" class="tb-note"></span>
+        <button id="btn-tb-expand" class="mini" title="把表格区展开到 60% 屏高（地图让位），再点收起">展开</button>
+        <button id="btn-drawer" class="mini" title="打开数据视图：全行表格 + 筛选 + 排序（左侧地图仍可见）">数据视图</button>
+        <button id="btn-clear-hl" class="mini" title="取消地图上的高亮（也可以再点一次同一行）">清除高亮</button>
+        <!-- 透视视图选择器：只在「透视视图」页签下出现（矩阵与合计都由离线工具算好，页面只查表） -->
+
+        <!-- 情景页签专用：候选点表按当前地图视野筛选（其它页签隐藏） -->
+        <button id="btn-scen-view" class="mini hidden" title="只看当前地图视野内的候选点（筛选只动列表，指标仍是离线按全网算的）">只看视野</button>
+        <span id="tb-note" class="tb-note"></span>
+        <button id="btn-export-csv" class="mini" title="导出当前日期的地块数据（CSV：编码 + 坐标 + 全部指标）">导出 CSV</button>
+        <button id="btn-export-png" class="mini" title="导出地图 PNG（含标题、日期与图例）">导出 PNG</button>
+      </div>
+    </div>
+    <div id="tb-body" class="tb-body"></div>
+  </section>
+
+  <aside id="panel-left" class="panel">
+    <section>
+      <h3>指标</h3>
+      <div id="var-group" class="btnrow wrap"></div>
+    </section>
+    <section>
+      <h3>图例 <small id="legend-title"></small></h3>
+      <div id="legend" class="body"></div>
+    </section>
+    <section>
+      <h3>图层</h3>
+      <div id="layer-list" class="selfbody"></div>
+    </section>
+  </aside>
+
+  <aside id="panel-right" class="panel">
+    <section>
+      <h3>区域概览</h3>
+      <!-- 内容必须包在滚动容器里：section 是可被 flex 压缩的，内容没有滚动容器就会画到节外（与下一节重叠） -->
+      <div id="overview" class="body">
+        <div id="stats" class="stats"></div>
+        <div id="cropbars" class="cropbars"></div>
+      </div>
+    </section>
+    <section>
+      <h3>告警 <small id="alarm-count"></small></h3>
+      <div id="alarms" class="body"></div>
+    </section>
+    <section>
+      <h3>选中地块</h3>
+      <div id="detail" class="body"></div>
+    </section>
+  </aside>
+
+  <!--
+    数据抽屉（全行表格 + 筛选 + 排序）。
+    为什么是"右侧抽屉"而不是全屏或顶部切页签：这页最值钱的是**表↔图联动**，
+    抽屉只占右边约 62%，**左侧地图仍可见** ⇒ 点一行表格能立刻在图上看到高亮；
+    全屏/切页签都会把这张联动切断（要来回切视图才知道高亮了什么）。
+    关闭入口三个：× / 点遮罩 / Esc（与帮助弹窗同一套习惯）。
+  -->
+  <div id="drawer-mask" class="hidden"></div>
+  <aside id="drawer" class="hidden">
+    <div class="dw-head">
+      <div class="dw-title">数据视图 <span id="dw-count"></span></div>
+      <div class="dw-tools">
+        <input id="dw-filter" type="search" placeholder="筛选关键字…" aria-label="筛选">
+        <button id="btn-dw-cols" class="mini" title="选择要显示哪些列（会记住选择）">列</button>
+        <!--
+          透视视图的两个控件都放在**抽屉**里：
+          strip 在 1024×640 下只有 ~370px 宽（左右面板各占一块），塞不下选择器 + 导出按钮
+          （实测会多占一行、把表体挤到 95px < 96px）。这也符合本项目的分工：
+          **strip 是预览（只显示当前视图 + 口径），抽屉是全行视图与控件所在的地方**。
+        -->
+        <select id="pivot-sel" class="mini hidden" title="切换透视视图（离线生成，页面只查表）" aria-label="透视视图"></select>
+        <button id="btn-pivot-csv" class="mini hidden" title="导出当前透视视图（行列合计都在，CSV）">导出视图</button>
+        <button id="btn-dw-export" class="mini" title="导出当前视图（含筛选与排序后的行）">导出结果</button>
+        <button id="btn-dw-csv" class="mini" title="导出当前帧全部地块数据（CSV）">导出地块</button>
+        <!-- 一页可打印报告：自包含 HTML（图片内嵌 data URL，不引外链），双击就能看、Ctrl+P 就能打印 -->
+        <button id="btn-report" class="mini" title="生成一页可打印报告（自包含 HTML，图片内嵌，不引外链）">报告</button>
+        <button id="drawer-close" class="mini" aria-label="关闭数据视图">×</button>
+      </div>
+    </div>
+    <div id="dw-tabs" class="dw-tabs"></div>
+    <!-- 列选择浮层：9 列的表在窄屏必须能"先挑列再看" -->
+    <div id="dw-cols" class="cols-pop hidden"></div>
+    <!-- 排行条形图：表看数值、图看谁高谁低（只给排行有意义的表配） -->
+    <div id="dw-chart-wrap" class="dw-chart-wrap hidden">
+      <button id="btn-dw-chart-png" class="mini chart-png" title="把这张图导出成 PNG（带口径与日期）">导出图</button>
+      <!-- 情景推演：这一块画布承载两张图（散点 / 前后对照），用小按钮切换，两张都够得着 -->
+      <button id="btn-dw-scen-view" class="mini chart-png hidden" title="在「候选散点」与「前后对照」之间切换">看前后对照</button>
+      <canvas id="dw-chart"></canvas>
+    </div>
+    <div id="dw-body" class="dw-body"></div>
+    <!-- 交互提示放页脚：标题栏里的长文案会换行并把筛选框挤窄（那是"细节"阶段要修的第一条） -->
+    <div class="dw-foot"><span id="dw-note"></span></div>
+  </aside>
+
+  <footer id="bottombar"></footer>
+  <div id="toast"></div>
+  <div id="modal" class="hidden">
+    <div class="sheet">
+      <button id="modal-close" aria-label="关闭">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</div>
+<!-- Leaflet 用普通 script 先加载（模块里的地图代码依赖全局 L）；顺序不能颠倒 -->
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/main.js"></script>
+<script>
+  /*
+   * 纯静态兜底：本页只依赖同源的 HTML/CSS/JS 与 data/ 下的本地文件（无后端、无 CDN、无数据库）。
+   *
+   * 但用 file:// 直接双击打开时，浏览器会按 CORS 规则拦掉 type="module" 脚本 ——
+   * 那时候连 main.js 里的 fatal() 都不会执行，页面就是**一片白屏**，而且没人知道为什么。
+   * 所以这里放一段**内联**（非模块、必然执行）的兜底：3 秒后还没看到启动标记，就把原因和做法写在页面上。
+   * 判断依据是 main.js 顶部设的 __agriBoot：模块没被拦掉就一定有它，所以不会误报"数据还在加载"。
+   */
+  var bootErr = null;
+  // 先记真实的脚本错误：依赖模块在求值时抛错时，main.js 的 fatal() 也不会执行，
+  // 那时候"请用静态服务器打开"会把人带偏 —— 有错就报错，没错才猜"被拦/网慢"
+  addEventListener('error', function (e) {
+    if (bootErr) return;
+    if (e && e.message) bootErr = e.message;
+    else if (e && e.target && e.target.tagName === 'SCRIPT') {
+      bootErr = '模块脚本没加载成（file:// 下浏览器会按 CORS 规则拦掉 type="module"）';
+    } else bootErr = '脚本或资源加载失败';
+  }, true);
+  setTimeout(function () {
+    if (globalThis.__agriBoot || globalThis.__agri) return;   // 启动了（哪怕数据还在加载）就不吭声
+    var el = document.getElementById('map');
+    if (!el || el.querySelector('.fatal')) return;            // 已有更具体的错误信息就不覆盖
+    var why = bootErr
+      ? '<p>原因：<code>' + String(bootErr).slice(0, 120) + '</code>（控制台里有完整堆栈）</p>'
+      : '<p>5 秒内没有启动：可能是模块被浏览器拦掉（用 file:// 打开时），也可能是网络太慢。</p>';
+    el.innerHTML = '<div class="fatal"><h2>页面没有启动</h2>' + why
+      + '<p class="dim">本页是纯静态的（只需同源的 HTML/CSS/JS 与 data/ 下的本地文件），不需要后端。'
+      + '请用静态服务器打开：<code>npm run serve</code>、<code>python -m http.server</code>、'
+      + '或任意静态服务器 / 托管（Nginx / 对象存储 / GitHub Pages）。</p></div>';
+  }, 5000);
+</script>
+</body>
+</html>

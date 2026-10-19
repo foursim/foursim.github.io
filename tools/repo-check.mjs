@@ -58,7 +58,7 @@ const check = (label, ok, detail = '') => {
   const wanted = [
     'tables/农业监测数据.xlsx', 'tables/query/透视与联合查询.xlsx', 'tables/query/透视与联合查询.md',
     'data/pivot.json', 'tables/query/results-self.json', 'tools/query.mjs', 'tools/query-sql.mjs',
-    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md', 'guide.html', 'guide.css',
+    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md', 'sim.html', 'guide.css', 'img/cropsPic.png',
   ];
   // ⚠️ 只查"存在"会被同名**空文件**骗过（0 字节的 data/pivot.json 照样绿），所以连体积一起查
   const bad = wanted.filter((f) => README.includes(f) && (!fs.existsSync(f) || fs.statSync(f).size < 64));
@@ -68,7 +68,7 @@ const check = (label, ok, detail = '') => {
 
 // ---------- 4. 页面仍然零外部依赖（与浏览器侧第 21 节同源，这里做静态兜底） ----------
 {
-  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'style.css'];
+  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'sim.html', 'style.css', 'guide.css'];
   const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1]);
   /*

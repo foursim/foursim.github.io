@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const TABLES = 'tables';
 const SRC_DIRS = ['js', 'tools'];
-const EXTRA_FILES = ['index.html', 'README.md'];
+const EXTRA_FILES = ['index.html', 'sim.html', 'README.md'];
 
 /** 收集要扫的源码（排除 tables/ 自身与 node_modules） */
 function collect() {
