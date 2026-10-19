@@ -2957,6 +2957,34 @@ console.log('\n=== 45. 导览页 ===');
     toSim: !!document.querySelector('a[href="sim.html"]'),
     isSim: !!document.getElementById('day-slider'),
   })`);
+  /*
+   * **能滚到底**：`style.css` 给模拟页写了 `body { overflow: hidden }`（整屏 grid 不滚），
+   * 导览页是长文档，忘了覆盖就"只能看第一屏"——用户实际撞到过。
+   * 判据不查 CSS 声明，而是**真的滚一次**：滚到底后页脚必须进入视口。
+   */
+  /*
+   * 先断言**根因**：`style.css` 给模拟页写了 `body { overflow: hidden }`，导览页必须覆盖掉。
+   * 只看"能不能滚"不够——`height:auto` 也会让它恰好能滚，于是问题换个浏览器/缩放又冒出来。
+   */
+  const ov = await ev(`(() => ({
+    body: getComputedStyle(document.body).overflowY,
+    html: getComputedStyle(document.documentElement).overflowY,
+  }))()`);
+  check('导览页**显式覆盖了 `body{overflow:hidden}`**（模拟页整屏不滚，导览页是长文档，必须放开）',
+    ov.body !== 'hidden' && ov.html !== 'hidden', `body.overflow-y = ${ov.body} · html = ${ov.html}`);
+
+  const sc = await ev(`(() => {
+    const before = window.scrollY;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const foot = document.querySelector('.g-foot').getBoundingClientRect();
+    return { before, scrolled: window.scrollY, max, footBottom: Math.round(foot.bottom), vh: window.innerHeight };
+  })()`);
+  check('**导览页能滚到底**（滚到底后页脚进入视口，而不是卡在第一屏）',
+    sc.max > 200 && sc.scrolled > sc.max - 3 && sc.footBottom <= sc.vh + 2,
+    `可滚 ${sc.max}px · 实际滚到 ${sc.scrolled}px · 页脚底 ${sc.footBottom}px ≤ 视口 ${sc.vh}px`);
+
+  await shot('导览页-底部-1440x900');
   check('打开站点根（`/`）**默认进入导览页**，且导览页里有去模拟主页面的入口（不是直接落到模拟页）',
     !root.isSim && root.shots === 4 && root.toSim && /导览/.test(root.title),
     `标题「${root.title}」· 截图 ${root.shots} 张 · 去主页面入口 ${root.toSim ? '有' : '无'} · 落在模拟页=${root.isSim}`);

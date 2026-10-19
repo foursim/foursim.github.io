@@ -634,6 +634,16 @@ fact_parcel_season 588 · fact_parcel_event 2161 · fact_region_daily 549 · fac
 - **运距告警阈值定在数据之外**：`dim_variable` 里 `T_MIN_STORE` 的告警是 "> 12 min"，而本演示区运距**最大只有 11.8 分**
   ⇒ 这条告警永远不会触发（"看着有、其实没有"的能力最容易被误认）⇒ 阈值如实标注，q5 改用实测分位数（p90 / p50）。
 
+### 本轮（导览页滚动）抓到的真 bug / 教训
+
+- **共用 `style.css` 就要接手它的"整屏不滚"**：`style.css` 给模拟页写了 `body { overflow: hidden }`
+  （grid 整屏布局），导览页是长文档 ⇒ 必须显式覆盖成 `overflow-y: auto`，否则只能看第一屏。
+- **判据要断言根因，不能只看现象**：第一版判据只查"能不能滚到底"，而 `height:auto` 恰好也能滚
+  ⇒ 把修复回滚后判据**照样绿**（假通过）。改成断言 `getComputedStyle(body).overflowY !== 'hidden'`，
+  回滚时立刻红（`body.overflow-y = hidden`）。
+- **`.step b { display:block }` 会命中正文里的内联 `<b>`**：结果"季度刻度"被顶成单独一行
+  ⇒ 标题规则要收窄成 `.step > b`。
+
 ### 本轮（产物稳定性）抓到的真 bug / 教训
 
 - **`csv.writer` 默认行尾是 `\r\n`**：`duck-run.py` 用 `open(..., newline='')` 打开再交给 `csv.writer`，
