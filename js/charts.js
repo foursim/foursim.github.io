@@ -9,8 +9,13 @@ import { cssVar } from './theme.js';
 
 const DPR = () => Math.min(2, (globalThis.devicePixelRatio || 1));
 
-/** 把 canvas 按容器宽度和 DPR 准备好，返回 ctx 与逻辑尺寸 */
-function prepare(canvas, height) {
+/**
+ * 把 canvas 按容器宽度和 DPR 准备好，返回 ctx 与逻辑尺寸。
+ *
+ * 导出给 `charts3d.js` 用：3D 版必须是**同一套** DPR/尺寸口径，否则同一个面板里
+ * 2D 与 3D 切换时画布会突然变模糊/变窄（两套 DPR 处理 = 迟早对不上）。
+ */
+export function prepare(canvas, height) {
   const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 240;
   const h = height;
   canvas.width = Math.round(w * DPR());
@@ -247,7 +252,7 @@ export function colorbar(el, gradient, lo, hi) {
  */
 
 /** 画一句居中的提示（空数据/不可用时的统一出口） */
-function drawHint(ctx, w, h, text) {
+export function drawHint(ctx, w, h, text) {
   ctx.fillStyle = cssVar('--dim', '#5b6b7f');
   ctx.font = '12px system-ui, sans-serif';
   ctx.textAlign = 'center';

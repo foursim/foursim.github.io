@@ -3004,6 +3004,121 @@ console.log('\n=== 45. 导览页 ===');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
 }
 
+// ===================== 46. 图表 3D 视图（柱 / 饼 / 折线 / 雷达）=====================
+/*
+ * "立体"没法直接断言，所以拆成三件**可量**的事：
+ *   ① 开关真的换到 3D 渲染器（画布上的 `data-chart-mode` 变了 + 像素确实重画）；
+ *   ② **口径不变**：同一份数据分别用 2D / 3D 渲染，返回的统计口径逐项相等
+ *      （3D 是视图，不是另一套数据——这条一旦破了，"切到 3D 数字就变"没人会发现）；
+ *   ③ 立体感来自**明暗**：3D 柱的顶面必须比正面亮、侧面必须比正面暗（取真实像素的亮度）。
+ * 第 ③ 条用什么坐标取样由**渲染器自己返回的柱体几何**决定，判据不重推布局。
+ */
+console.log('\n=== 46. 图表 3D 视图 ===');
+await boot(1440, 900);
+const s46 = await ev(`(async()=>{
+  const lum=(c)=>0.2126*c.r+0.7152*c.g+0.0722*c.b;
+  const px=(ctx,x,y)=>{const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;return {r:d[0],g:d[1],b:d[2],a:d[3]};};
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,260));
+  const ids=['line','pie','col','radar'];
+  const cv=Object.fromEntries(ids.map(k=>[k,document.getElementById('tb-'+k)]));
+  const t=document.getElementById('tb-3d');
+  const snap=()=>Object.fromEntries(ids.map(k=>[k,{url:cv[k].toDataURL(),mode:cv[k].dataset.chartMode}]));
+  const before=snap();
+  const dflt={has:!!t,checked:t?.checked,n:ids.filter(k=>cv[k]).length,mode:before.col.mode};
+
+  t.checked=true; t.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,320));
+  const on=snap();
+  const repainted=ids.filter(k=>before[k].url!==on[k].url).length;
+  const modes3=ids.map(k=>on[k].mode);
+
+  // ---- ② 口径一致：同一份数据，2D 与 3D 各渲染一次，比较返回的统计量 ----
+  const m2=await import(new URL('js/charts.js',document.baseURI).href);
+  const m3=await import(new URL('js/charts3d.js',document.baseURI).href);
+  const host=document.createElement('div');
+  host.style.cssText='position:absolute;left:-9999px;top:0;width:260px';
+  document.body.appendChild(host);
+  const mk=()=>{const c=document.createElement('canvas');c.style.width='260px';host.appendChild(c);return c;};
+  const items=[{label:'A',value:10,color:'#1a4f8a'},{label:'B',value:30,color:'#1a4f8a'},{label:'C',value:18,color:'#1a4f8a'}];
+  const c2=mk(),c3=mk(),p2=mk(),p3=mk(),r2=mk(),r3c=mk();
+  const k2=m2.columnChart(c2,items,{height:168,labelValues:true});
+  const k3=m3.columnChart3d(c3,items,{height:168,labelValues:true});
+  const q2=m2.pieChart(p2,items,{height:168});
+  const q3=m3.pieChart3d(p3,items,{height:168});
+  const dims=[{label:'进度'},{label:'水分保持'},{label:'养分保持'},{label:'到收储点',invert:true}];
+  const ser=[{label:'当前',color:'#1a4f8a',values:[0.8,0.6,0.7,0.4]},{label:'均值',color:'#E69F00',values:[0.5,0.5,0.5,0.5]}];
+  const d2=m2.radarChart(r2,{axes:dims,series:ser},{height:188});
+  const d3=m3.radarChart3d(r3c,{axes:dims,series:ser},{height:188});
+
+  // ---- ③ 明暗取样：最高的那根柱（几何由 columnChart3d 返回，判据不重推布局）----
+  const tall=k3.bars.reduce((a,b)=>(b.value>a.value?b:a),k3.bars[0]);
+  const dpr=Math.min(2,devicePixelRatio||1);
+  const g3=c3.getContext('2d');
+  const midY=((tall.top+tall.base)/2)*dpr;
+  const front=px(g3,(tall.x0+tall.bw/2)*dpr,midY);
+  const topFace=px(g3,(tall.x0+tall.bw/2+tall.dx/2)*dpr,(tall.top-tall.dyy/2)*dpr);
+  const side=px(g3,(tall.x1+tall.dx/2)*dpr,midY);
+
+  // ---- 切回 2D：像素应**完全还原**（确定性绘制；也证明 3D 没留下状态）----
+  t.checked=false; t.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,320));
+  const back=snap();
+  const restored=ids.filter(k=>before[k].url===back[k].url).length;
+
+  // ---- 留一个"开"的状态给刷新记忆判据 ----
+  t.checked=true; t.dispatchEvent(new Event('change',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,200));
+  host.remove();
+  return {
+    dflt, repainted, modes3,
+    colEq:{n:k3.n===k2.n, max:Math.abs(k3.dataMax-k2.dataMax)<1e-9,
+      yMax:Math.abs(k3.yMax-k2.yMax)<1e-6, zeroBase:k3.zeroBase===k2.zeroBase},
+    pieEq:{total:Math.abs(q3.total-q2.total)<1e-9, parts:q3.parts.length===q2.parts.length,
+      frac:q3.parts.every((p,i)=>Math.abs(p.frac-q2.parts[i].frac)<1e-9)},
+    radarEq:{dims:d3.dims===d2.dims, series:d3.series===d2.series},
+    lum:{front:lum(front), top:lum(topFace), side:lum(side), aFront:front.a, aSide:side.a},
+    restored,
+  };
+})()`);
+check('图表面板有「3D 视图」开关，**默认关闭**（四张图仍是 2D —— 新功能不该改变打开页面时的观感）',
+  s46.dflt.has && s46.dflt.checked === false && s46.dflt.n === 4 && s46.dflt.mode === '2d',
+  `开关 ${s46.dflt.has ? '有' : '无'} · 默认 ${s46.dflt.checked ? '开' : '关'} · 画布 ${s46.dflt.n} 张 · 模式 ${s46.dflt.mode}`);
+check('打开后**四张图全部换到 3D 渲染器**（像素重画 + 画布标记同时变，不是"重画了一遍 2D"）',
+  s46.repainted === 4 && s46.modes3.every((m) => m === '3d'),
+  `重画 ${s46.repainted}/4 张 · 模式 ${s46.modes3.join('/')}`);
+check('**3D 与 2D 的口径逐项相等**（柱的 dataMax/yMax/0 基线、饼的合计/占比、雷达的维数/序列数）',
+  s46.colEq.n && s46.colEq.max && s46.colEq.yMax && s46.colEq.zeroBase
+    && s46.pieEq.total && s46.pieEq.parts && s46.pieEq.frac
+    && s46.radarEq.dims && s46.radarEq.series,
+  `柱 ${JSON.stringify(s46.colEq)} · 饼 ${JSON.stringify(s46.pieEq)} · 雷达 ${JSON.stringify(s46.radarEq)}`);
+// 截图取**抽屉**里的四联图（底部条只有 ~130px，截那两个卡片只能看到图注）
+await ev(`(async()=>{
+  document.getElementById('btn-drawer').click();
+  await new Promise(r=>setTimeout(r,240));
+  document.querySelector('#dw-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,300));
+  const b=document.getElementById('dw-body'); if(b) b.scrollTop=0;
+  return 1;})()`);
+await shot('图表-3D-四联');
+check('立体感来自**真实明暗**：柱顶面比正面亮、侧面比正面暗（取渲染后的像素亮度，不是查代码里的常量）',
+  s46.lum.top - s46.lum.front >= 6 && s46.lum.front - s46.lum.side >= 6 && s46.lum.aSide > 200,
+  `亮度 顶 ${s46.lum.top.toFixed(1)} > 正 ${s46.lum.front.toFixed(1)} > 侧 ${s46.lum.side.toFixed(1)}（侧面 alpha ${s46.lum.aSide}）`);
+check('切回 2D 后**像素完全还原**（4 张逐字节一致：确定性绘制，3D 没留下任何状态）',
+  s46.restored === 4, `还原 ${s46.restored}/4 张`);
+await boot(1440, 900);
+const s46b = await ev(`(async()=>{
+  document.querySelector('#tb-tabs button[data-tab="charts"]').click();
+  await new Promise(r=>setTimeout(r,260));
+  const t=document.getElementById('tb-3d');
+  const on=!!t?.checked;
+  const mode=document.getElementById('tb-col')?.dataset.chartMode;
+  if(t&&t.checked){t.checked=false;t.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,200));}
+  return {on,mode};
+})()`);
+check('**刷新后仍记得选了 3D**（localStorage），且读回来真的按 3D 画',
+  s46b.on === true && s46b.mode === '3d', `刷新后开关 ${s46b.on ? '开' : '关'} · 模式 ${s46b.mode}`);
+
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);
   if (!SMOKE) console.log(`截图目录：${OUT}`);

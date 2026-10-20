@@ -12,6 +12,7 @@ import { THEME, cssVar, PALETTE } from './theme.js';
 import { buildReportHtml } from './report.js';
 import { buildTable } from './tables.js';
 import { sparkline, bars, colorbar, hbars, stackedBars, pairedBars, lineChart, columnChart, pieChart, radarChart, dataRange, scatter } from './charts.js';
+import { columnChart3d, pieChart3d, lineChart3d, radarChart3d } from './charts3d.js';
 
 const LAYERS = [
   ['fill', '地块着色'],
@@ -114,6 +115,11 @@ export class UI {
     this.scenarioChartView = 'scatter';
     /** 图表面板里用户的选择（换天重画时不该被重置） */
     this.chartPick = { lineIdx: 0, radarIdx: 0 };
+    /**
+     * 图表用 2D 还是 3D：**全局一个开关**（四张图一起切），存 localStorage。
+     * 只换画法不换口径——3D 版沿用同一份数据范围/基线/合计，切来切去数字不许变。
+     */
+    this.chart3d = UI.loadChart3d();
 
     /** 离线透视视图（data/pivot.json）与当前选中的那个 */
     this.pivotData = null;
@@ -742,7 +748,11 @@ export class UI {
       const hint = refName === 'tb-body'
         ? '<div class="chart-hint">底部条只有 ~130px 高：点右上「展开」放大，或打开右侧「数据视图」一次看全四张</div>'
         : '';
-      el.innerHTML = hint + `<div class="chart-grid">`
+      el.innerHTML = hint
+        + `<div class="chart-toolbar">`
+        + `<label class="chart-3d"><input type="checkbox" id="${prefix}-3d"${this.chart3d ? ' checked' : ''}> 3D 视图</label>`
+        + `<span>柱状 / 饼 / 折线 / 雷达一起换成立体投影（只换画法，数字与口径不变）</span>`
+        + `</div><div class="chart-grid">`
         + lineCard
         + card(d.titles.pie, d.notes.pie, 'pie')
         + card(d.titles.col, d.notes.column, 'col')
@@ -778,6 +788,15 @@ export class UI {
           this.drawChartPanel(prefix);
         });
       }
+      // 2D / 3D 切换：只重画、不重建 DOM（与换天同一条路径，避免画布引用失效）
+      const box3d = document.getElementById(`${prefix}-3d`);
+      if (box3d) {
+        box3d.addEventListener('change', () => {
+          this.chart3d = box3d.checked;
+          this.saveChart3d();
+          this.drawChartPanel(prefix);
+        });
+      }
       // 导出图表 PNG（四张 canvas 拼一张 + 标题条：离开页面后还说得清是什么口径）
       const btnPng = document.getElementById(`${prefix}-export-png`);
       if (btnPng) {
@@ -790,7 +809,8 @@ export class UI {
     }
     this.drawChartPanel(prefix);
     const noteEl = refName === 'tb-body' ? this.refs['tb-note'] : this.refs['dw-note'];
-    if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）';
+    if (noteEl) noteEl.textContent = '四种常用图表：折线看时序 · 饼看构成 · 柱看排行 · 雷达看画像（数据由 main.js 算好，UI 不做聚合）；'
+      + '右上「3D 视图」可整体换成立体投影 —— 只换画法，取值范围与合计不变';
   }
 
   /**
@@ -800,6 +820,14 @@ export class UI {
   drawChartPanel(prefix) {
     const d = this._chartData;
     if (!d) return;
+    /*
+     * 在四张画布上盖一个"这一帧用哪种画法"的标记。
+     * 判据要能分辨"真的换了渲染器"和"只是重画了一遍 2D"—— 只看像素变化分不出这两件事。
+     */
+    for (const k of ['line', 'pie', 'col', 'radar']) {
+      const c = document.getElementById(`${prefix}-${k}`);
+      if (c) c.dataset.chartMode = this.chart3d ? '3d' : '2d';
+    }
     const vis0 = this.chartVisible ?? new Set();
     // 折线：**只对可见序列收范围**（一条时收到它自己的范围，差异最清楚）；对象可切（区域 / 选中单元）
     const curSeries = (d.line.objects[this.chartPick.lineIdx ?? 0] ?? d.line.objects[0]).series;
@@ -808,7 +836,8 @@ export class UI {
     if (vis.length) {
       const rr = dataRange(vis.flatMap((s2) => s2.values));
       // `upto` = 当前帧：回放时只画到那一天，之后的画淡（纵轴仍按全窗口算，不跳）
-      const li = lineChart(document.getElementById(`${prefix}-line`), vis,
+      const drawLine = this.chart3d ? lineChart3d : lineChart;
+      const li = drawLine(document.getElementById(`${prefix}-line`), vis,
         { height: 168, xLabels: d.line.xLabels, mark: d.line.mark, upto: d.line.mark, yMin: rr.lo, yMax: rr.hi });
       if (lineNote) {
         lineNote.textContent = `${d.notes.line.split(' · 纵轴')[0]}`
@@ -819,14 +848,18 @@ export class UI {
     }
     const box = document.getElementById(`${prefix}-line-toggles`);
     if (box) for (const b of box.querySelectorAll('.chip')) b.classList.toggle('off', !vis0.has(Number(b.dataset.series)));
-    pieChart(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
-    columnChart(document.getElementById(`${prefix}-col`), d.column.items,
+    // 2D / 3D 只在这里分叉：**入参与返回口径完全一致**，所以"切 3D 数字不变"是结构上保证的
+    const drawPie = this.chart3d ? pieChart3d : pieChart;
+    const drawCol = this.chart3d ? columnChart3d : columnChart;
+    drawPie(document.getElementById(`${prefix}-pie`), d.pie.items, { height: 168, unit: d.pie.unit });
+    drawCol(document.getElementById(`${prefix}-col`), d.column.items,
       { height: 168, unit: d.column.unit, rotateLabels: true, labelValues: true });
     // 雷达：画「单元画像 vs 对比对象」（对比对象用下拉选，默认全场均值）
     const pick = d.radar.series[0];
     const other = d.radar.compare[this.chartPick.radarIdx ?? 0] ?? d.radar.compare[0];
     if (pick && other) {
-      radarChart(document.getElementById(`${prefix}-radar`),
+      const drawRadar = this.chart3d ? radarChart3d : radarChart;
+      drawRadar(document.getElementById(`${prefix}-radar`),
         { axes: d.radar.dims, series: [pick, { label: other.label, color: PALETTE.orange, fill: 'rgba(230,159,0,0.16)', values: other.values }] },
         { height: 188 });
     }
@@ -873,6 +906,18 @@ export class UI {
     try {
       globalThis.localStorage?.setItem('agri-monitor-cols', JSON.stringify(this.colHidden ?? {}));
     } catch { /* 同上：记不住不算错 */ }
+  }
+
+  /**
+   * 3D 开关的记忆。**默认关**（读不到就当 2D）——新功能不该改变老用户打开页面时的观感，
+   * 更不该因为 localStorage 不可用（隐私模式）就变成"有时 3D 有时 2D"。
+   */
+  static loadChart3d() {
+    try { return globalThis.localStorage?.getItem('agri-monitor-3d') === '1'; } catch { return false; }
+  }
+
+  saveChart3d() {
+    try { globalThis.localStorage?.setItem('agri-monitor-3d', this.chart3d ? '1' : '0'); } catch { /* 同 loadColHidden：记不住不算错 */ }
   }
 
   hiddenCols(key = this.drawerTab) {
