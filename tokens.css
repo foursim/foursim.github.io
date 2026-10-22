@@ -1,0 +1,53 @@
+/*
+ * **配色令牌（一份事实只写一处）**：A 政务深蓝，已定稿。
+ *
+ * 为什么单独成文件：站点现在是"总导航 + 两个模块"三层结构，总导航页、
+ * 农业模块、3D 模块都要用同一套色号；把变量留在某个模块的 style.css 里，
+ * 另外两层就只能抄一遍常量（迟早不同步）。换色仍然只改这一处。
+ */
+
+:root {
+  --bg: #e9eff7;
+  --panel: #ffffff;
+  --panel-2: #f4f8fc;
+  --panel-3: #e9f1fa;
+  --line: #d3e0ee;
+  --line-2: #e8eff7;
+  --fg: #12263f;
+  --dim: #5b7085;
+  --dim-2: #8a9cb0;
+  --brand: #1a4f8a;
+  --brand-2: #1668b8;
+  --brand-ink: #ffffff;
+  --brand-soft: #eaf2fb;
+  --ok: #1f8a4c;
+  --ok-soft: #e7f5ec;
+  --warn: #b07d10;
+  --warn-soft: #fdf5e2;
+  --bad: #c0392b;
+  --bad-soft: #fbeceb;
+  --link: #1668b8;
+  --topbar-bg: #1a4f8a;
+  --topbar-fg: #ffffff;
+  --topbar-btn-bg: rgba(255, 255, 255, 0.14);
+  --topbar-btn-line: rgba(255, 255, 255, 0.34);
+  --map-bg: #f1f5fa;
+  --parcel-stroke: #0f2c4d;
+  --parcel-hover: #1677ff;
+  --road-major: #94a3b5;
+  --road-mid: #a6b1c0;
+  --road-minor: #b9c3cf;
+  --road-track: #cbd3dd;
+  --poi-silo: #e6a23c;
+  --poi-agrarian: #1668b8;
+  --poi-other: #7c8b9c;
+  --admin-line: #1a4f8a;
+  --unit-line: #ffffff;
+  --grid-line: #7fb2e5;
+  --temp-tag-bg: rgba(255, 255, 255, 0.88);
+  --tbl-head: #e4eefa;
+  --tbl-alt: #f7fafd;
+  --tbl-line: #e3ecf6;
+  --shadow: 0 1px 3px rgba(16, 42, 74, 0.10);
+  --radius: 6px;
+}

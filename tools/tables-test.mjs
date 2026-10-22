@@ -8,7 +8,7 @@
  *
  * 跑法：npm run test:tables（已接进 npm run ready）
  */
-import { buildTable } from '../js/tables.js';
+import { buildTable } from '../agri/js/tables.js';
 
 let pass = 0;
 let fail = 0;

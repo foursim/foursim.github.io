@@ -13,15 +13,15 @@
  *
  * 另外留了国内土壤普查的属性位（质地/pH/有机质…）与作物**层级字典**位（`dim_crop`，参照 EuroCrops 的作物码归一思路）。
  *
- * 用法：node tools/export-tables.mjs [--out tables] [--data data]
+ * 用法：node tools/export-tables.mjs [--out tables] [--data agri/data]
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { simulate, CROPS, levelOf } from '../js/agro.js';
+import { simulate, CROPS, levelOf } from '../agri/js/agro.js';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
-const DATA = path.resolve(opt('data', 'data'));
+const DATA = path.resolve(opt('data', 'agri/data'));
 const OUT = path.resolve(opt('out', 'tables'));
 const SITE = { name: 'Hallertau · Wolnzach（德国 巴伐利亚）', seed: 20261013 };
 /**

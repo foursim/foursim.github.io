@@ -15,15 +15,15 @@
  *
  * - **P1 自然田块**就是 `data/parcels.geojson`（OSM 真实边界），本文件不重复产出，只挂关系。
  *
- * 用法：node tools/build-units.mjs [--out data] [--grid-m 250] [--max-unit-ha 30]
+ * 用法：node tools/build-units.mjs [--out agri/data] [--grid-m 250] [--max-unit-ha 30]
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { simulate } from '../js/agro.js';
+import { simulate } from '../agri/js/agro.js';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
-const OUT = path.resolve(opt('out', 'data'));
+const OUT = path.resolve(opt('out', 'agri/data'));
 const GRID_M = Number(opt('grid-m', 250));
 const MAX_UNIT_HA = Number(opt('max-unit-ha', 30));
 const NEIGHBOR_M = Number(opt('neighbor-m', 30)); // 两块地边界间距 ≤ 30 m 视为相邻（可跨田间道/沟渠）

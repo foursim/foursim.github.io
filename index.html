@@ -1,168 +1,65 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>农业监测 · GIS 模拟数据平台 · 导览</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a4f8a'/%3E%3Cpath d='M6 20l7-10 6 9 3-5 4 6z' fill='%23ffffff' opacity='.9'/%3E%3C/svg%3E">
-<!-- 复用主页面同一套配色令牌（style.css 的 :root），导览页只加布局 -->
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="guide.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工程演示站 · 总导航</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a4f8a'/%3E%3Cpath d='M7 22l6-9 5 7 3-4 4 6z' fill='%23ffffff' opacity='.92'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="hub.css">
 </head>
-<body>
+<body class="hub">
 
-<header class="g-head">
-  <div class="g-brand">农业监测<span class="g-sub">GIS 模拟数据平台</span></div>
-  <div class="g-actions">
-    <a class="g-btn ghost" href="sim.html">进入模拟系统</a>
-  </div>
+<header class="hub-top">
+  <span class="hub-brand">工程演示站</span>
+  <span class="hub-sep">/</span>
+  <span class="hub-sub">两个模块 · 纯静态 · 零外部请求</span>
+  <span class="hub-spacer"></span>
+  <a class="hub-link" href="agri/index.html">农业 GIS</a>
+  <a class="hub-link" href="web3d/index.html">Web 3D</a>
 </header>
 
-<main class="g-wrap">
+<main class="hub-main">
+  <p class="hub-lead">
+    两层结构：<b>总导航（本页）→ 模块导航 → 具体页面</b>。两个模块互不引用，
+    各自可以单独交付；共用一套配色令牌（<code>tokens.css</code>），改色只改一处。
+  </p>
 
-  <section class="hero">
-    <h1>农业监测 · GIS 模拟数据平台</h1>
-    <p class="lede">
-      以真实地形上的行政区为底图，由确定性模型生成 <b>501 个地块</b>、<b>62 个经营单元</b>、
-      <b>549 天</b>的农事与气象数据，内容涵盖种植结构、积温需求、单产、运距、水分与养分、病害等指标，
-      并据此开展收储运距分析、收获排产与情景推演。页面为纯静态实现，除底图要素外，数据均为模型模拟结果。
-    </p>
-    <div class="cta">
-      <a class="g-btn primary" href="sim.html">进入模拟地图</a>
-    </div>
-    <div class="g-stats">
-      <div class="g-stat"><b>501</b><span>地块（合计 990.17 ha）</span></div>
-      <div class="g-stat"><b>62</b><span>经营单元</span></div>
-      <div class="g-stat"><b>549</b><span>天（2024 年 7 月至 2025 年 12 月）</span></div>
-      <div class="g-stat"><b>17</b><span>张数据表（CSV 与 Excel）</span></div>
-    </div>
-  </section>
-
-  <section class="sec" id="shots">
-    <h2>模拟数据一览</h2>
-    <p class="sub">地图上的每个色块对应数据表中的一行记录。以下四图展示同一批数据在表格工具中的呈现形式（点击图片可查看原图）。</p>
-    <div class="shots">
-
-      <figure class="shot">
-        <a class="g-zoom" href="img/cropsPic.png" target="_blank" rel="noopener" title="查看原图"><img src="img/cropsPic.png" alt="作物基温与参考单产雷达图" loading="lazy"></a>
-        <figcaption>
-          <span class="g-tag">作物维度</span>
-          <b>基温与参考单产</b>
-          <p>覆盖 7 个作物（冬小麦、冬大麦、果园、牧草、啤酒花、青贮玉米、冬油菜）的积温需求与参考单产对照。
-             基温为 0 者属多年生作物（果园、牧草），不存在“播种—收获”季。</p>
-        </figcaption>
-      </figure>
-
-      <figure class="shot">
-        <a class="g-zoom" href="img/cropsSum.png" target="_blank" rel="noopener" title="查看原图"><img src="img/cropsSum.png" alt="按作物汇总面积与平均单产的透视表" loading="lazy"></a>
-        <figcaption>
-          <span class="g-tag">种植结构</span>
-          <b>按作物汇总面积与单产</b>
-          <p>透视表：按作物统计种植面积合计与平均单产。
-             模拟主页面「图表 › 作物面积构成」即采用此组数据。</p>
-        </figcaption>
-      </figure>
-
-      <figure class="shot">
-        <a class="g-zoom" href="img/unitArea.png" target="_blank" rel="noopener" title="查看原图"><img src="img/unitArea.png" alt="经营单元地块数与面积散点图" loading="lazy"></a>
-        <figcaption>
-          <span class="g-tag">经营单元</span>
-          <b>地块数与面积</b>
-          <p>62 个经营单元的地块数量与面积分布，并区分休耕面积。地块数量与面积规模并不一致，
-             因此「经营单元」页签支持按指标排序。</p>
-        </figcaption>
-      </figure>
-
-      <figure class="shot">
-        <a class="g-zoom" href="img/unitDetail.png" target="_blank" rel="noopener" title="查看原图"><img src="img/unitDetail.png" alt="地块级别的播种、收获与单产明细" loading="lazy"></a>
-        <figcaption>
-          <span class="g-tag">地块明细</span>
-          <b>播种日、收获日与当季单产</b>
-          <p>地块级进度记录：播种日、收获日、季次、积温需求与当季单产。
-             在模拟主页面选中任一地块后，右侧「选中地块」面板即显示对应记录。</p>
-        </figcaption>
-      </figure>
-
-    </div>
-  </section>
-
-  <section class="sec" id="howto">
-    <h2>基础操作</h2>
-    <p class="sub">六项基础功能：时间轴、指标切换、地块选择、表格浏览、数据视图与情景推演。</p>
-    <div class="steps">
-
-      <div class="step">
-        <b>拖动时间轴，查看指定日期的模拟状态</b>
-        <p>时间轴下方标注<b>季度刻度</b>；拖动至任一位置，右侧显示对应日期，地图与表格同步切换。
-           按 <kbd>空格</kbd> 键播放或暂停，可选 1× / 4× / 12× 速度。</p>
-      </div>
-
-      <div class="step">
-        <b>使用左侧「指标」切换着色字段</b>
-        <p>同一地块可按单产、生长进度、病害等级、水分保持、养分保持、到收储点等指标着色，图例随指标变化。
-           颜色仅表示相对高低，具体数值见表格与「选中地块」面板。</p>
-      </div>
-
-      <div class="step">
-        <b>选中地块查看明细</b>
-        <p>单击地块将其高亮，右侧面板显示该地块的作物、播种日与收获日、单产及运距；
-           再次单击取消选中，亦可使用「清除高亮」按钮统一取消。</p>
-      </div>
-
-      <div class="step">
-        <b>浏览地图下方的表格区</b>
-        <p>页签共九个：重点问题、当前帧指标、经营单元、统计网格、作物与收成、告警明细、情景推演、透视视图、图表。
-           点击任意一行，地图上对应地块同步高亮，实现表与图的联动。</p>
-      </div>
-
-      <div class="step">
-        <b>在「数据视图」中查看全行数据</b>
-        <p>右侧抽屉展示全行表格，支持关键字筛选、按表头排序、选择显示列与导出 CSV，
-           并可一键生成单页可打印报告（图片内嵌，可直接打印）。</p>
-      </div>
-
-      <div class="step">
-        <b>在「情景推演」中比较方案</b>
-        <p>候选增点按「受益面积 × 平均节省时间」绘制散点，位于右上方向的方案综合收益更高；
-           亦可切换至错峰收储的前后对照，查看峰值变化。</p>
-      </div>
-
-    </div>
-  </section>
-
-  <section class="sec" id="notes">
-    <h2>数据口径</h2>
-    <div class="notes">
-      <ul>
-        <li><b>数据属性</b>：由确定性模型生成（同参数同结果），<b>非实测数据</b>。表中 <code>synthetic=1</code> 的列为模拟值。</li>
-        <li><b>底图要素</b>：地形高程、行政边界、道路、水系等来自公开数据；产量、水分、养分与病害指标由模型生成。</li>
-        <li><b>土壤与分区</b>：土壤属性留空，不作假设；分区基于模拟属性构建，真实分区需 DEM、土壤图与历史产量资料。</li>
-        <li><b>口径边界</b>：多年生作物（牧草、果园）不存在“播种—收获”季，故不纳入收获排产表。</li>
+  <div class="hub-cards">
+    <a class="hub-card" href="agri/index.html">
+      <span class="hub-no">模块 01</span>
+      <h2>农业监测 · GIS 数据模拟</h2>
+      <p>以真实行政区与地形为底图，由确定性模型生成地块级农事与气象数据；页面为原生 DOM + Canvas 实现，地图库本地内置。</p>
+      <ul class="hub-facts">
+        <li>501 地块</li><li>62 经营单元</li><li>549 天</li><li>16 张交付表</li>
       </ul>
-    </div>
+      <span class="hub-go">进入模块导航</span>
+    </a>
+
+    <a class="hub-card" href="web3d/index.html">
+      <span class="hub-no">模块 02</span>
+      <h2>Web 3D 渲染展示</h2>
+      <p>程序化生成的野外场景：地形起伏、草地「亮部」渲染、雾距随相机退距，并带 SSAO 后处理。three.js 已本地内置。</p>
+      <ul class="hub-facts">
+        <li>three.js r160</li><li>本机内置</li><li>零外部请求</li>
+      </ul>
+      <span class="hub-go">进入模块导航</span>
+    </a>
+  </div>
+
+  <section class="hub-note">
+    <b>数据口径（农业模块）</b>
+    <ul>
+      <li><b>模拟</b>：产量、水分、养分、病害、生长进度、运距由确定性模型生成（同参数同结果），表中 <code>synthetic=1</code> 的列为模拟值；</li>
+      <li><b>真实</b>：地形高程、行政边界、道路、水系等底图要素来自公开数据（OSM / NASA POWER / SoilGrids / Open-Meteo）；</li>
+      <li><b>留空不编造</b>：土壤质地、pH、有机质、耕地质量等级为空。</li>
+    </ul>
   </section>
-
-  <footer class="g-foot">
-    <span>纯静态实现 · 无外部请求</span>
-    <span>数据表与字段说明见仓库内 <code>数据字典.md</code> 与 <code>交付清单.md</code></span>
-  </footer>
-
 </main>
 
-<script>
-  /*
-   * 以 file:// 方式直接打开时，导览页本身可正常阅读（纯文字与图片），但「进入模拟地图」将无法运行：
-   * 模拟页依赖 ES 模块与本地 JSON 请求，file:// 下会被浏览器的同源策略拦截。
-   * 与其让读者进入后才看到提示页，不如在点击之前说明访问方式。此段为内联脚本，无外部依赖。
-   */
-  if (location.protocol === 'file:') {
-    var cta = document.querySelector('.cta');
-    if (cta) {
-      cta.insertAdjacentHTML('afterend',
-        '<p class="g-tip">当前以本地文件方式（<code>file://</code>）打开：<b>模拟地图需通过 HTTP 服务访问</b>。'
-        + '可于本目录执行 <code>python -m http.server 8000</code>，随后访问 <code>http://localhost:8000</code>。</p>');
-    }
-  }
-</script>
+<footer class="hub-foot">
+  纯静态站点：无后端、无 CDN、可离线交付。农业模块的判据用 <code>npm run ready</code> / <code>npm run test:browser</code> 跑。
+</footer>
+
 </body>
 </html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web 3D 渲染展示 · 模块导航</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a4f8a'/%3E%3Cpath d='M16 6l9 5v10l-9 5-9-5V11z' fill='none' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../hub.css">
+</head>
+<body class="hub">
+
+<header class="hub-top">
+  <a class="hub-link" href="../index.html">← 总导航</a>
+  <span class="hub-sep">/</span>
+  <span class="hub-brand">模块 02 · Web 3D 渲染展示</span>
+  <span class="hub-spacer"></span>
+  <a class="hub-link" href="wild6.html">打开 demo</a>
+</header>
+
+<main class="hub-main">
+  <h1 class="hub-mod-head">Web 3D 渲染展示</h1>
+  <p class="hub-lead">
+    单个页面的 three.js 场景演示：<b>程序化生成</b>的地形与草地（无外部模型文件），
+    带雾距随相机退距、地面压暗与 SSAO 后处理。用来对比"业务数据可视化"与"实时 3D 渲染"两种 Web 表现力。
+  </p>
+
+  <a class="hub-btn" href="wild6.html">打开 3D 场景（全屏）</a>
+
+  <section class="hub-note">
+    <b>怎么用</b>
+    <ul>
+      <li>鼠标左键拖动 = 旋转视角，滚轮 = 推拉，右键拖动 = 平移（OrbitControls）；</li>
+      <li>页面左上角是运行状态（帧率/绘制调用等），左下角是版本说明；</li>
+      <li>URL 参数可复现视角：<code>?az=..&amp;el=..&amp;tx=..&amp;ty=..&amp;tz=..&amp;z=..&amp;ssao=0/1</code>；</li>
+      <li>返回：浏览器后退，或点顶栏「← 总导航」。</li>
+    </ul>
+  </section>
+
+  <section class="hub-note">
+    <b>依赖说明</b>
+    <ul>
+      <li><code>three.js r160</code> 与所需 addon（OrbitControls / EffectComposer / RenderPass / SSAOPass / OutputPass 及其依赖）
+        <b>已内置</b>在 <code>web3d/vendor/three/</code>，共 13 个文件约 1.35 MB；</li>
+      <li>不再引用 unpkg 等 CDN —— 断网、离线包、内网环境都能打开；</li>
+      <li>因此这一页也遵守全站「运行时零外部请求」的硬线（有判据扫外链）。</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="hub-foot">
+  场景来源：<code>antiChaos/prebuild/wild6.html</code>（临时借用，后续可替换为本项目的正式 3D 模块）。
+</footer>
+
+<script>
+  /*
+   * 以 file:// 双击打开时，本页（纯 HTML/CSS）能正常阅读，但「打开 demo」会白屏：
+   * 3D 场景用 ES 模块 + WebGL，`file://` 下模块加载被浏览器按跨源拦掉。
+   * 与其点进去才发现，不如在点击之前把访问方式写清楚（本段是经典内联脚本，不受该限制）。
+   */
+  if (location.protocol === 'file:') {
+    var btn = document.querySelector('.hub-btn');
+    if (btn) {
+      btn.insertAdjacentHTML('afterend',
+        '<p class="hub-note" id="web3d-file-tip" style="margin-top:12px">'
+        + '当前以本地文件方式（<code>file://</code>）打开：<b>3D 场景需通过 HTTP 服务访问</b>'
+        + '（ES 模块在 <code>file://</code> 下会被拦掉，页面只会剩下空白背景）。<br>'
+        + '在<b>仓库根目录</b>任选一条：'
+        + '<br><code>npm run serve</code> &nbsp;→&nbsp; <code>http://localhost:8080/web3d/wild6.html</code>'
+        + '<br><code>python -m http.server 8000</code> &nbsp;→&nbsp; <code>http://localhost:8000/web3d/wild6.html</code></p>');
+    }
+  }
+</script>
+</body>
+</html>

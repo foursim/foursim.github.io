@@ -57,8 +57,9 @@ const check = (label, ok, detail = '') => {
   // 只查"交付物"这类文件名（README 里出现就应当真的存在）
   const wanted = [
     'tables/农业监测数据.xlsx', 'tables/query/透视与联合查询.xlsx', 'tables/query/透视与联合查询.md',
-    'data/pivot.json', 'tables/query/results-self.json', 'tools/query.mjs', 'tools/query-sql.mjs',
-    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md', 'sim.html', 'guide.css', 'img/cropsPic.png',
+    'agri/data/pivot.json', 'tables/query/results-self.json', 'tools/query.mjs', 'tools/query-sql.mjs',
+    'tools/duck-run.py', 'tools/repo-check.mjs', 'docs/五分钟上手.md', 'agri/sim.html', 'agri/guide.css',
+    'agri/img/cropsPic.png', 'web3d/wild6.html', 'web3d/vendor/three/three.module.js',
   ];
   // ⚠️ 只查"存在"会被同名**空文件**骗过（0 字节的 data/pivot.json 照样绿），所以连体积一起查
   const bad = wanted.filter((f) => README.includes(f) && (!fs.existsSync(f) || fs.statSync(f).size < 64));
@@ -68,7 +69,16 @@ const check = (label, ok, detail = '') => {
 
 // ---------- 4. 页面仍然零外部依赖（与浏览器侧第 21 节同源，这里做静态兜底） ----------
 {
-  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'sim.html', 'style.css', 'guide.css'];
+  /*
+   * 站点改成"总导航 + 两个模块"后，这一层也要跟着扩：任何一层偷偷引 CDN 都算破线。
+   * 3D 模块的 three.js 已内置（`web3d/vendor/three/`），所以它同样受这条约束。
+   */
+  const files = [
+    ...fs.readdirSync('agri/js').filter((f) => f.endsWith('.js')).map((f) => `agri/js/${f}`),
+    'index.html', 'hub.css', 'tokens.css',
+    'agri/index.html', 'agri/sim.html', 'agri/style.css', 'agri/guide.css',
+    'web3d/index.html', 'web3d/wild6.html',
+  ].filter((f) => fs.existsSync(f));
   const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1]);
   /*
@@ -95,7 +105,7 @@ const check = (label, ok, detail = '') => {
    * 这条判据也是"重跑 data:roads 后忘了 trim"的报警器。
    */
   {
-    const raw = fs.readFileSync('data/roads.geojson', 'utf8');
+    const raw = fs.readFileSync('agri/data/roads.geojson', 'utf8');
     const g = JSON.parse(raw);
     const kb = Buffer.byteLength(raw) / 1024;
     const decOk = raw.match(/\d+\.\d{7,}/g) === null;
@@ -128,18 +138,45 @@ const check = (label, ok, detail = '') => {
    * 而静态站点上的死链**不会报错**，只会点了没反应或 404。
    */
   {
-    const pages = ['index.html', 'sim.html'].filter((f) => fs.existsSync(f));
+    /*
+     * 页面现在分布在三层（根 / `agri/` / `web3d/`），所以链接必须**相对各自页面所在目录**解析。
+     * 之前用 `fs.existsSync(target)` 直接按仓库根判断 —— 那在单层结构下侥幸成立，
+     * 一旦页面下沉就会把 `style.css` 这类正常相对链接全判成死链（假失败）。
+     */
+    const pages = ['index.html', 'agri/index.html', 'agri/sim.html', 'web3d/index.html', 'web3d/wild6.html']
+      .filter((f) => fs.existsSync(f));
     const broken = [];
     for (const f of pages) {
       const html = fs.readFileSync(f, 'utf8');
       for (const m of html.matchAll(/(?:src|href)="([^"#]+)"/g)) {
-        const target = m[1];
+        const target = m[1].split('?')[0];
         if (/^(https?:|data:|mailto:|javascript:)/.test(target) || target.startsWith('#')) continue;
-        if (!fs.existsSync(target.replace(/^\//, ''))) broken.push(`${f} → ${target}`);
+        // 脚本按"在仓库根运行"设计（`npm run repo:check` 的 cwd 就是根），所以相对路径直接 resolve
+        const abs = target.startsWith('/')
+          ? target.slice(1)
+          : path.resolve(path.dirname(f), target);
+        if (!fs.existsSync(abs)) broken.push(`${f} → ${target}`);
       }
     }
-    check('HTML 里的**站内链接与图片都真的存在**（改名后漏改引用 = 死链，静态站点不会报错）',
-      broken.length === 0, broken.length ? broken.slice(0, 4).join(' · ') : `${pages.join(' + ')} 逐个核过`);
+    check('HTML 里的**站内链接与图片都真的存在**（跨三层目录后按各自页面目录解析；改名漏改 = 死链）',
+      broken.length === 0, broken.length ? broken.slice(0, 4).join(' · ') : `${pages.length} 个页面逐个核过`);
+  }
+
+  /*
+   * **总导航必须指向两个模块的入口**。
+   * 站点改成"总导航 + 模块"之后，最容易坏的是"某一层被漏掉"：
+   * 根页面还在，但链到的是老地址；或者新模块建了却没挂上去（等于没做）。
+   */
+  {
+    const hub = fs.existsSync('index.html') ? fs.readFileSync('index.html', 'utf8') : '';
+    const need = [
+      ['agri/index.html', '农业模块'],
+      ['web3d/index.html', '3D 模块'],
+    ];
+    const missing = need.filter(([href]) => !hub.includes(`href="${href}"`)).map(([, name]) => name);
+    check('总导航页**同时链到两个模块的导航页**（新模块建了却没挂上去 = 等于没做）',
+      hub.length > 0 && missing.length === 0,
+      missing.length ? `总导航缺少入口：${missing.join(' / ')}` : 'agri/index.html + web3d/index.html 都在');
   }
 
   /*
@@ -148,12 +185,26 @@ const check = (label, ok, detail = '') => {
    * 结果导览页的数字卡片被排成一行（"501 地块（990.17 ha）"挤在一起）。样式冲突不会报错，只会"看着别扭"。
    */
   {
-    const classesOf = (f) => new Set([...fs.readFileSync(f, 'utf8').matchAll(/\.([A-Za-z][\w-]*)/g)].map((m) => m[1]));
-    const clash = fs.existsSync('guide.css')
-      ? [...classesOf('guide.css')].filter((c) => classesOf('style.css').has(c))
+    /*
+     * 先去掉 `/* … *\/` 注释再抽类名：三层结构以后，样式文件的注释里会互相引用
+     * `agri/style.css`、`tokens.css` 这样的**文件名**，直接正则会把 `css` 当成类名
+     * ⇒ 判据报"重名：css"，纯属假失败（这条就是被它抓出来的）。
+     */
+    const classesOf = (f) => new Set([...fs.readFileSync(f, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .matchAll(/\.([A-Za-z][\w-]*)/g)].map((m) => m[1]));
+    const clash = fs.existsSync('agri/guide.css')
+      ? [...classesOf('agri/guide.css')].filter((c) => classesOf('agri/style.css').has(c))
       : [];
-    check('导览页样式（`guide.css`）的类名**不与主页面（`style.css`）重名**',
+    check('导览页样式（`agri/guide.css`）的类名**不与主页面（`agri/style.css`）重名**',
       clash.length === 0, clash.length ? `重名：${clash.join(', ')}` : '两文件类名互不重叠');
+
+    // 总导航页的 `hub.css` 同时被根页面与 `web3d/index.html` 用，必须与两个模块的样式零重名
+    const hubClash = fs.existsSync('hub.css')
+      ? [...classesOf('hub.css')].filter((c) => classesOf('agri/style.css').has(c) || classesOf('agri/guide.css').has(c))
+      : [];
+    check('总导航样式（`hub.css`）与两个模块的样式**类名零重名**（`.hub-` 前缀是约定，这条守它）',
+      hubClash.length === 0, hubClash.length ? `重名：${hubClash.join(', ')}` : '三份样式互不重叠');
   }
 
   /*
@@ -206,11 +257,11 @@ const check = (label, ok, detail = '') => {
    * 任何人再往 CSS 里写一个指向缺失文件的 `url(...)`，构建/校验阶段就会红。
    * 跳过：`data:`（内联）、`#…`（SVG 片段引用，如老 IE 的 VML behavior）、`http(s):`（外部，另有纯静态判据管）。
    */
-  const cssFiles = ['style.css', ...fs.readdirSync('vendor', { withFileTypes: true })
+  const cssFiles = ['tokens.css', 'hub.css', 'agri/style.css', ...fs.readdirSync('agri/vendor', { withFileTypes: true })
     .filter((d) => d.isDirectory())
-    .flatMap((d) => fs.readdirSync(path.join('vendor', d.name))
+    .flatMap((d) => fs.readdirSync(path.join('agri/vendor', d.name))
       .filter((f) => f.endsWith('.css'))
-      .map((f) => path.join('vendor', d.name, f)))];
+      .map((f) => path.join('agri/vendor', d.name, f)))];
   const missing = [];
   for (const f of cssFiles) {
     const dir = path.dirname(f);
@@ -225,6 +276,23 @@ const check = (label, ok, detail = '') => {
   }
   check('CSS 里引用的**本地文件都存在**（同源 404 隐患：vendored leaflet 曾引用 3 张不存在的图）',
     missing.length === 0, missing.length ? missing.join('；') : `扫描 ${cssFiles.length} 个 CSS：全部可解析`);
+}
+
+// ---------- 6. `.gitignore` 必须真的忽略"本地中间产物" ----------
+{
+  /*
+   * 起因：结构重组把 `data/` 迁到 `agri/data/`，而 `.gitignore` 里写死的是 `data/_soil_samples.json`
+   * ⇒ 规则失效，取数缓存差点被当成源码提交（`git add -A` 时其实已经进了暂存区，是人工发现的）。
+   * 所以这里不查"文本里有没有这行"，而是让 **git 自己回答**：这个路径到底被不被忽略。
+   */
+  const want = ['agri/data/_soil_samples.json', 'tables/fact_parcel_daily.csv', 'dist/'];
+  const notIgnored = [];
+  for (const p of want) {
+    try { execSync(`git check-ignore -q "${p}"`, { stdio: 'ignore' }); } catch { notIgnored.push(p); }
+  }
+  check('`.gitignore` **真的命中**本地中间产物（目录一迁，写死的老规则就失效 —— 曾差点提交取数缓存）',
+    notIgnored.length === 0,
+    notIgnored.length ? `未被忽略：${notIgnored.join(', ')}` : `${want.length} 条逐个用 git check-ignore 验过`);
 }
 
 /*

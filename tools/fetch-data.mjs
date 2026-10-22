@@ -11,9 +11,9 @@
  * - **只做取数与校验**：本脚本不生成任何模拟数据，也不改动页面。
  *
  * 用法：
- *   node tools/fetch-data.mjs parcels --bbox 48.090,11.420,48.120,11.480 --out data
- *   node tools/fetch-data.mjs weather --lat 48.105 --lon 11.450 --start 20240701 --end 20251231 --out data
- *   node tools/fetch-data.mjs check   --out data
+ *   node tools/fetch-data.mjs parcels --bbox 48.090,11.420,48.120,11.480 --out agri/data
+ *   node tools/fetch-data.mjs weather --lat 48.105 --lon 11.450 --start 20240701 --end 20251231 --out agri/data
+ *   node tools/fetch-data.mjs check   --out agri/data
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,7 +33,7 @@ const opt = (name, def = null) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : def;
 };
-const OUT = path.resolve(opt('out', 'data'));
+const OUT = path.resolve(opt('out', 'agri/data'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 带重试的 JSON 取数（Overpass 会限流，POWER 偶发 reset） */
@@ -723,7 +723,7 @@ async function admin() {
     },
     features: feats,
   };
-  const file = path.join(opt('out', 'data'), 'admin.geojson');
+  const file = path.join(opt('out', 'agri/data'), 'admin.geojson');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(out)}\n`, 'utf8');
   console.log(`[行政] 诊断：${JSON.stringify(diag)}`);
@@ -744,7 +744,7 @@ async function admin() {
  * 同时也给"土壤水分/生长进度"提供了海拔修正的依据（高处的田晚熟、更干）。
  */
 async function elevation() {
-  const out = opt('out', 'data');
+  const out = opt('out', 'agri/data');
   const fc = JSON.parse(fs.readFileSync(path.join(out, 'parcels.geojson'), 'utf8'));
   const pts = fc.features.map((f) => {
     const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
@@ -804,7 +804,7 @@ async function elevation() {
  * 每个地块取**最近的采样点**（在 250 m 分辨率下这是诚实的赋值方式，不是插值编造）。
  */
 async function soil() {
-  const out = opt('out', 'data');
+  const out = opt('out', 'agri/data');
   const stepM = Number(opt('step-m', 250));
   const fc = JSON.parse(fs.readFileSync(path.join(out, 'parcels.geojson'), 'utf8'));
   const pts = fc.features.map((f) => {
@@ -1007,7 +1007,7 @@ function textureClass(clay, sand, silt) {
  * 这一步我没有擅自加，先如实呈现点位。
  */
 async function places() {
-  const out = opt('out', 'data');
+  const out = opt('out', 'agri/data');
   const at = opt('at', '48.615,11.59');
   const [lat, lon] = at.split(',').map(Number);
   const town = opt('town', 'Wolnzach');
@@ -1059,8 +1059,8 @@ else if (cmd === 'poi') await poi();
 else if (cmd === 'check') check();
 else {
   console.log('用法：node tools/fetch-data.mjs <parcels|roads|poi|weather|check> [选项]');
-  console.log('  parcels --bbox S,W,N,E --min-ha 0.03 --simplify-m 1.5 --out data');
-  console.log('  weather --lat 48.105 --lon 11.450 --start 20240701 --end 20251231 --out data');
-  console.log('  check   --out data');
+  console.log('  parcels --bbox S,W,N,E --min-ha 0.03 --simplify-m 1.5 --out agri/data');
+  console.log('  weather --lat 48.105 --lon 11.450 --start 20240701 --end 20251231 --out agri/data');
+  console.log('  check   --out agri/data');
   process.exitCode = 1;
 }

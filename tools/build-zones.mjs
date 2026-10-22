@@ -10,15 +10,15 @@
  *
  * 要升级成真分区，缺的是：DEM（高程）、土壤图（质地/有机质）、历史产量图、NDVI 时序。
  *
- * 用法：node tools/build-zones.mjs [--out data] [--sample-m 25]
+ * 用法：node tools/build-zones.mjs [--out agri/data] [--sample-m 25]
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { simulate } from '../js/agro.js';
+import { simulate } from '../agri/js/agro.js';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
-const OUT = path.resolve(opt('out', 'data'));
+const OUT = path.resolve(opt('out', 'agri/data'));
 const SAMPLE_M = Number(opt('sample-m', 25));
 const MAX_ZONES = Number(opt('max-zones', 3));
 

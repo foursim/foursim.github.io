@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>antiChaos · L5 野外 v5（草 + 纵深）</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #E8F4F8; font-family: "Microsoft YaHei", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #stat {
+    position: fixed; left: 16px; top: 14px; z-index: 10; font-size: 11px;
+    color: #3A4A3A; background: rgba(255,255,255,.88); padding: 8px 10px;
+    border-radius: 10px; line-height: 1.7; min-width: 250px;
+  }
+  #stat b { color: #234018; }
+  .fail { color: #C0392B; font-weight: bold; }
+  .pass { color: #1E8449; font-weight: bold; }
+  #tip {
+    position: fixed; left: 16px; bottom: 14px; z-index: 10; font-size: 11px;
+    color: #5A6A5A; background: rgba(255,255,255,.82); padding: 8px 10px;
+    border-radius: 10px; line-height: 1.6; max-width: 48vw;
+  }
+</style>
+</head>
+<body>
+<script id="__errhook">
+window.__err = '';
+window.addEventListener('error', (e) => { window.__err = (e.message || '') + ' @' + (e.filename||'') + ':' + (e.lineno||''); document.title = 'ERR ' + window.__err; });
+window.addEventListener('unhandledrejection', (e) => { window.__err = 'REJ ' + e.reason; document.title = window.__err; });
+</script>
+
+<div id="app"></div>
+<div id="stat"></div>
+<div id="tip">
+  <b>v5 · 草 + 纵深</b>：草改为"亮部"（明度不再倒挂）· 覆盖率 ~×6 · 距离淡出 ·
+  雾距随相机退距 · 地面压暗 · 路面同密度<br>
+  URL：<code>?d=&az=&el=&tx=&ty=&tz=&z=&ssao=0/1</code>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ==================== 色板 + 确定性随机（J3：结构必须确定性） ====================
+const P = {
+  grass: 0xA8D878, grassDeep: 0x6FA84A, stone: 0xD8D0C0, stoneCool: 0xA8B0C0,
+  wood: 0xC8A878, water: 0x7EC8E3, soil: 0x8A6A4A,
+  gold: 0xFFC845, red: 0xE85D4A, purple: 0xA88CD8, bg: 0xE8F4F8,
+  white: 0xF5F5F0, dark: 0x5A6A5A
+};
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let rand = mulberry32(20261022);
+function reseed(s) { rand = mulberry32(s); }
+
+// 确定性低频噪声（不消耗 rand() 序列）：用于「密度场」——决定哪里草密、哪里草疏
+function hash2(x, z) {
+  let h = Math.imul(x | 0, 374761393) + Math.imul(z | 0, 668265263) + 20261022;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+function fbm2(x, z) {
+  const L = (a, b, t) => a + (b - a) * t;
+  const val = (px, pz) => {
+    const xi = Math.floor(px), zi = Math.floor(pz);
+    const fx = px - xi, fz = pz - zi;
+    const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+    return L(L(hash2(xi, zi), hash2(xi + 1, zi), u), L(hash2(xi, zi + 1), hash2(xi + 1, zi + 1), u), v);
+  };
+  return val(x, z) * 0.55
+    + val(x * 2.7 + 11.3, z * 2.7 - 7.9) * 0.30
+    + val(x * 7.1 - 3.1, z * 7.1 + 5.7) * 0.15;
+}
+
+function hexCss(h) { return '#' + h.toString(16).padStart(6, '0'); }
+function s2l(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+
+// ==================== S1：heightmap → Sobel 法线（按材质分，J1） ====================
+function makeHeightmap(type, size) {
+  reseed(20261022 + type.length * 7919);
+  const hm = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      let h = 0;
+      if (type === 'bark') {
+        // 竖直沟槽：沿 u 高频、沿 v 低频（各向异性）
+        h = Math.sin(u * 60) * 0.5 + Math.sin(u * 120 + 0.7) * 0.3 + Math.sin(v * 6) * 0.2;
+      } else if (type === 'rock') {
+        // 多向棱面（Voronoi 近似：两组斜波 + 细碎）
+        h = Math.sin(u * 9 + v * 4) * 0.35 + Math.sin(u * 17 - v * 11) * 0.25
+          + Math.sin(u * 31 + v * 27) * 0.15 + (rand() - 0.5) * 0.1;
+      } else if (type === 'cloth') {
+        // 斜向织纹（两组正交细线旋转 45 度）
+        const s1 = u + v, s2 = u - v;
+        h = Math.sin(s1 * 80) * 0.35 + Math.sin(s2 * 80) * 0.35 + Math.sin(s1 * 160) * 0.15;
+      } else if (type === 'skin') {
+        // 低频起伏 + 少量斑点，无锐利边
+        h = Math.sin(u * 8) * Math.cos(v * 8) * 0.4
+          + Math.sin((u + v) * 15) * 0.15 + (rand() - 0.5) * 0.06;
+      } else if (type === 'cow') {
+        // 皮肤低频 + 斑块边缘（斑纹进 albedo，height 只做微起伏）
+        h = Math.sin(u * 4) * Math.cos(v * 4) * 0.25;
+      } else {
+        h = 0;
+      }
+      hm[y * size + x] = h;
+    }
+  }
+  return hm;
+}
+
+function sobelNormal(hm, size, strength = 2.0) {
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const xm = Math.max(x - 1, 0), xp = Math.min(x + 1, size - 1);
+      const ym = Math.max(y - 1, 0), yp = Math.min(y + 1, size - 1);
+      const dx = (hm[y * size + xp] - hm[y * size + xm]) * strength;
+      const dy = (hm[yp * size + x] - hm[ym * size + x]) * strength;
+      const nx = -dx, ny = -dy, nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      const i = (y * size + x) * 4;
+      data[i] = (nx / len * 0.5 + 0.5) * 255;
+      data[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      data[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.needsUpdate = true;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.NoColorSpace;
+  return tex;
+}
+
+// ==================== S1：albedo（基色 + 方向性条纹 + 斑块 + 边缘暗化） ====================
+function makeAlbedo(type, hex, size) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = hexCss(hex);
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  reseed(20261022 + type.length * 104729);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const u = x / size, v = y / size;
+      let n = 0;
+      if (type === 'bark') {
+        n = Math.sin(u * 60) * 0.10 + Math.sin(v * 6) * 0.06;
+      } else if (type === 'rock') {
+        n = (Math.sin(u * 9 + v * 4) + Math.sin(u * 17 - v * 11)) * 0.06;
+      } else if (type === 'cloth') {
+        n = Math.sin((u + v) * 80) * 0.06;
+      } else if (type === 'skin') {
+        n = Math.sin(u * 8) * Math.cos(v * 8) * 0.05;
+      } else if (type === 'cow') {
+        // 斑纹：低频阈值 → 黑斑（不是噪声）
+        const spot = Math.sin(u * 6 + 1.3) * Math.cos(v * 5 - 0.7);
+        n = spot > 0.35 ? -0.35 : 0;
+      } else if (type === 'grass') {
+        // 动漫风格靠"大片色斑"而不是"细颗粒"：低频、无缝（整数周期 → tile 边界连续），
+        // Toon 把高频压平后，纯色地面会显得"平"，需要这层色斑把草地读成有层次的表面
+        n = Math.sin(u * Math.PI * 2) * Math.cos(v * Math.PI * 2) * 0.10
+          + Math.sin(u * Math.PI * 4 + 1.7) * 0.055;
+      } else if (type === 'path') {
+        // 横向渐变：中心亮、边缘暗
+        n = -Math.pow(Math.abs(u - 0.5) * 2, 2) * 0.15;
+      }
+      const micro = (rand() - 0.5) * 0.04;
+      const k = 1 + n + micro;
+      img.data[i] = Math.max(0, Math.min(255, img.data[i] * k));
+      img.data[i + 1] = Math.max(0, Math.min(255, img.data[i + 1] * k));
+      img.data[i + 2] = Math.max(0, Math.min(255, img.data[i + 2] * k));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// ==================== S1：roughness（区域分布，不是全图随机） ====================
+function makeRough(type, size) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  reseed(20261022 + type.length * 15485863);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const u = x / size, v = y / size;
+      let r = 0.9;
+      if (type === 'bark') r = 0.85 + Math.sin(u * 60) * 0.05;
+      else if (type === 'rock') r = 0.7 + Math.sin(u * 9 + v * 4) * 0.15;
+      else if (type === 'cloth') r = 0.95;
+      else if (type === 'skin') r = 0.65 + Math.sin(u * 8) * 0.05;
+      else if (type === 'cow') r = 0.8;
+      else if (type === 'blade') r = 0.35;
+      const val = Math.max(0, Math.min(1, r)) * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = val;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// ==================== 材质缓存：风格化 Toon（三段色阶） ====================
+// 参考《赛璐璐语法》：硬边的本质是把光照响应压成几阶；
+// 而 ACES 这类电影曲线会把色阶压软 → "卡通风"退化成"奇怪的写实"（正是"拉远偏写实"的成因）。
+const RAMP = (() => {
+  // 彩色三段 ramp（不是灰阶！）：暗部偏冷紫、亮部偏暖白。
+  // 灰阶 ramp 只会让画面"变淡"；彩色 ramp 才产生动漫特有的"冷暖分阶"。
+  const levels = [
+    [0.70, 0.74, 0.88],   // 暗：轻冷紫（太冷会变成"迷彩"）
+    [0.88, 0.95, 0.82],   // 中：偏绿
+    [1.00, 1.00, 0.93]    // 亮：暖白
+  ];
+  const data = new Uint8Array(levels.length * 4);
+  levels.forEach((c, i) => {
+    data[i * 4] = Math.round(c[0] * 255);
+    data[i * 4 + 1] = Math.round(c[1] * 255);
+    data[i * 4 + 2] = Math.round(c[2] * 255);
+    data[i * 4 + 3] = 255;
+  });
+  const t = new THREE.DataTexture(data, levels.length, 1, THREE.RGBAFormat);
+  // 用 Linear 而不是 Nearest：3 阶保留"块感"，插值让它保持"柔和动漫"而不是硬边赛璐璐
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+})();
+
+const matCache = new Map();
+function pbrMat(type, hex, opts = {}) {
+  const key = type + '|' + hex + '|' + (opts.metalness ?? 0);
+  if (matCache.has(key)) return matCache.get(key);
+  const size = opts.size ?? 512;
+  const map = makeAlbedo(type, hex, size);
+  const normalMap = sobelNormal(makeHeightmap(type, size), size, opts.normalStrength ?? 2.0);
+  const ns = opts.normalScale ?? 0.30;
+  const m = new THREE.MeshToonMaterial({
+    color: 0xFFFFFF,
+    map,
+    gradientMap: RAMP,
+    normalMap,
+    normalScale: new THREE.Vector2(ns, ns)
+  });
+  m.userData.type = type;
+  m.userData.texSize = size;
+  matCache.set(key, m);
+  return m;
+}
+
+// triplanar：有机形体（树冠/岩石/动物身体）用三平面投影，消除极点拉伸
+function triplanarMat(type, hex, opts = {}) {
+  const key = 'tri|' + type + '|' + hex;
+  if (matCache.has(key)) return matCache.get(key);
+  const base = pbrMat(type, hex, opts);
+  const m = base.clone();
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTile = { value: 1.0 };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNormal;')
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vWPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vWNormal = normalize(mat3(modelMatrix) * normal);
+      `);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNormal;\nuniform float uTile;')
+      .replace('#include <map_fragment>', `
+        vec3 bw = abs(vWNormal);
+        bw /= (bw.x + bw.y + bw.z);
+        vec3 p = vWPos / uTile;
+        vec4 tx = texture2D(map, p.zy);
+        vec4 ty = texture2D(map, p.xz);
+        vec4 tz = texture2D(map, p.xy);
+        diffuseColor *= tx * bw.x + ty * bw.y + tz * bw.z;
+      `);
+  };
+  m.userData.triplanar = true;
+  m.userData.type = type;
+  matCache.set(key, m);
+  return m;
+}
+
+// ==================== 草叶 alpha 贴图（S2） ====================
+function makeGrassAlpha() {
+  const size = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  reseed(20261022);
+  // v5：3 片宽叶（原 4 片细叶→亚像素碎化），整体提亮 25%（原色比地面暗一个数量级）
+  for (let i = 0; i < 3; i++) {
+    const bx = size * (0.22 + i * 0.28);
+    const by = size;
+    const tipX = bx + (i % 2 === 0 ? 60 : -60) + (rand() - 0.5) * 20;
+    const tipY = size * (0.06 + i * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(bx - 34, by);
+    ctx.quadraticCurveTo(bx - 16, (by + tipY) / 2, tipX, tipY);
+    ctx.quadraticCurveTo(bx + 16, (by + tipY) / 2, bx + 34, by);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, by, 0, tipY);
+    g.addColorStop(0, '#6E9A46');
+    g.addColorStop(1, '#C6EC92');
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;   // 斜视时减少叶缘抖动
+  return tex;
+}
+
+// ==================== 假 AO：贴地暗环（D-1） ====================
+const shadowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(0,0,0,0.38)');
+  g.addColorStop(0.55, 'rgba(0,0,0,0.16)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+
+function contactShadow(radius) {
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(radius * 2, radius * 2),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.012;
+  m.renderOrder = 1;
+  m.userData.noCheck = true;  // 特效片，不是"物件"，不参与贴图门禁
+  return m;
+}
+
+// ==================== T1：renderer + ACES + SSAO（默认关，?ssao=1 开） ====================
+const qs = new URLSearchParams(location.search);
+const get = (k, v) => (qs.has(k) ? parseFloat(qs.get(k)) : v);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.NoToneMapping;   // 动漫风格：ACES 会把色阶压软，退化成"奇怪的写实"
+renderer.toneMappingExposure = 1.0;   // v5.3：0.9 → 1.02，配合强暖主光，避免"欠曝发灰"
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(P.bg);
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// v5：雾距跟随相机退距。正交相机下 fog 用 viewZ，含退距：
+// 固定常量会在"全景"洗白、"特写"完全不起雾，两种机位给出相反的错。
+const camDist0 = get('d', 34);
+const FOG_COLOR = 0x9CC8E8;   // v5.3：更蓝的晴空（原 0xA8C8DC 偏灰，远景一蒙就"雾霾天"）
+scene.background = new THREE.Color(FOG_COLOR);
+// v5.3：雾的远端拉长，只在最远 1/3 起作用（原 +55 会把中景也洗淡）
+scene.fog = new THREE.Fog(FOG_COLOR, camDist0 * 1.05, camDist0 + 70);   // 折中：轻雾（遮地形边缘），但不足以把中景压灰
+
+const aspect = innerWidth / innerHeight;
+const FRUSTUM = 13;
+const camera = new THREE.OrthographicCamera(
+  -FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 200
+);
+
+const camD = get('d', 34);
+const camAz = get('az', 45) * Math.PI / 180;
+const camEl = get('el', 40) * Math.PI / 180;
+const camZ = get('z', 1.0);
+const camTx = get('tx', 0), camTy = get('ty', 1.0), camTz = get('tz', 0);
+camera.zoom = camZ;
+camera.position.set(
+  camTx + camD * Math.cos(camEl) * Math.cos(camAz),
+  camTy + camD * Math.sin(camEl),
+  camTz + camD * Math.cos(camEl) * Math.sin(camAz)
+);
+camera.lookAt(camTx, camTy, camTz);
+camera.updateProjectionMatrix();
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(camTx, camTy, camTz);
+controls.enableDamping = false;
+controls.minPolarAngle = Math.PI / 5;
+controls.maxPolarAngle = Math.PI / 2.4;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const ssao = new SSAOPass(scene, camera, innerWidth, innerHeight);
+ssao.kernelRadius = 0.15;
+ssao.minDistance = 0.0005;
+ssao.maxDistance = 0.02;
+// D：默认关（假 AO 更稳）；只有 ?ssao=1 才开，供 A/B 对照
+ssao.enabled = qs.get('ssao') === '1';
+composer.addPass(ssao);
+composer.addPass(new OutputPass());
+
+// ==================== 光照：主光 + 辅光 + rim（F-5 焦点） ====================
+// v5.3 阳光感：强暖主光 + 弱冷天光 —— 亮部暖、暗部冷，才有"被太阳晒着"的感觉。
+// 之前四盏均匀平光（hemi 0.55 + amb 0.10 + fill 0.18）把明暗全填平了，画面必然发灰。
+scene.add(new THREE.HemisphereLight(0xCFE4FF, 0x55703F, 0.34));
+const sun = new THREE.DirectionalLight(0xFFF0D2, 2.0);   // NoToneMapping 下调低，避免高光直接溢出成白块
+sun.position.set(22, 22, 12);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -22;
+sun.shadow.camera.right = 22;
+sun.shadow.camera.top = 22;
+sun.shadow.camera.bottom = -22;
+sun.shadow.normalBias = 0.02;
+sun.shadow.bias = -0.0004;
+sun.shadow.radius = 3;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xB8D4FF, 0.10);
+fill.position.set(-12, 10, -10);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xFFE8C0, 0.30);
+rim.position.set(0, 6, -18);
+scene.add(rim);
+scene.add(new THREE.AmbientLight(0xFFFFFF, 0.05));
+
+// ==================== 地形（+ 裙边，F-1） ====================
+function terrainHeight(x, z) {
+  return Math.sin(x * 0.28) * Math.cos(z * 0.26) * 0.35
+    + Math.sin((x + z) * 0.13) * 0.18
+    + Math.sin(x * 0.9) * 0.03;
+}
+
+// v5.3：32×32 → 56×56，边缘 15.5~23 m 平滑下沉到 -0.55（与托底盘同高）。
+// 原来方板边缘是"硬切在背景上"的台阶；现在是缓坡入地，从任何机位都看不到断口。
+const terrainGeo = new THREE.PlaneGeometry(42, 42, 84, 84);
+{
+  const pos = terrainGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    const r = Math.hypot(x, y);
+    const k = 1 - THREE.MathUtils.smoothstep(r, 15.0, 21.0);
+    pos.setZ(i, terrainHeight(x, -y) * k - (1 - k) * 0.55);
+  }
+  terrainGeo.computeVertexNormals();
+}
+const terrainMat = new THREE.MeshToonMaterial({
+  color: 0xFFFFFF,
+  gradientMap: RAMP,
+  map: makeAlbedo('grass', 0x7FAA5C, 1024),   // v5：压暗 12%，让草成为画面的亮部
+  normalMap: sobelNormal(makeHeightmap('grass', 1024), 1024, 1.5),
+  normalScale: new THREE.Vector2(0.16, 0.16)   // 高频细节压低：动漫要"大色块"，不要"细颗粒"
+});
+// 纹素密度：地形 42 m，repeat 5（tile 8.4 m → 122 px/m）
+terrainMat.map.repeat.set(5, 5);
+terrainMat.normalMap.repeat.set(5, 5);
+const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+terrain.rotation.x = -Math.PI / 2;
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+// 托底盘（不是"圆筒裙边"：圆筒与矩形地形不匹配，全景像飞碟）
+{
+  // v5.3：与地形**同色同纹理** —— 纯色会在缓坡接缝处拉出一条可见的"边"；
+  //       带纹理后远处地面读作"继续延伸的草地"，不再是一块绿桌
+  const baseMat = new THREE.MeshToonMaterial({
+    color: 0xFFFFFF, gradientMap: RAMP,
+    map: makeAlbedo('grass', 0x7FAA5C, 512)
+  });
+  baseMat.map.repeat.set(24, 24);
+  const base = new THREE.Mesh(new THREE.CircleGeometry(60, 64), baseMat);
+  base.rotation.x = -Math.PI / 2;
+  base.position.y = -0.56;   // 与地形边缘（-0.55）齐平，接缝处不露高差
+  base.receiveShadow = true;
+  scene.add(base);
+}
+
+// ==================== 小径（贴地 + 踩踏渐变 + 碎石，F-3/T4） ====================
+const pathGeo = new THREE.PlaneGeometry(1.5, 26, 4, 96);
+{
+  const pos = pathGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    pos.setZ(i, terrainHeight(x, -y) + 0.02);
+  }
+  pathGeo.computeVertexNormals();
+}
+const pathMat = new THREE.MeshStandardMaterial({
+  color: 0xFFFFFF,
+  map: makeAlbedo('path', 0x7E6C56, 1024),   // v5：降饱和（原 0x8A6A4A 偏红，像巧克力，抢走角色焦点）
+  normalMap: sobelNormal(makeHeightmap('path', 512), 512, 1.2),   // v5：用路面自身的高度图，不再借 rock
+  normalScale: new THREE.Vector2(0.5, 0.5),
+  roughnessMap: makeRough('path', 512),
+  roughness: 1.0,
+  metalness: 0.0
+});
+// v5：1.5 m 宽 : 26 m 长 = 1 : 17.3，横纵同密度才不拉伸（原 1:8 是 2 倍各向异性）
+pathMat.map.repeat.set(1, 17);
+pathMat.normalMap.repeat.set(1, 17);
+pathMat.roughnessMap.repeat.set(1, 17);
+const path = new THREE.Mesh(pathGeo, pathMat);
+path.rotation.x = -Math.PI / 2;
+path.receiveShadow = true;
+scene.add(path);
+
+// 路缘碎石 + 草丛（前景密度）
+// v5：碎石本来 6~11 cm + 冷灰蓝，在绿草上是一颗颗"灰豆子"（均匀/规则/高对比）
+// → 改小、改暖灰、半埋、加密，读作"路面边缘的碎屑"而不是独立物件
+reseed(20261022);
+for (let i = 0; i < 90; i++) {
+  const z = -12 + rand() * 24;
+  const side = rand() < 0.5 ? -1 : 1;
+  const x = side * (0.8 + rand() * 0.5);
+  const st = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.035 + rand() * 0.03, 1),
+    pbrMat('rock', 0x9C9A86, { size: 256, normalStrength: 1.0 })
+  );
+  st.position.set(x, terrainHeight(x, z) + 0.012, z);
+  st.castShadow = true;
+  st.receiveShadow = true;
+  scene.add(st);
+}
+
+// ==================== 池塘 ====================
+const pond = new THREE.Mesh(
+  new THREE.CircleGeometry(2.4, 40),
+  new THREE.MeshToonMaterial({
+    color: P.water, transparent: true, opacity: 0.82,
+    gradientMap: RAMP,
+    emissive: new THREE.Color(0x0A2A34), emissiveIntensity: 0.5,   // 水面自带一层冷光，避免 Toon 下发死
+    normalMap: sobelNormal(makeHeightmap('rock', 512), 512, 1.5)
+  })
+);
+pond.rotation.x = -Math.PI / 2;
+pond.position.set(-6, terrainHeight(-6, 5) + 0.03, 5);
+pond.receiveShadow = true;
+pond.userData.noCheck = true;  // 水面只有 normalMap（透明液体，不需要 albedo/roughness）
+scene.add(pond);
+
+// ==================== 树（2 变体 + triplanar + 确定性变体，T8） ====================
+function treeRound(scale, hue) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.18, 1.4, 10),
+    pbrMat('bark', 0x9A7040, { size: 512, normalStrength: 2.2 })
+  );
+  trunk.position.y = 0.7;
+  const crown = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.95, 2),
+    triplanarMat('rock', P.grassDeep, { size: 512, normalStrength: 1.6 })
+  );
+  crown.position.y = 1.45;
+  const crown2 = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.55, 2),
+    triplanarMat('rock', P.grass, { size: 512, normalStrength: 1.6 })
+  );
+  crown2.position.set(0.4, 1.8, 0.25);
+  g.add(trunk, crown, crown2);
+  g.scale.setScalar(scale);
+  g.rotation.y = hue;
+  return g;
+}
+function treeCone(scale, hue) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.16, 1.2, 10),
+    pbrMat('bark', 0x9A7040, { size: 512, normalStrength: 2.2 })
+  );
+  trunk.position.y = 0.6;
+  const c1 = new THREE.Mesh(
+    new THREE.ConeGeometry(1.0, 1.4, 8),
+    triplanarMat('rock', P.grassDeep, { size: 512, normalStrength: 1.6 })
+  );
+  c1.position.y = 1.6;
+  const c2 = new THREE.Mesh(
+    new THREE.ConeGeometry(0.7, 1.0, 8),
+    triplanarMat('rock', P.grass, { size: 512, normalStrength: 1.6 })
+  );
+  c2.position.y = 2.2;
+  g.add(trunk, c1, c2);
+  g.scale.setScalar(scale);
+  g.rotation.y = hue;
+  return g;
+}
+
+// ==================== 岩石（连续噪声沿法线位移 + clamp y<0，E） ====================
+function rock(scale, color) {
+  const g = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(0.7, 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // 连续噪声（不是逐顶点随机）：两个正弦叠加，沿法线位移 8%
+    const n = Math.sin(x * 3.1 + y * 2.3) * 0.5 + Math.sin(z * 2.7 + x * 1.9) * 0.3
+      + Math.sin(y * 4.1 + z * 3.3) * 0.2;
+    const k = 1 + n * 0.08;
+    pos.setXYZ(i, x * k, y * k, z * k);
+  }
+  // 不用"压平底面"（会把底面压成内翻面，G7 的 2769 就是它）；
+  // 改成整体下沉，让岩石"半埋"进地面（接地靠土裙 + 接触阴影）
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, pbrMat('rock', color, { size: 512, normalStrength: 2.0 }));
+  m.scale.set(1.2, 0.8, 1.0);
+  m.position.y = 0.25;
+  // v5：删除 skipNormals —— 门禁不允许"标记豁免"，要么修根因，要么如实 FAIL
+  g.add(m);
+  const skirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 1.1, 0.12, 10),
+    pbrMat('rock', P.soil, { size: 256 })
+  );
+  skirt.position.y = 0.03;
+  g.add(skirt);
+  g.add(contactShadow(0.9));
+  g.scale.setScalar(scale);
+  return g;
+}
+
+// ==================== 草（alpha 贴图 + 顶点色 + 风，S2/C） ====================
+const grassAlpha = makeGrassAlpha();
+function grassMat() {
+  const m = new THREE.MeshToonMaterial({
+    map: grassAlpha,
+    gradientMap: RAMP,
+    alphaTest: 0.5,
+    transparent: false,
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    // v5.3 叶片透光：草叶很薄，背光也会透出绿色。
+    // 少了这层，强主光 + 弱环境光会让近景草直接掉进暗部（实测：草比地面暗，又回到"脏"）
+    emissive: new THREE.Color(0x2E4A18),
+    emissiveIntensity: 0.55
+  });
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uCenter = { value: new THREE.Vector2(0, 0) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec2 uCenter;')
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        // 只摆动上半部（按本地 y 权重），幅度 <= 叶高 15%
+        float w = clamp(position.y / 0.34, 0.0, 1.0);
+        transformed.x += sin(uTime * 1.6 + position.x * 3.0 + position.z * 2.0) * 0.05 * w;
+        // v5 距离淡出：用「到场景中心的水平距离」而不是相机距离 ——
+        // 正交相机退距 30~55m，用 cameraPosition 会把全场草一起淡出（实测整片消失）
+        #ifdef USE_INSTANCING
+          float dRad = length(instanceMatrix[3].xz - uCenter);
+          transformed *= 1.0 - smoothstep(16.0, 32.0, dRad);
+        #endif
+      `);
+    m.userData.shader = shader;
+  };
+  m.alphaToCoverage = true;   // 抖动抗锯齿，柔化 alphaTest 硬边
+  return m;
+}
+
+function grassTuftGeo() {
+  // v5.2 cross-quad clump：3 个「渐窄」quad 绕 Y 互转 60°（Cinevva / GDC 2021 做法）
+  //   单根细叶在多数视角是亚像素 → 读成"绿色彩纸屑"；3×60° 保证任一视角都有近正面
+  //   矩形在远处读成"方块"，所以顶部收窄成叶形
+  // ⚠️ 必须带 uv：否则 alpha 贴图采样全落在 (0,0)，alphaTest 会把整簇草裁掉
+  const g = new THREE.BufferGeometry();
+  const verts = [], cols = [], uvs = [], idx = [];
+  // 2 张交叉矩形 quad（8 tris）。叶形由 alpha 贴图定义，quad 保持矩形 ——
+  // 实测：改 3 quad / 梯形后每簇视觉叶片数 ×3，读成"尖刀阵"（比 2 张更碎），故回退
+  const w = 0.34, h = 0.34;
+  for (let p = 0; p < 2; p++) {
+    const a = (p / 2) * Math.PI * 0.85;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const bx = ca * w * 0.5, bz = sa * w * 0.5;
+    const base = verts.length / 3;
+    verts.push(-bx, 0, -bz, bx, 0, bz, -bx, h, -bz, bx, h, bz);
+    // 双调色板的"顶点端"：根偏深绿、尖偏暖黄（每簇色相由 instanceColor 再插值）
+    cols.push(0.80, 0.90, 0.62, 0.80, 0.90, 0.62, 1.06, 1.06, 0.82, 1.06, 1.06, 0.82);
+    uvs.push(0, 0, 1, 0, 0, 1, 1, 1);
+    idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(idx);
+  // v5.2 法线统一朝上：交叉 quad 的逐面法线会让同一簇内明暗跳变（"脏"的一大来源），
+  //   风格化草地按"地表受光"处理更干净（Cinevva / NedMakesGames 同款）
+  const nrm = new Float32Array(g.attributes.position.count * 3);
+  for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1;
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  return g;
+}
+
+{
+  const geo = grassTuftGeo();
+  const mat = grassMat();
+  const count = 24000;   // v5.2：9000 → 20000（间距 0.9 m → 0.55 m，远景才成"绒"不成"点阵"）
+  const inst = new THREE.InstancedMesh(geo, mat, count);
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  reseed(20261022);
+  const dummy = new THREE.Object3D();
+  const cInst = new THREE.Color();
+  const fogC = new THREE.Color(FOG_COLOR);
+  const groundC = new THREE.Color(0x6E9A50);   // 地表"渲染后"平均色（比 albedo 暗一档）：远处草的归宿
+  for (let i = 0; i < count; i++) {
+    const x = (rand() - 0.5) * 32;
+    const z = (rand() - 0.5) * 32;
+    // v5.1 低频密度场：草成团分布（dens 低处按概率跳过），而不是均匀撒点
+    const dens = fbm2(x * 0.16, z * 0.16);
+    const onPath = Math.abs(x) < 0.9 && Math.abs(z) < 12;
+    const inPond = Math.hypot(x + 6, z - 5) < 2.9;
+    if (onPath || inPond || rand() > 0.34 + dens * 0.72) {
+      dummy.position.set(0, -50, 0);
+      dummy.scale.setScalar(0);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
+      continue;
+    }
+    dummy.position.set(x, terrainHeight(x, z) + 0.17, z);
+    dummy.rotation.y = rand() * Math.PI;
+    dummy.scale.setScalar(0.78 + rand() * 0.37);   // 上限 1.6 → 1.15，避免草长到角色腰部
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+
+    // v5.1 逐簇着色（instanceColor）：
+    //   密集处 → 深（互相遮挡、内部自阴影）
+    //   零散处 → 浅（单株暴露在天空光/环境反光里，叶片透光）→ 不抢画面重心
+    //   远处   → 向雾色过渡（远看是灰绿一片，而不是深色椒盐噪点）
+    const dRad = Math.hypot(x, z);
+    const far = THREE.MathUtils.smoothstep(dRad, 16, 34);
+    // 双调色板（BotW 做法）：A 冷绿 ↔ B 黄绿，按每簇色相插值 → 斑驳双色，而不是单一绿的明暗
+    const hue = hash2(Math.round(x * 8), Math.round(z * 8));
+    const denseK = 1.04 + 0.18 * (1 - dens);      // 密集略深、稀疏更浅（不抢重心）
+    let cr = (0.82 + 0.18 * hue) * denseK;
+    let cg = (0.94 - 0.05 * hue) * denseK;
+    let cb = (0.68 - 0.30 * hue) * denseK;
+    cr += (1.02 - cr) * far * 0.55;               // 远端向"平均色"抬亮
+    cg += (1.02 - cg) * far * 0.55;
+    cb += (1.02 - cb) * far * 0.55;
+    cInst.setRGB(cr, cg, cb);
+    // 关键：远处草融进"地表平均色"，而不是只提亮 —— 相当于把草的 mip 平均到地面。
+    // 只提亮会得到"灰绿点阵"，融进地表才真正消掉远处颗粒感。
+    cInst.lerp(groundC, far * 0.62);
+    cInst.lerp(fogC, far * 0.30);
+    inst.setColorAt(i, cInst);
+  }
+  if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  scene.add(inst);
+  scene.userData.grassMat = mat;
+}
+
+// ==================== 野花：打破"全绿"，给画面色彩节奏（v5.4） ====================
+// 全绿的画面没有视觉落点；少量暖色/白色花簇能把视线从"一片绿"里拉出来。
+// 用低频场控制"哪里有花丛"（不是均匀撒），每朵随机取一种花色。
+{
+  const petalGeo = new THREE.IcosahedronGeometry(0.055, 0);
+  const flowerMat = new THREE.MeshToonMaterial({
+    gradientMap: RAMP,
+    emissive: new THREE.Color(0x1A0E00), emissiveIntensity: 0.25
+  });
+  const N = 900;
+  const fl = new THREE.InstancedMesh(petalGeo, flowerMat, N);
+  fl.castShadow = false;
+  fl.receiveShadow = true;
+  // 只留 3 色，且**整片按低频场取同一主色**（每朵随机会变成"彩色噪点"）
+  const palette = [0xFFE04A, 0xFFF6E8, 0xE0605A];
+  const d = new THREE.Object3D();
+  const col = new THREE.Color();
+  reseed(4477);
+  for (let i = 0; i < N; i++) {
+    const x = (rand() - 0.5) * 30;
+    const z = (rand() - 0.5) * 30;
+    const cl = fbm2(x * 0.22 + 40, z * 0.22 - 17);
+    const onPath = Math.abs(x) < 1.0 && Math.abs(z) < 12;
+    const inPond = Math.hypot(x + 6, z - 5) < 3.0;
+    if (cl < 0.56 || onPath || inPond) {
+      d.position.set(0, -50, 0); d.scale.setScalar(0); d.updateMatrix();
+      fl.setMatrixAt(i, d.matrix);
+      continue;
+    }
+    // 花头藏进草间（0.13~0.25），不做花杆 —— 露在草尖上方会读成"悬浮的彩球"
+    d.position.set(x, terrainHeight(x, z) + 0.13 + rand() * 0.12, z);
+    d.rotation.set(rand() * 0.5, rand() * Math.PI, rand() * 0.5);
+    d.scale.setScalar(0.7 + rand() * 0.7);
+    d.updateMatrix();
+    fl.setMatrixAt(i, d.matrix);
+    const hueField = fbm2(x * 0.11 - 31, z * 0.11 + 23);
+    col.setHex(palette[Math.min(2, Math.floor(hueField * 3))]);
+    fl.setColorAt(i, col);
+  }
+  if (fl.instanceColor) fl.instanceColor.needsUpdate = true;
+  scene.add(fl);
+}
+
+// ==================== 玩家（眼睛内凹 + 头发 + 手指 + 腿分离，E） ====================
+function player(scale) {
+  const g = new THREE.Group();
+  const skin = pbrMat('skin', 0xF0C8A0, { size: 512 });
+  const cloth = pbrMat('cloth', 0x6A8AC8, { size: 512 });
+
+  [-1, 1].forEach((sx) => {
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.10, 0.10, 0.50, 10),
+      pbrMat('cloth', 0x4A6A9A, { size: 256 })
+    );
+    leg.position.set(sx * 0.13, 0.25, 0);
+    g.add(leg);
+  });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.70, 12), cloth);
+  body.position.y = 0.85;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 14), skin);
+  head.position.y = 1.45;
+  g.add(body, head);
+
+  // 内凹眼窝：球体 scale.z=0.6 嵌入（不是凸出黑球）
+  [-0.10, 0.10].forEach((x) => {
+    // v5：眼窝必须是**眼白**（v4 误用肤色材质 → 仍是"黑豆眼"）
+    const eyeWhite = pbrMat('skin', 0xF8F8F4, { size: 128 });
+    const socket = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), eyeWhite);
+    socket.position.set(x, 1.50, 0.21);
+    socket.scale.set(1, 1, 0.55);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), pbrMat('skin', 0x2A2A3A, { size: 128 }));
+    pupil.position.set(x, 1.50, 0.245);
+    g.add(socket, pupil);
+  });
+  // 鼻
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), skin);
+  nose.position.set(0, 1.44, 0.27);
+  // 嘴
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.02), pbrMat('skin', 0x8A4A4A, { size: 128 }));
+  mouth.position.set(0, 1.36, 0.235);
+  // 耳
+  [-1, 1].forEach((sx) => {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), skin);
+    ear.position.set(sx * 0.26, 1.47, 0);
+    g.add(ear);
+  });
+  g.add(nose, mouth);
+
+  // 头发：3 块发束（大块，不是发丝）
+  const hair = pbrMat('cloth', 0x3A2A2A, { size: 256, roughness: 0.8 });
+  const top = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), hair);
+  top.position.y = 1.62;
+  g.add(top);
+  [[-0.16, 1.58], [0.16, 1.58]].forEach(([x, y]) => {
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 5), hair);
+    tuft.position.set(x, y, 0.10);
+    tuft.rotation.z = x > 0 ? -0.4 : 0.4;
+    g.add(tuft);
+  });
+
+  // 手臂
+  [-1, 1].forEach((sx) => {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.50, 8), cloth);
+    arm.position.set(sx * 0.28, 0.90, 0.10);
+    arm.rotation.x = -0.35;
+    g.add(arm);
+  });
+
+  // 手指：3 根环绕刀柄（有握持姿态）
+  const skinSmall = pbrMat('skin', 0xF0C8A0, { size: 128 });
+  for (let i = 0; i < 3; i++) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.05, 0.028), skinSmall);
+    f.position.set(0.30, 0.64 + i * 0.03, 0.235);
+    f.rotation.x = -0.25;
+    g.add(f);
+  }
+  // 匕首
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(0.028, 0.30, 0.055),
+    pbrMat('blade', 0xD8D8E0, { size: 256, metalness: 0.4 })
+  );
+  blade.position.set(0.30, 0.82, 0.24);
+  const grip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.032, 0.032, 0.12, 6),
+    pbrMat('bark', 0x9A7040, { size: 256 })
+  );
+  grip.position.set(0.30, 0.62, 0.24);
+  g.add(blade, grip);
+
+  g.scale.setScalar(scale);
+  g.add(contactShadow(0.5));
+  return g;
+}
+
+// ==================== 动物（鸡 2 腿 / 羊角 / 牛斑纹蹄 / 尾巴，E） ====================
+function animalBase(hex, size = 512) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 16, 12),
+    triplanarMat('cow', hex, { size })
+  );
+  body.position.y = 0.45;
+  body.scale.set(1, 0.9, 0.82);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 16, 12),
+    triplanarMat('cow', hex, { size })
+  );
+  head.position.set(0.34, 0.72, 0);
+  g.add(body, head);
+  return g;
+}
+
+function cow(scale) {
+  const g = animalBase(0xE8DCC8);
+  const dark = pbrMat('cow', 0x8A6A5A, { size: 256 });
+  [-0.10, 0.10].forEach((z) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), pbrMat('skin', 0x2A2A3A, { size: 128 }));
+    eye.position.set(0.53, 0.78, z);
+    g.add(eye);
+  });
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), pbrMat('skin', 0x8A4A4A, { size: 128 }));
+  nose.position.set(0.57, 0.70, 0);
+  g.add(nose);
+  [-1, 1].forEach((s) => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.20, 6), pbrMat('cow', 0xE8DCC8, { size: 256 }));
+    ear.position.set(0.42, 0.95, s * 0.12);
+    ear.rotation.z = -0.2;
+    g.add(ear);
+  });
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.02, 0.26, 6), pbrMat('cow', 0xE8DCC8, { size: 128 }));
+  tail.position.set(-0.34, 0.55, 0);
+  tail.rotation.z = 0.55;
+  g.add(tail);
+  [[-0.16, 0.18], [-0.16, -0.18], [0.14, 0.18], [0.14, -0.18]].forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.28, 8), pbrMat('cow', 0xE8DCC8, { size: 256 }));
+    leg.position.set(x, 0.14, z);
+    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.06, 8), dark);
+    hoof.position.set(x, 0.03, z);
+    g.add(leg, hoof);
+  });
+  g.scale.setScalar(scale);
+  g.add(contactShadow(0.6));
+  return g;
+}
+
+function sheep(scale) {
+  const g = animalBase(0xF5F5F0);
+  [-0.10, 0.10].forEach((z) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), pbrMat('skin', 0x2A2A3A, { size: 128 }));
+    eye.position.set(0.53, 0.78, z);
+    g.add(eye);
+  });
+  // 角：两段圆柱折角（不是直锥）
+  [-1, 1].forEach((s) => {
+    const h1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.14, 6), pbrMat('rock', 0xD8D0C0, { size: 128 }));
+    h1.position.set(0.36, 0.96, s * 0.14);
+    h1.rotation.z = 0.5;
+    const h2 = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.14, 6), pbrMat('rock', 0xD8D0C0, { size: 128 }));
+    h2.position.set(0.30, 1.04, s * 0.14);
+    h2.rotation.z = 1.4;
+    g.add(h1, h2);
+  });
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.02, 0.18, 6), pbrMat('cow', 0xF5F5F0, { size: 128 }));
+  tail.position.set(-0.34, 0.50, 0);
+  tail.rotation.z = 0.55;
+  g.add(tail);
+  [[-0.16, 0.18], [-0.16, -0.18], [0.14, 0.18], [0.14, -0.18]].forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.26, 8), pbrMat('skin', 0x3A3A3A, { size: 128 }));
+    leg.position.set(x, 0.13, z);
+    g.add(leg);
+  });
+  g.scale.setScalar(scale);
+  g.add(contactShadow(0.5));
+  return g;
+}
+
+function chicken(scale) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 10),
+    triplanarMat('skin', 0xFFE08A, { size: 256 })
+  );
+  body.position.y = 0.32;
+  body.scale.set(1, 0.9, 0.85);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.14, 12, 10),
+    triplanarMat('skin', 0xFFE08A, { size: 256 })
+  );
+  head.position.set(0.20, 0.52, 0);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.10, 4), pbrMat('skin', 0xF0A030, { size: 128 }));
+  beak.position.set(0.34, 0.52, 0);
+  beak.rotation.z = -Math.PI / 2;
+  const comb = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 4), pbrMat('skin', 0xE85D4A, { size: 128 }));
+  comb.position.set(0.16, 0.66, 0);
+  // 短翅膀 + 尾羽
+  [-1, 1].forEach((s) => {
+    const wing = new THREE.Mesh(new THREE.SphereGeometry(0.10, 10, 8), triplanarMat('skin', 0xFFE08A, { size: 128 }));
+    wing.position.set(0.0, 0.34, s * 0.20);
+    wing.scale.set(1.1, 0.7, 0.35);
+    g.add(wing);
+  });
+  const tailf = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 5), pbrMat('skin', 0xFFE08A, { size: 128 }));
+  tailf.position.set(-0.24, 0.38, 0);
+  tailf.rotation.z = 1.2;
+  g.add(body, head, beak, comb, tailf);
+  // 2 腿
+  [-0.06, 0.06].forEach((z) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 6), pbrMat('skin', 0xF0A030, { size: 128 }));
+    leg.position.set(-0.02, 0.08, z);
+    g.add(leg);
+  });
+  g.scale.setScalar(scale);
+  g.add(contactShadow(0.3));
+  return g;
+}
+
+function pig(scale) {
+  const g = animalBase(0xF4A6B8);
+  [-0.10, 0.10].forEach((z) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), pbrMat('skin', 0x2A2A3A, { size: 128 }));
+    eye.position.set(0.53, 0.78, z);
+    g.add(eye);
+  });
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 8), pbrMat('skin', 0xE87A8A, { size: 128 }));
+  snout.position.set(0.56, 0.68, 0);
+  snout.rotation.z = Math.PI / 2;
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.18, 6), pbrMat('cow', 0xF4A6B8, { size: 128 }));
+  tail.position.set(-0.34, 0.52, 0);
+  tail.rotation.z = 0.55;
+  g.add(snout, tail);
+  [[-0.16, 0.18], [-0.16, -0.18], [0.14, 0.18], [0.14, -0.18]].forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.26, 8), pbrMat('cow', 0xF4A6B8, { size: 128 }));
+    leg.position.set(x, 0.13, z);
+    g.add(leg);
+  });
+  g.scale.setScalar(scale);
+  g.add(contactShadow(0.5));
+  return g;
+}
+
+// ==================== 装配（前景/中景/背景 + 密度梯度 F-4） ====================
+const hero = player(1.0);
+hero.position.set(0, 0, 0);
+hero.rotation.y = Math.PI;
+scene.add(hero);
+
+const treesPos = [
+  [-9, -9, 1.1], [8, -10, 0.95], [-11, -6, 0.9], [10, -6, 1.05],
+  [-13, 2, 0.85], [13, 2, 0.8], [-7, -12, 0.95], [7, -13, 0.9]
+];
+reseed(20261022);
+treesPos.forEach(([x, z, s], i) => {
+  const t = i % 2 === 0 ? treeRound(s, rand() * 6.28) : treeCone(s, rand() * 6.28);
+  t.position.set(x, terrainHeight(x, z), z);
+  scene.add(t);
+});
+
+// 前景：灌木 + 碎石（3 类细节）
+reseed(20261022);
+for (let i = 0; i < 8; i++) {
+  const bush = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.45 + rand() * 0.3, 1),
+    triplanarMat('rock', 0x5A7A4A, { size: 256, normalStrength: 1.5 })
+  );
+  const x = (rand() - 0.5) * 20, z = 7 + rand() * 4;
+  bush.position.set(x, terrainHeight(x, z) + 0.35, z);
+  bush.rotation.y = rand() * Math.PI;
+  bush.add(contactShadow(0.6));
+  scene.add(bush);
+}
+
+const rocksPos = [
+  [-7, -2, 1.2], [3, -6, 0.9], [9, -4, 0.7], [-2, -4, 0.6],
+  [-4, 6, 1.0], [5, 5, 0.8]
+];
+rocksPos.forEach(([x, z, s]) => {
+  const r = rock(s, P.stoneCool);
+  r.position.set(x, terrainHeight(x, z), z);
+  scene.add(r);
+});
+
+const c1 = cow(1.15); c1.position.set(-2.5, terrainHeight(-2.5, -1.5), -1.5); c1.rotation.y = 0.6;
+const s1 = sheep(0.9); s1.position.set(1.8, terrainHeight(1.8, -2.5), -2.5); s1.rotation.y = -0.3;
+const ch1 = chicken(1.0); ch1.position.set(-4.0, terrainHeight(-4, 1), 1.0); ch1.rotation.y = 1.1;
+const p1 = pig(0.95); p1.position.set(3.5, terrainHeight(3.5, -0.5), -0.5); p1.rotation.y = -0.8;
+scene.add(c1, s1, ch1, p1);
+
+// ==================== S0：门禁诚实化 ====================
+function countTris(root) {
+  let n = 0;
+  root.traverse((o) => {
+    if (o.isMesh && o.geometry) {
+      const g = o.geometry;
+      const t = g.index ? g.index.count / 3
+        : (g.attributes.position ? g.attributes.position.count / 3 : 0);
+      n += o.isInstancedMesh ? t * o.count : t;
+    }
+  });
+  return Math.round(n);
+}
+
+function checkMaterials(root) {
+  const missing = [];
+  const byObj = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material || o.userData.noCheck) return;
+    const m = o.material;
+    if (!m.map || !m.normalMap || !m.roughnessMap) {
+      missing.push((o.name || 'mesh') + ':' + o.uuid.slice(0, 4));
+    }
+    const k = m.userData.type || 'unknown';
+    if (!byObj.has(k)) byObj.set(k, new Set());
+    byObj.get(k).add(m.uuid);
+  });
+  return { missing, byObj };
+}
+
+function checkNormals(root) {
+  // v5.4 G7 判据修正：原判据「面法线·(面心−包围盒中心) < 0」对**开放面片**无效 ——
+  // 地形/路面/水面的"中心"就在面上，缓坡处会成批误报（实测 6849，全是地形）。
+  // 新判据拆两类：
+  //   实体（柱/锥/盒/多面体骨架）→ 面法线·(面心−中心) < 0 记为反法线
+  //   面片（plane/circle）      → 本地法线应朝 +z（体素朝上），< 0 记为反向
+  const res = { solidBad: 0, solidTotal: 0, sheetBad: 0, sheetTotal: 0 };
+  const v = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.userData.noCheck
+      || !o.geometry || !o.geometry.attributes.position) return;
+    if (o.geometry.type === 'IcosahedronGeometry' || o.geometry.type === 'SphereGeometry') return;
+    const pos = o.geometry.attributes.position;
+    const nrm = o.geometry.attributes.normal;
+    if (!nrm) return;
+    const sheet = o.geometry.type === 'PlaneGeometry' || o.geometry.type === 'CircleGeometry';
+
+    if (sheet) {
+      const step = Math.max(1, Math.floor(pos.count / 200));
+      for (let i = 0; i < pos.count; i += step) {
+        res.sheetTotal++;
+        if (nrm.getZ(i) < 0) res.sheetBad++;
+      }
+      return;
+    }
+
+    o.geometry.computeBoundingBox();
+    o.geometry.boundingBox.getCenter(c);
+    const idx = o.geometry.index;
+    const count = idx ? idx.count : pos.count;
+    const triStep = Math.max(3, Math.floor(count / 3 / 200) * 3);
+    for (let i = 0; i < count; i += triStep) {
+      const ia = idx ? idx.getX(i) : i;
+      const ib = idx ? idx.getX(i + 1) : i + 1;
+      const ic = idx ? idx.getX(i + 2) : i + 2;
+      v.set(
+        pos.getX(ia) + pos.getX(ib) + pos.getX(ic),
+        pos.getY(ia) + pos.getY(ib) + pos.getY(ic),
+        pos.getZ(ia) + pos.getZ(ib) + pos.getZ(ic)
+      ).divideScalar(3).sub(c);
+      n.set(nrm.getX(ia), nrm.getY(ia), nrm.getZ(ia));
+      res.solidTotal++;
+      if (v.dot(n) < 0) res.solidBad++;
+    }
+  });
+  return res;
+}
+
+function selfCheck() {
+  const heroTris = countTris(hero);
+  const animalTris = countTris(c1);
+  const treeTris = countTris(treeRound(1, 0));
+  const total = countTris(scene);
+  const { missing, byObj } = checkMaterials(scene);
+  const nrmAudit = checkNormals(scene);
+  const badNormals = nrmAudit.solidBad + nrmAudit.sheetBad;
+
+  const el = document.getElementById('stat');
+  const ok = (b) => b ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>';
+
+  el.innerHTML = `
+    <div>G1 面数：角色 <b>${heroTris}</b> / 动物 <b>${animalTris}</b> / 树 <b>${treeTris}</b> / 总 <b>${(total / 1000).toFixed(1)}K</b></div>
+    <div>G1 预算：角色 2K~5K ${ok(heroTris >= 2000 && heroTris <= 5000)} · 动物 1.5K~3K ${ok(animalTris >= 1500 && animalTris <= 3000)} · 树 1.5K~3K ${ok(treeTris >= 1500 && treeTris <= 3000)}</div>
+    <div>G3 贴图：缺三件套 <b class="${missing.length ? 'fail' : 'pass'}">${missing.length}</b> 个 ${ok(missing.length === 0)}</div>
+    <div>G9 材质数：${[...byObj.entries()].map(([k, n]) => k + '=' + n.size).join(' · ')} ${ok([...byObj.values()].every((n) => n.size <= 4))}</div>
+    <div>G7 反法线：实体 <b class="${nrmAudit.solidBad > 0 ? 'fail' : 'pass'}">${nrmAudit.solidBad}/${nrmAudit.solidTotal}</b> · 面片 <b class="${nrmAudit.sheetBad > 0 ? 'fail' : 'pass'}">${nrmAudit.sheetBad}/${nrmAudit.sheetTotal}</b> ${ok(badNormals === 0)}</div>
+    <div>G12 渲染：ACES ${ok(true)} · SSAO <b>${ssao.enabled ? 'ON' : 'OFF'}</b> · shadow 2048 ${ok(true)}</div>
+    <div style="color:#8A6A4A">G4 纹素：地表 1024/4m=${(1024 / 4).toFixed(0)} px/m · 角色 1024/1m=1024 px/m（±15% 需逐件核）</div>
+  `;
+}
+
+// ==================== animate ====================
+addEventListener('resize', () => {
+  const a = innerWidth / innerHeight;
+  camera.left = -FRUSTUM * a; camera.right = FRUSTUM * a;
+  camera.top = FRUSTUM; camera.bottom = -FRUSTUM;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+let frames = 0;
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  const gm = scene.userData.grassMat;
+  if (gm && gm.userData.shader) gm.userData.shader.uniforms.uTime.value = t;
+  controls.update();
+  composer.render();
+  frames++;
+  if (frames === 2) selfCheck();
+}
+animate();
+</script>
+
+<!--
+  兜底说明（**经典内联脚本**，不是 module）：
+  ------------------------------------------------------------------
+  这个场景用 ES 模块 + WebGL。以 `file://` 双击打开时，浏览器会把
+  `import './vendor/three/three.module.js'` 当作跨源请求拦掉（源是 null），
+  模块根本不执行 —— 页面就只剩一张浅色背景，看起来像"坏了"。
+  内联的**经典**脚本不受这条限制，所以由它来把原因和做法说清楚。
+  另外还兜住另一种白屏：HTTP 下若 WebGL 不可用 / 模块报错，3.5 秒内不会出现 canvas。
+-->
+<script>
+(function () {
+  var FILE_HINT = ''
+    + '此场景需要 <b>HTTP 服务</b>（ES 模块 + WebGL，<code>file://</code> 下浏览器会拦掉模块加载）。<br>'
+    + '在<b>仓库根目录</b>任选一条：'
+    + '<br><code>npm run serve</code> &nbsp;→&nbsp; <code>http://localhost:8080/web3d/wild6.html</code>'
+    + '<br><code>python -m http.server 8000</code> &nbsp;→&nbsp; <code>http://localhost:8000/web3d/wild6.html</code>';
+
+  function show(title, detail) {
+    if (document.getElementById('__hint')) return;
+    var d = document.createElement('div');
+    d.id = '__hint';
+    d.setAttribute('role', 'alert');
+    d.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;'
+      + 'background:rgba(232,244,248,.96);font:13px/1.8 "Microsoft YaHei",system-ui,sans-serif;color:#22313f;padding:24px';
+    d.innerHTML = '<div style="max-width:560px;background:#fff;border:1px solid #cfe0ea;border-left:4px solid #1a4f8a;'
+      + 'border-radius:8px;padding:18px 20px;box-shadow:0 2px 10px rgba(16,42,74,.12)">'
+      + '<div style="font-size:15px;font-weight:700;margin-bottom:8px">' + title + '</div>'
+      + '<div style="color:#4a5b6b">' + detail + '</div></div>';
+    document.body.appendChild(d);
+  }
+
+  if (location.protocol === 'file:') {
+    // 模块一定被拦，不用等超时
+    show('3D 场景无法在 file:// 下运行', FILE_HINT);
+    return;
+  }
+  // HTTP 下兜另一种白屏：模块报错 / WebGL 不可用 ⇒ 3.5 秒后仍没有 canvas
+  setTimeout(function () {
+    if (!document.querySelector('#app canvas')) {
+      show('3D 场景没有启动',
+        '可能原因：WebGL 被禁用、或模块加载失败（看控制台报错）。<br>' + FILE_HINT);
+    }
+  }, 3500);
+})();
+</script>
+</body>
+</html>

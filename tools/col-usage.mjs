@@ -17,8 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const TABLES = 'tables';
-const SRC_DIRS = ['js', 'tools'];
-const EXTRA_FILES = ['index.html', 'sim.html', 'README.md'];
+const SRC_DIRS = ['agri/js', 'tools'];
+const EXTRA_FILES = ['index.html', 'agri/index.html', 'agri/sim.html', 'web3d/index.html', 'web3d/wild6.html', 'README.md'];
 
 /** 收集要扫的源码（排除 tables/ 自身与 node_modules） */
 function collect() {

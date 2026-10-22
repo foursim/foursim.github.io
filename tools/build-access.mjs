@@ -22,7 +22,7 @@ import path from 'node:path';
 
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : d; };
-const OUT = path.resolve(opt('out', 'data'));
+const OUT = path.resolve(opt('out', 'agri/data'));
 const R = 6371008.8;
 
 // 通行参数来自共享模块（`scenario.mjs` 也用同一份，避免两套算法漂移）

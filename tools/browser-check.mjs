@@ -188,7 +188,7 @@ async function click(sel) {
 let t0 = Date.now();          // 记一次"页面起来花了多久"（smoke 模式下会打出来）
 const boot = async (w, h, query = '') => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false, screenWidth: w, screenHeight: h });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}${query}` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/agri/sim.html?t=${Date.now()}${query}` });
   await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
   /*
    * **等懒加载的数据**：情景候选（194 KB）不在启动清单里，切到「情景推演」才取。
@@ -1121,8 +1121,8 @@ const s20Rec = await ev(`(async()=>{const a=globalThis.__agi ? null : globalThis
       else if(c!=='\\r'){val+=c;}}
     if(val!==''||cur.length){cur.push(val);out.push(cur);}
     return out;};
-  const [uh,...ur]=parse(await (await fetch('tables/dim_unit.csv')).text());
-  const [ph,...pr]=parse(await (await fetch('tables/dim_parcel.csv')).text());
+  const [uh,...ur]=parse(await (await fetch('../tables/dim_unit.csv')).text());
+  const [ph,...pr]=parse(await (await fetch('../tables/dim_parcel.csv')).text());
   const ui=uh.indexOf('unit_id'), un=uh.indexOf('n_parcels'), ua=uh.indexOf('area_ha');
   const pi=ph.indexOf('parcel_id'), pa=ph.indexOf('area_ha'), pc=ph.indexOf('crop_name_zh'), pco=ph.indexOf('crop_code');
   const day=a.state.day, tb=a.buildTables(day);
@@ -1165,7 +1165,7 @@ await boot(1440, 900);
 }
 
 {
-  const files = [...fs.readdirSync('js').filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), 'index.html', 'sim.html', 'style.css', 'guide.css'];
+  const files = [...fs.readdirSync('agri/js').filter((f) => f.endsWith('.js')).map((f) => `agri/js/${f}`), 'index.html', 'agri/index.html', 'agri/sim.html', 'agri/style.css', 'agri/guide.css', 'web3d/index.html', 'web3d/wild6.html', 'hub.css', 'tokens.css'];
   const src = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const ext = [...src.matchAll(/<(?:script|link)[^>]*?(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)/g)].map((m) => m[1])
     .concat([...src.matchAll(/from\s+["'](https?:\/\/[^"']+)/g)].map((m) => m[1]));
@@ -1189,7 +1189,7 @@ await boot(1440, 900);
     py = spawn('python', ['-m', 'http.server', String(pyPort), '--bind', '127.0.0.1'], { cwd: process.cwd(), stdio: 'ignore' });
     await sleep(1400);
     await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await send('Page.navigate', { url: `http://127.0.0.1:${pyPort}/sim.html?t=${Date.now()}` });
+    await send('Page.navigate', { url: `http://127.0.0.1:${pyPort}/agri/sim.html?t=${Date.now()}` });
     await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), 'python http.server 就绪');
     info = await ev(`(()=>{const a=globalThis.__agri;return {parcels:a.model.parcels.length, map:!!document.querySelector('.leaflet-container'), fatal:!!document.querySelector('.fatal')};})()`);
   } catch (err) {
@@ -1207,7 +1207,7 @@ await boot(1440, 900);
   // 数据缺失：要给出**可读提示**（白屏是最糟的失败形态）
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*parcels.geojson*'] });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}&blocked=1` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/agri/sim.html?t=${Date.now()}&blocked=1` });
   await sleep(3600);
   const fb = await ev(`(()=>{const f=document.querySelector('#map .fatal');return {shown:!!f, text:f?f.textContent.replace(/\s+/g,' '):''};})()`);
   await send('Network.setBlockedURLs', { urls: [] });
@@ -1217,7 +1217,7 @@ await boot(1440, 900);
 
 {
   // 真·file:// 打开：模块脚本被 CORS 拦掉 ⇒ 走内联兜底（这段内联脚本正是为此而存在）
-  const fileUrl = `file:///${path.resolve('sim.html').replace(/\\/g, '/')}`;
+  const fileUrl = `file:///${path.resolve('agri/sim.html').replace(/\\/g, '/')}`;
   let fb = null;
   try {
     await send('Page.navigate', { url: `${fileUrl}?t=${Date.now()}` });
@@ -1234,11 +1234,19 @@ await boot(1440, 900);
    * 导览页（入口）在 file:// 下**要提前说清**"模拟地图需要 http 服务"：
    * 否则点「打开模拟地图」进去只看到"页面没有启动"，会以为是网站坏了。
    */
-  const guideUrl = `file:///${path.resolve('index.html').replace(/\\/g, '/')}`;
+  const guideUrl = `file:///${path.resolve('agri/index.html').replace(/\\/g, '/')}`;
   let tip = null;
   try {
     await send('Page.navigate', { url: `${guideUrl}?t=${Date.now()}` });
-    await sleep(700);
+    /*
+     * 图片在 `file://` 下是**逐张解码**的：固定 `sleep(700)` 会偶发只读到 3 张，
+     * 于是判据自己抖（页面没问题，测法有问题）。改成轮询到 4 张或超时。
+     */
+    for (let i = 0; i < 25; i++) {
+      const n = await ev(`[...document.querySelectorAll('.shot img')].filter(i=>i.naturalWidth>0).length`).catch(() => 0);
+      if (n >= 4) break;
+      await sleep(120);
+    }
     tip = await ev(`(()=>{const t=document.querySelector('.g-tip');return {shown:!!t, text:t?t.textContent.replace(/\s+/g,' ').slice(0,120):'', imgs:[...document.querySelectorAll('.shot img')].filter(i=>i.naturalWidth>0).length};})()`);
   } catch (err) {
     tip = { error: String(err.message ?? err).slice(0, 80) };
@@ -2860,7 +2868,7 @@ console.log('\n=== 44. 审核：启动负载与耗时基线 ===');
 // 这里**不能用 boot()**：boot() 会主动等懒加载的数据（为了让别的判据确定）。
 // 本节要量的正是"启动那一刻有没有拉"，所以走一次裸导航，读到第一刻的状态再说。
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
-await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/sim.html?t=${Date.now()}` });
+await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/agri/sim.html?t=${Date.now()}` });
 await waitFor(async () => await ev(`document.readyState==='complete' && !!globalThis.__agri`), '页面就绪');
 // 启动时**不该**已经拉过情景数据（194 KB，只在情景页签用得到）
 const s44a = await ev(`(async()=>{const a=globalThis.__agri;const ui=a.ui;
@@ -2897,7 +2905,7 @@ check('**换天耗时基线**（20 次平均）：表格 + 地图 + 图一次全
     'elevation.json', 'villages.geojson'];
   const k = (f) => (fs.existsSync(f) ? fs.statSync(f).size / 1024 : 0);
   const bootKB = boot.reduce((n, f) => n + k(`data/${f}`), 0);
-  const jsKB = fs.readdirSync('js').filter((f) => f.endsWith('.js')).reduce((n, f) => n + k(`js/${f}`), 0);
+  const jsKB = fs.readdirSync('agri/js').filter((f) => f.endsWith('.js')).reduce((n, f) => n + k(`agri/js/${f}`), 0);
   const lazyKB = k('data/zones.geojson');
   check('**素材规模**在预算内：启动数据 < 1.5 MB、页面 JS < 320 KB（懒加载的大件单列）',
     bootKB < 1500 && jsKB < 320,
@@ -2915,7 +2923,7 @@ console.log('\n=== 45. 导览页 ===');
    */
   pageErrors.length = 0;
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
-  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/index.html?t=${Date.now()}` });
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/agri/index.html?t=${Date.now()}` });
   await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.shot img').length === 4`), '导览页渲染');
   // 等图片解码完成（`complete` 在缓存命中时可能瞬间为 true，但 naturalWidth 只有在真拿到像素时才 > 0）
   await waitFor(() => ev(`[...document.querySelectorAll('.shot img')].every(i => i.complete)`), '图片加载');
@@ -2945,17 +2953,18 @@ console.log('\n=== 45. 导览页 ===');
     pageErrors.length === 0, pageErrors.slice(0, 2).join(' ｜ ') || '无');
 
   /*
-   * **打开站点根（`/`）默认就是导览页** —— 这是"入口"的定义，不能靠文件名约定口头保证。
-   * 走一次不给文件名的导航：拿到的必须是导览页（有截图卡、有去主页面的入口），
-   * 而不是直接落到模拟页（有 `#day-slider` 就说明落错了）。
+   * **打开站点根（`/`）默认是总导航页** —— 三层结构的定义：根 → 模块导航 → 具体页面。
+   * 所以这里查"两张模块卡 + 两个入口"，而不是农业模块的截图页（那是模块内部的事）。
    */
   await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/?t=${Date.now()}` });
-  await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.shot').length > 0`), '站点根进入导览页');
+  await waitFor(() => ev(`document.readyState === 'complete' && document.querySelectorAll('.hub-card').length === 2`), '站点根进入总导航页');
   const root = await ev(`({
     title: document.title,
-    shots: document.querySelectorAll('.shot').length,
-    toSim: !!document.querySelector('a[href="sim.html"]'),
+    cards: document.querySelectorAll('.hub-card').length,
+    toAgri: !!document.querySelector('a[href="agri/index.html"]'),
+    toWeb3d: !!document.querySelector('a[href="web3d/index.html"]'),
     isSim: !!document.getElementById('day-slider'),
+    brand: getComputedStyle(document.body).getPropertyValue('--brand').trim(),
   })`);
   /*
    * **能滚到底**：`style.css` 给模拟页写了 `body { overflow: hidden }`（整屏 grid 不滚），
@@ -2970,37 +2979,45 @@ console.log('\n=== 45. 导览页 ===');
     body: getComputedStyle(document.body).overflowY,
     html: getComputedStyle(document.documentElement).overflowY,
   }))()`);
-  check('导览页**显式覆盖了 `body{overflow:hidden}`**（模拟页整屏不滚，导览页是长文档，必须放开）',
+  check('总导航页**显式覆盖了 `body{overflow:hidden}`**（农业模块的模拟页整屏不滚，导航页是长文档，必须放开）',
     ov.body !== 'hidden' && ov.html !== 'hidden', `body.overflow-y = ${ov.body} · html = ${ov.html}`);
 
   const sc = await ev(`(() => {
     const before = window.scrollY;
     window.scrollTo(0, document.documentElement.scrollHeight);
     const max = document.documentElement.scrollHeight - window.innerHeight;
-    const foot = document.querySelector('.g-foot').getBoundingClientRect();
+    const foot = document.querySelector('.hub-foot').getBoundingClientRect();
     return { before, scrolled: window.scrollY, max, footBottom: Math.round(foot.bottom), vh: window.innerHeight };
   })()`);
-  check('**导览页能滚到底**（滚到底后页脚进入视口，而不是卡在第一屏）',
-    sc.max > 200 && sc.scrolled > sc.max - 3 && sc.footBottom <= sc.vh + 2,
-    `可滚 ${sc.max}px · 实际滚到 ${sc.scrolled}px · 页脚底 ${sc.footBottom}px ≤ 视口 ${sc.vh}px`);
+  /*
+   * 总导航页很**短**（两张卡），一屏就能放下 —— 所以不能要求"必须能滚"。
+   * 真正要守的是"内容没被截断"：页脚要么在视口内，要么滚到底后能进视口。
+   * （`overflow` 那条判据已经守住了根因：`body{overflow:hidden}` 被显式覆盖。）
+   */
+  check('**总导航页内容没被截断**（页脚可见；需要滚动时能滚到底）',
+    sc.footBottom <= sc.vh + 2 || (sc.max > 100 && sc.scrolled > sc.max - 3),
+    `可滚 ${sc.max}px · 实际滚到 ${sc.scrolled}px · 页脚底 ${sc.footBottom}px / 视口 ${sc.vh}px`);
 
-  await shot('导览页-底部-1440x900');
-  check('打开站点根（`/`）**默认进入导览页**，且导览页里有去模拟主页面的入口（不是直接落到模拟页）',
-    !root.isSim && root.shots === 4 && root.toSim && /导览/.test(root.title),
-    `标题「${root.title}」· 截图 ${root.shots} 张 · 去主页面入口 ${root.toSim ? '有' : '无'} · 落在模拟页=${root.isSim}`);
+  await shot('总导航页-底部-1440x900');
+  check('打开站点根（`/`）**默认进入总导航页**：两张模块卡 + 两个入口，且没落到某个模块的页面里',
+    !root.isSim && root.cards === 2 && root.toAgri && root.toWeb3d && /总导航/.test(root.title),
+    `标题「${root.title}」· 模块卡 ${root.cards} 张 · 农业入口 ${root.toAgri ? '有' : '无'}`
+      + ` · 3D 入口 ${root.toWeb3d ? '有' : '无'} · 落在模拟页=${root.isSim}`);
+  check('总导航页与两个模块**共用同一套配色令牌**（`tokens.css`，不是各写一份色号）',
+    root.brand === '#1a4f8a', `--brand = ${root.brand}`);
   await ev(`window.scrollTo(0, 0)`);
   await sleep(120);
-  await shot('导览页-1440x900');
-  // 窄屏：导览页是"给人看的"，手机上排版塌了比功能坏更难发现
+  await shot('总导航页-1440x900');
+  // 窄屏：导航页是"给人看的"，手机上排版塌了比功能坏更难发现
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844 });
   await sleep(260);
   const narrow = await ev(`(() => {
     const w = document.documentElement.clientWidth;
-    return { overflow: document.documentElement.scrollWidth - w, cols: getComputedStyle(document.querySelector('.shots')).gridTemplateColumns.split(' ').length };
+    return { overflow: document.documentElement.scrollWidth - w, cols: getComputedStyle(document.querySelector('.hub-cards')).gridTemplateColumns.split(' ').length };
   })()`);
-  check('窄屏（390px）**不横向溢出**，截图卡片退成单列',
-    narrow.overflow <= 1 && narrow.cols === 1, `横向溢出 ${narrow.overflow}px · 截图列数 ${narrow.cols}`);
-  await shot('导览页-390x844');
+  check('窄屏（390px）**不横向溢出**，模块卡片退成单列',
+    narrow.overflow <= 1 && narrow.cols === 1, `横向溢出 ${narrow.overflow}px · 卡片列数 ${narrow.cols}`);
+  await shot('总导航页-390x844');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
 }
 
@@ -3118,6 +3135,82 @@ const s46b = await ev(`(async()=>{
 })()`);
 check('**刷新后仍记得选了 3D**（localStorage），且读回来真的按 3D 画',
   s46b.on === true && s46b.mode === '3d', `刷新后开关 ${s46b.on ? '开' : '关'} · 模式 ${s46b.mode}`);
+
+// ===================== 47. Web 3D 模块（本地内置 three.js + 场景可运行）=====================
+/*
+ * 这个模块最容易坏在两处，而且两处都是"看起来很绿"的：
+ *   1. **以为内置了、其实还在打 CDN**（importmap 改了一处漏一处）——
+ *      所以断言的是**运行时真实请求**里出现了 `vendor/three/…`，且没有任何外部主机；
+ *   2. **页面能打开但画布根本没画**（three 加载失败、WebGL 不可用）——
+ *      所以查 `#app` 下真的出现了 canvas，并把页面自己的错误钩子（`window.__err`）读出来。
+ */
+console.log('\n=== 47. Web 3D 模块 ===');
+{
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900 });
+  pageErrors.length = 0;
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/web3d/index.html?t=${Date.now()}` });
+  await waitFor(() => ev(`document.readyState === 'complete' && !!document.querySelector('a[href="wild6.html"]')`), '3D 模块导航页');
+  const w3 = await ev(`(() => ({
+    title: document.title,
+    cta: !!document.querySelector('a[href="wild6.html"]'),
+    back: !!document.querySelector('a[href="../index.html"]'),
+    brand: getComputedStyle(document.body).getPropertyValue('--brand').trim(),
+  }))()`);
+  check('3D 模块导航页能打开：**有「打开 demo」入口**，也有回总导航的链接',
+    w3.cta && w3.back, `标题「${w3.title}」· demo 入口 ${w3.cta ? '有' : '无'} · 回总导航 ${w3.back ? '有' : '无'}`);
+  check('3D 模块导航页**复用同一套配色令牌**（`tokens.css`），不是另起一套色号',
+    w3.brand === '#1a4f8a', `--brand = ${w3.brand}`);
+
+  // 进 demo：清空外部请求记录，只看这一页
+  netEvents.external.length = 0;
+  pageErrors.length = 0;
+  await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}${PREFIX}/web3d/wild6.html?t=${Date.now()}` });
+  await waitFor(() => ev(`document.readyState === 'complete'`), '3D demo 加载');
+  await sleep(2500);   // 给 three 的解析与首帧留时间（无头环境下 WebGL 走软光栅，比真机慢）
+  const s47 = await ev(`(() => {
+    const res = performance.getEntriesByType('resource').map(r => r.name);
+    const local = /^https?:\\/\\/(127\\.0\\.0\\.1|localhost)(:|\\/)/;
+    return {
+      canvas: document.querySelectorAll('#app canvas').length,
+      threeFiles: res.filter(u => /vendor\\/three\\//.test(u)).length,
+      ext: res.filter(u => /^https?:/.test(u) && !local.test(u)),
+      err: window.__err || '',
+      stat: (document.getElementById('stat')?.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 70),
+    };
+  })()`);
+  check('3D demo 的 three.js **从本机 `vendor/three/` 加载**（不是 unpkg，改一处漏一处的 importmap 会在这里露馅）',
+    s47.threeFiles >= 2, `本地 three 资源 ${s47.threeFiles} 个`);
+  check('3D demo **零外部请求**（含 addon 的二次 import；全站硬线在这一页同样成立）',
+    s47.ext.length === 0 && netEvents.external.length === 0,
+    s47.ext.length || netEvents.external.length ? `外链：${[...s47.ext, ...netEvents.external].slice(0, 3).join(', ')}` : '只请求了本机资源');
+  check('3D 场景**真的建起了画布**（`#app` 下有 canvas，且页面自己的错误钩子为空）',
+    s47.canvas >= 1 && !s47.err, `canvas ${s47.canvas} 个${s47.err ? ` · 页面报错：${s47.err}` : ' · 无报错'}`);
+  await shot('Web3D-demo-1440x900');
+
+  /*
+   * **file:// 双击打开**：3D 场景的 ES 模块会被浏览器按跨源拦掉（源是 `null`），
+   * 页面只剩一张浅色背景 —— 用户看到的就是"不渲染"。所以必须由**经典内联脚本**
+   * 提前说明原因与做法（module 脚本自己跑不起来，没法自救）。
+   * 这两条守的是"别让用户对着一张空白页猜"。
+   */
+  const w3Page = `file:///${path.resolve('web3d/index.html').split(path.sep).join('/')}`;
+  await send('Page.navigate', { url: `${w3Page}?t=${Date.now()}` });
+  await sleep(500);
+  const tip3 = await ev(`(()=>{const t=document.getElementById('web3d-file-tip');
+    return {shown:!!t, text:t?t.textContent.replace(/\\s+/g,' '):''};})()`);
+  check('3D 模块导航页在 **file:// 下提前说明"需要 HTTP 服务"**（不是点进去才发现白屏）',
+    tip3.shown && /HTTP/.test(tip3.text) && /npm run serve/.test(tip3.text),
+    tip3.shown ? tip3.text.slice(0, 76) : '没有提示');
+
+  const demoPage = `file:///${path.resolve('web3d/wild6.html').split(path.sep).join('/')}`;
+  await send('Page.navigate', { url: `${demoPage}?t=${Date.now()}` });
+  await sleep(600);
+  const fh = await ev(`(()=>{const t=document.getElementById('__hint');
+    return {shown:!!t, text:t?t.textContent.replace(/\\s+/g,' '):'', canvas:document.querySelectorAll('#app canvas').length};})()`);
+  check('3D demo 在 **file:// 下把原因说清楚**（模块被拦时不白屏，且明确指出是 file:// 的限制）',
+    fh.shown && /file:\/\//.test(fh.text) && fh.canvas === 0,
+    fh.shown ? `提示已显示（canvas ${fh.canvas} 个）：${fh.text.slice(0, 56)}` : '没有提示，用户只会看到空白');
+}
 
 function report() {
   console.log(`\n================ ${pass} 通过 / ${fail} 失败 ================`);

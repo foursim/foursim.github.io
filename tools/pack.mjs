@@ -77,12 +77,11 @@ const cp = (rel) => {
   return true;
 };
 
-/* ---------- ② 页面 ---------- */
-['index.html', 'sim.html', 'style.css', 'guide.css', 'js', 'vendor', 'img'].forEach(cp);
-// data：**排除** `_` 前缀（取数缓存，`.gitignore` 里也忽略了）
-for (const f of fs.readdirSync(path.join(ROOT, 'data'))) {
-  if (f.startsWith('_')) continue;
-  cp(path.join('data', f));
+/* ---------- ② 页面（三层：总导航 / agri 模块 / web3d 模块） ---------- */
+['index.html', 'tokens.css', 'hub.css', 'agri', 'web3d'].forEach(cp);
+// 取数缓存（`_` 前缀）在 `.gitignore` 里也忽略了：整目录拷贝会顺手带进来，这里必须剔掉
+for (const f of fs.existsSync(path.join(OUT, 'agri/data')) ? fs.readdirSync(path.join(OUT, 'agri/data')) : []) {
+  if (f.startsWith('_')) fs.rmSync(path.join(OUT, 'agri/data', f), { force: true });
 }
 
 /* ---------- ③ 表：必带 + 说明 + 两份 md（+ 按需） ---------- */
@@ -106,7 +105,7 @@ const lines2 = [
   `总体积约 ${totalMB} MB`,
   '',
   '一、怎么打开',
-  '  双击 index.html 进导览页，再由「打开模拟地图」进入 sim.html（纯静态，无需服务端、无需联网）。',
+  '  双击 index.html 进总导航，再进「农业 GIS」或「Web 3D」模块（纯静态，无需服务端、无需联网）。',
   '  若浏览器限制本地 fetch，可在本目录跑：python -m http.server 8000，再访问 http://localhost:8000',
   '',
   '二、包里有什么',
@@ -114,10 +113,13 @@ const lines2 = [
   '  tables/农业监测数据.xlsx  同一批表的合集（业务方直接读）',
   '  tables/交付清单.md  哪张表被哪个查询读、哪一列没被读到',
   '  tables/数据字典.md  每个字段的含义、单位、口径',
-  '  data/*  页面用的静态数据（JSON + GeoJSON）',
-  '  index.html guide.css          导览页（入口：数据是什么、四张数据截图、基础操作）',
-  '  img/                          导览页用的数据截图',
-  '  sim.html js/ vendor/ style.css  模拟主页面（纯静态）',
+  '  index.html                    总导航页（入口：两个模块）',
+  '  tokens.css hub.css            三层共用的配色令牌与导航样式',
+  '  agri/index.html agri/guide.css  农业模块导览页（数据是什么、四张数据截图、基础操作）',
+  '  agri/sim.html agri/js/ agri/vendor/ agri/style.css  农业模块模拟主页面（纯静态）',
+  '  agri/data/*                   页面用的静态数据（JSON + GeoJSON）',
+  '  agri/img/                     导览页用的数据截图',
+  '  web3d/index.html web3d/wild6.html  3D 渲染模块（three.js 已内置在 web3d/vendor/three/）',
   '',
   '三、口径与边界（与清单一致）',
   '  · 全部数据来自确定性模型，synthetic=1 的列是模拟值；',
@@ -178,34 +180,47 @@ check(withDaily
   `按需表：${optional.join(', ') || '无'}`);
 
 {
-  // 页面引用的本地文件必须都在包里（`data/xxx.geojson` 这类最容易漏）
-  const html = ['index.html', 'sim.html'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  /*
+   * 页面引用的本地文件必须都在包里（`agri/data/xxx.geojson` 这类最容易漏）。
+   * 页面现在分三层，**相对链接要按各自所在目录解析**，否则 `style.css` 会被误判成缺失。
+   */
+  const pages = ['index.html', 'agri/index.html', 'agri/sim.html', 'web3d/index.html', 'web3d/wild6.html'];
   const refs = new Set();
-  for (const m of html.matchAll(/(?:src|href)="([^"#?]+)"/g)) {
-    const r = m[1];
-    if (!/^(https?:|data:|mailto:)/.test(r)) refs.add(r.replace(/^\.\//, ''));
+  for (const page of pages) {
+    const abs = path.join(ROOT, page);
+    if (!fs.existsSync(abs)) continue;
+    const html = fs.readFileSync(abs, 'utf8');
+    for (const m of html.matchAll(/(?:src|href)="([^"#?]+)"/g)) {
+      const r = m[1];
+      if (/^(https?:|data:|mailto:|javascript:)/.test(r)) continue;
+      refs.add(path.posix.normalize(path.posix.join(path.posix.dirname(page), r)));
+    }
   }
-  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter((x) => x.endsWith('.js'))) {
-    const src = fs.readFileSync(path.join(ROOT, 'js', f), 'utf8');
-    for (const m of src.matchAll(/['"`](data\/[\w./-]+\.(?:json|geojson))['"`]/g)) refs.add(m[1]);
+  // JS 里的数据是**相对页面**取的（`data/xxx.json`），打包后位于 `agri/data/…`
+  for (const f of fs.readdirSync(path.join(ROOT, 'agri/js')).filter((x) => x.endsWith('.js'))) {
+    const src = fs.readFileSync(path.join(ROOT, 'agri/js', f), 'utf8');
+    for (const m of src.matchAll(/['"`](data\/[\w./-]+\.(?:json|geojson))['"`]/g)) refs.add(`agri/${m[1]}`);
   }
   const missing = [...refs].filter((r) => !fs.existsSync(path.join(OUT, r)));
-  check('**入口导览页与模拟主页面都在包里**（没有入口，业务方拿到包不知道从哪儿看）',
-  fs.existsSync(path.join(OUT, 'index.html')) && fs.existsSync(path.join(OUT, 'sim.html'))
-    && fs.existsSync(path.join(OUT, 'guide.css'))
-    && fs.existsSync(path.join(OUT, 'img')) && fs.readdirSync(path.join(OUT, 'img')).length >= 4,
-  `index.html / sim.html / guide.css · img ${fs.existsSync(path.join(OUT, 'img')) ? fs.readdirSync(path.join(OUT, 'img')).length : 0} 张`);
+  check('**总导航页、两个模块的入口都在包里**（没有入口，业务方拿到包不知道从哪儿看）',
+    fs.existsSync(path.join(OUT, 'index.html'))
+      && fs.existsSync(path.join(OUT, 'agri/index.html')) && fs.existsSync(path.join(OUT, 'agri/sim.html'))
+      && fs.existsSync(path.join(OUT, 'agri/guide.css'))
+      && fs.existsSync(path.join(OUT, 'agri/img')) && fs.readdirSync(path.join(OUT, 'agri/img')).length >= 4
+      && fs.existsSync(path.join(OUT, 'web3d/wild6.html'))
+      && fs.existsSync(path.join(OUT, 'web3d/vendor/three/three.module.js')),
+  `总导航 + agri（index/sim/guide.css/img ${fs.existsSync(path.join(OUT, 'agri/img')) ? fs.readdirSync(path.join(OUT, 'agri/img')).length : 0} 张）+ web3d（含内置 three）`);
 
-check('**页面引用的本地文件**都在包里（`index.html`/`sim.html` 的 src/href + `js/` 里的 data/*.json|geojson）',
-    missing.length === 0, missing.length ? `缺：${missing.join(', ')}` : `${refs.size} 个引用逐个核过`);
+  check('**页面引用的本地文件**都在包里（五个页面的 src/href 按各自目录解析 + `agri/js/` 里的 data/*.json|geojson）',
+    missing.length === 0, missing.length ? `缺：${missing.slice(0, 5).join(', ')}` : `${refs.size} 个引用逐个核过`);
 }
 
 check(withDaily
   ? '包里没有取数缓存（`data/_soil_samples.json` 是本地中间产物，任何模式都不该带）'
   : '包里没有 `.gitignore` 忽略的东西（取数缓存 / 按需长表）',
-  !fs.existsSync(path.join(OUT, 'data', '_soil_samples.json'))
+  !fs.existsSync(path.join(OUT, 'agri/data', '_soil_samples.json'))
     && (withDaily || !fs.existsSync(path.join(OUT, 'tables', 'fact_parcel_daily.csv'))),
-  `data/_soil_samples.json 未带 · fact_parcel_daily ${withDaily ? '已带' : '未带'}`);
+  `agri/data/_soil_samples.json 未带 · fact_parcel_daily ${withDaily ? '已带' : '未带'}`);
 
 if (wantZip) {
   /*
@@ -223,9 +238,9 @@ if (wantZip) {
   }
   const hasPrefix = (p) => entries.some((e) => e.replace(/\\/g, '/').startsWith(p));
   const hasName = (p) => entries.some((e) => e.replace(/\\/g, '/').endsWith(p));
-  check('`--zip` 产出的压缩包**能被解析**，且结构完整（`index.html` + `tables/` 下的 CSV + `data/`）',
+  check('`--zip` 产出的压缩包**能被解析**，且结构完整（`index.html` + `tables/` 的 CSV + `agri/data/` + `web3d/`）',
     !zipErr && entries.length > 0 && hasName('index.html') && hasPrefix('tables/')
-      && entries.some((e) => e.endsWith('.csv')) && hasPrefix('data/'),
+      && entries.some((e) => e.endsWith('.csv')) && hasPrefix('agri/data/') && hasPrefix('web3d/'),
     zipErr || `${entries.length} 个条目 · ${(fs.statSync(zipPath).size / 1024 / 1024).toFixed(1)} MB`);
 }
 

@@ -8,7 +8,9 @@ Thumbs.db
 # 取数/验收脚本的临时截图目录（默认写到系统临时目录，若改到仓库内则忽略）
 shots/
 # 取数可续跑缓存（中间产物，不入库）
-data/_soil_samples.json
+# ⚠️ 路径要跟着模块走：页面数据已迁到 agri/data/，旧规则 `data/_…` 会失效，
+# 结果是缓存被当成源码提交（结构重组时真的差点提交上去）
+agri/data/_soil_samples.json
 # 按需生成的"地块 × 日"长表（约 15 MB，随时可由 npm run export:daily 重算）
 tables/fact_parcel_daily.csv
 

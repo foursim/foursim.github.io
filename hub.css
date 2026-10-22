@@ -1,0 +1,104 @@
+/*
+ * 总导航页（站点根）与模块导航页的样式。
+ *
+ * 三条约束（都有判据守着）：
+ * 1. 颜色只用 `tokens.css` 里的变量 —— 站点变成"总导航 + 两个模块"之后，
+ *    任何一层自己写死色号都会让三层慢慢跑偏；
+ * 2. 类名统一 `hub-` 前缀 —— 与 `agri/style.css`、`agri/guide.css` 零重名；
+ * 3. 页面本身**可滚动**（长文档），不继承农业模块模拟页的 `overflow:hidden`。
+ */
+
+html, body { margin: 0; height: 100%; }
+body.hub {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  overflow-y: auto;      /* 导览页是长文档：必须滚得动（农业模块的模拟页才整屏不滚） */
+}
+
+.hub-top {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px;
+  background: var(--topbar-bg); color: var(--topbar-fg);
+  box-shadow: var(--shadow);
+}
+.hub-brand { font-weight: 700; letter-spacing: 0.5px; }
+.hub-top .hub-sep { opacity: 0.55; }
+.hub-top .hub-sub { font-size: 12px; opacity: 0.9; }
+.hub-top .hub-spacer { flex: 1; }
+.hub-top a.hub-link {
+  color: var(--topbar-fg); text-decoration: none; font-size: 12px;
+  padding: 3px 9px; border: 1px solid var(--topbar-btn-line);
+  border-radius: 999px; background: var(--topbar-btn-bg);
+}
+.hub-top a.hub-link:hover { border-color: var(--topbar-fg); }
+
+.hub-main { max-width: 1040px; margin: 0 auto; padding: 26px 20px 40px; }
+.hub-lead { margin: 0 0 18px; color: var(--dim); font-size: 13px; }
+.hub-lead b { color: var(--fg); }
+
+.hub-cards { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 16px; }
+@media (max-width: 780px) { .hub-cards { grid-template-columns: 1fr; } }
+
+.hub-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px 18px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-decoration: none; color: var(--fg);
+  transition: border-color .12s, transform .12s;
+}
+.hub-card:hover { border-color: var(--brand); transform: translateY(-1px); }
+.hub-card:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 2px; }
+
+.hub-no {
+  font-size: 11px; font-weight: 700; color: var(--brand);
+  background: var(--brand-soft); border-radius: 999px;
+  padding: 1px 8px; align-self: flex-start; letter-spacing: 1px;
+}
+.hub-card h2 { margin: 0; font-size: 16px; line-height: 1.35; }
+.hub-card p { margin: 0; font-size: 12.5px; color: var(--dim); }
+.hub-facts { margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.hub-facts li {
+  font-size: 11px; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+  background: var(--panel-2);
+}
+.hub-go {
+  margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--brand-2);
+}
+.hub-go::after { content: ' →'; }
+
+.hub-note {
+  margin-top: 22px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius);
+  font-size: 12px; color: var(--dim);
+}
+.hub-note b { color: var(--fg); }
+.hub-note ul { margin: 6px 0 0; padding-left: 18px; }
+.hub-note li { margin: 2px 0; }
+
+.hub-foot {
+  max-width: 1040px; margin: 0 auto; padding: 0 20px 28px;
+  font-size: 11px; color: var(--dim-2);
+}
+.hub-foot code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
+
+/* 模块导航页（web3d/index.html）复用的几个小件 */
+.hub-mod-head { margin: 0 0 6px; font-size: 20px; }
+.hub-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; margin-top: 10px;
+  background: var(--brand); color: var(--brand-ink);
+  border-radius: var(--radius); text-decoration: none; font-size: 13px; font-weight: 600;
+}
+.hub-btn:hover { background: var(--brand-2); }
+.hub-frame {
+  margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; background: var(--panel);
+}
+.hub-frame iframe { display: block; width: 100%; height: 62vh; min-height: 380px; border: 0; }

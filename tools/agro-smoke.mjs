@@ -14,10 +14,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { simulate, genWeather, CROPS, CROP_BY_KEY, DISEASES, levelOf } from '../js/agro.js';
+import { simulate, genWeather, CROPS, CROP_BY_KEY, DISEASES, levelOf } from '../agri/js/agro.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DATA = path.join(ROOT, 'data');
+const DATA = path.join(ROOT, 'agri/data');
 
 let pass = 0;
 let fail = 0;

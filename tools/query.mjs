@@ -43,7 +43,7 @@ const arg = (k, d) => {
 };
 const has = (k) => process.argv.includes(`--${k}`);
 const TABLES = arg('tables', 'tables');
-const DATA = arg('data', 'data');   // q15 要读离线情景推演结果（data/scenario.json）
+const DATA = arg('data', 'agri/data');   // q15 要读离线情景推演结果（data/scenario.json）
 const OUT = arg('out', path.join(TABLES, 'query'));
 
 let pass = 0;
@@ -767,7 +767,7 @@ const PRESETS = [
     question: '峰值日那么堵：把活摊开更管用，还是就近建点更管用？',
     build: (T) => {
       const st = star(T, 'fact_parcel_season');
-      const scen = JSON.parse(fs.readFileSync(path.join(arg('data', 'data'), 'scenario.json'), 'utf8'));
+      const scen = JSON.parse(fs.readFileSync(path.join(arg('data', 'agri/data'), 'scenario.json'), 'utf8'));
       const byDay = new Map();
       for (const r of st.rows) {
         if (!r.harvest_day) continue;
